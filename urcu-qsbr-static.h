@@ -98,7 +98,7 @@
 
 /*
  * If a reader is really non-cooperative and refuses to commit its
- * rcu_reader_qs_gp count to memory (there is no barrier in the reader
+ * rcu_reader qs_gp count to memory (there is no barrier in the reader
  * per-se), kick it after a few loops waiting for it.
  */
 #define KICK_READER_LOOPS 10000
@@ -178,7 +178,12 @@ static inline void reader_barrier()
  */
 extern unsigned long urcu_gp_ctr;
 
-extern unsigned long __thread rcu_reader_qs_gp;
+struct urcu_reader_status {
+	unsigned long qs_gp;
+	unsigned long gp_waiting;
+};
+
+extern struct urcu_reader_status __thread urcu_reader_status;
 
 #if (BITS_PER_LONG < 64)
 static inline int rcu_gp_ongoing(unsigned long *value)
@@ -204,7 +209,7 @@ static inline int rcu_gp_ongoing(unsigned long *value)
 
 static inline void _rcu_read_lock(void)
 {
-	rcu_assert(rcu_reader_qs_gp);
+	rcu_assert(urcu_reader_status.qs_gp);
 }
 
 static inline void _rcu_read_unlock(void)
@@ -216,31 +221,36 @@ static inline void _rcu_quiescent_state(void)
 	long gp_ctr;
 
 	smp_mb();
-	gp_ctr = LOAD_SHARED(urcu_gp_ctr);
-	if (unlikely(gp_ctr & RCU_GP_ONGOING)) {
+	/*
+	 * volatile accesses can be reordered by the compiler when put in the
+	 * same expression.
+	 */
+	if (unlikely((gp_ctr = LOAD_SHARED(urcu_gp_ctr)) & RCU_GP_ONGOING) &&
+	    unlikely(urcu_reader_status.gp_waiting)) {
+		_STORE_SHARED(urcu_reader_status.qs_gp, gp_ctr);
 		sched_yield();
-		gp_ctr = LOAD_SHARED(urcu_gp_ctr);
+	} else {
+		_STORE_SHARED(urcu_reader_status.qs_gp, gp_ctr);
 	}
-	_STORE_SHARED(rcu_reader_qs_gp, gp_ctr);
 	smp_mb();
 }
 
 static inline void _rcu_thread_offline(void)
 {
 	smp_mb();
-	STORE_SHARED(rcu_reader_qs_gp, 0);
+	STORE_SHARED(urcu_reader_status.qs_gp, 0);
 }
 
 static inline void _rcu_thread_online(void)
 {
 	long gp_ctr;
 
-	gp_ctr = LOAD_SHARED(urcu_gp_ctr);
-	if (unlikely(gp_ctr & RCU_GP_ONGOING)) {
+	if (unlikely((gp_ctr = LOAD_SHARED(urcu_gp_ctr)) & RCU_GP_ONGOING) &&
+	    unlikely(urcu_reader_status.gp_waiting)) {
 		sched_yield();
 		gp_ctr = LOAD_SHARED(urcu_gp_ctr);
 	}
-	_STORE_SHARED(rcu_reader_qs_gp, gp_ctr);
+	_STORE_SHARED(urcu_reader_status.qs_gp, gp_ctr);
 	smp_mb();
 }
 

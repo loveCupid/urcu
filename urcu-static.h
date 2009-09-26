@@ -214,7 +214,12 @@ static inline void reader_barrier()
  */
 extern long urcu_gp_ctr;
 
-extern long __thread urcu_active_readers;
+struct urcu_reader_status {
+	long active_readers;
+	long gp_waiting;
+};
+
+extern struct urcu_reader_status __thread urcu_reader_status;
 
 static inline int rcu_old_gp_ongoing(long *value)
 {
@@ -235,22 +240,28 @@ static inline void _rcu_read_lock(void)
 {
 	long tmp, gp_ctr;
 
-	tmp = urcu_active_readers;
+	tmp = urcu_reader_status.active_readers;
 	/* urcu_gp_ctr = RCU_GP_COUNT | (~RCU_GP_CTR_BIT or RCU_GP_CTR_BIT) */
 	if (likely(!(tmp & RCU_GP_CTR_NEST_MASK))) {
-		gp_ctr = _LOAD_SHARED(urcu_gp_ctr);
-		if (unlikely(gp_ctr & RCU_GP_ONGOING)) {
+		/*
+		 * volatile accesses can be reordered and optimized when within
+		 * the same statement.
+		 */
+		if (unlikely((gp_ctr = _LOAD_SHARED(urcu_gp_ctr))
+				& RCU_GP_ONGOING) &&
+		    unlikely(LOAD_SHARED(urcu_reader_status.gp_waiting))) {
 			sched_yield();
 			gp_ctr = _LOAD_SHARED(urcu_gp_ctr);
 		}
-		_STORE_SHARED(urcu_active_readers, gp_ctr);
+		_STORE_SHARED(urcu_reader_status.active_readers, gp_ctr);
 		/*
 		 * Set active readers count for outermost nesting level before
 		 * accessing the pointer. See force_mb_all_threads().
 		 */
 		reader_barrier();
 	} else {
-		_STORE_SHARED(urcu_active_readers, tmp + RCU_GP_COUNT);
+		_STORE_SHARED(urcu_reader_status.active_readers,
+			      tmp + RCU_GP_COUNT);
 	}
 }
 
@@ -264,7 +275,8 @@ static inline void _rcu_read_unlock(void)
 	 * (no nesting).
 	 */
 	reader_barrier();
-	_STORE_SHARED(urcu_active_readers, urcu_active_readers - RCU_GP_COUNT);
+	_STORE_SHARED(urcu_reader_status.active_readers,
+		      urcu_reader_status.active_readers - RCU_GP_COUNT);
 }
 
 /**

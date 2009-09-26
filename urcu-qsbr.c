@@ -48,14 +48,14 @@ unsigned long urcu_gp_ctr = RCU_GP_ONLINE;
  * Written to only by each individual reader. Read by both the reader and the
  * writers.
  */
-unsigned long __thread rcu_reader_qs_gp;
+struct urcu_reader_status __thread urcu_reader_status;
 
 /* Thread IDs of registered readers */
 #define INIT_NUM_THREADS 4
 
 struct reader_registry {
 	pthread_t tid;
-	unsigned long *rcu_reader_qs_gp;
+	struct urcu_reader_status *urcu_reader_status;
 };
 
 #ifdef DEBUG_YIELD
@@ -109,12 +109,13 @@ static void wait_for_quiescent_state(void)
 	if (!registry)
 		return;
 	/*
-	 * Wait for each thread rcu_reader_qs_gp count to become 0.
+	 * Wait for each thread rcu_reader qs_gp count to become 0.
 	 */
 	for (index = registry; index < registry + num_readers; index++) {
 		int wait_loops = 0;
 
-		while (rcu_gp_ongoing(index->rcu_reader_qs_gp)) {
+		index->urcu_reader_status->gp_waiting = 1;
+		while (rcu_gp_ongoing(&index->urcu_reader_status->qs_gp)) {
 			if (wait_loops++ == RCU_QS_ACTIVE_ATTEMPTS) {
 				sched_yield();	/* ideally sched_yield_to() */
 			} else {
@@ -125,6 +126,7 @@ static void wait_for_quiescent_state(void)
 #endif /* #else #ifndef HAS_INCOHERENT_CACHES */
 			}
 		}
+		index->urcu_reader_status->gp_waiting = 0;
 	}
 }
 
@@ -146,7 +148,7 @@ void synchronize_rcu(void)
 {
 	unsigned long was_online;
 
-	was_online = rcu_reader_qs_gp;
+	was_online = urcu_reader_status.qs_gp;
 
 	/* All threads should read qparity before accessing data structure
 	 * where new ptr points to.
@@ -160,7 +162,7 @@ void synchronize_rcu(void)
 	 * threads registered as readers.
 	 */
 	if (was_online)
-		STORE_SHARED(rcu_reader_qs_gp, 0);
+		STORE_SHARED(urcu_reader_status.qs_gp, 0);
 
 	internal_urcu_lock();
 
@@ -213,7 +215,8 @@ void synchronize_rcu(void)
 	 * freed.
 	 */
 	if (was_online)
-		_STORE_SHARED(rcu_reader_qs_gp, LOAD_SHARED(urcu_gp_ctr));
+		_STORE_SHARED(urcu_reader_status.qs_gp,
+			      LOAD_SHARED(urcu_gp_ctr));
 	smp_mb();
 }
 #else /* !(BITS_PER_LONG < 64) */
@@ -221,7 +224,7 @@ void synchronize_rcu(void)
 {
 	unsigned long was_online;
 
-	was_online = rcu_reader_qs_gp;
+	was_online = urcu_reader_status.qs_gp;
 
 	/*
 	 * Mark the writer thread offline to make sure we don't wait for
@@ -230,7 +233,7 @@ void synchronize_rcu(void)
 	 */
 	smp_mb();
 	if (was_online)
-		STORE_SHARED(rcu_reader_qs_gp, 0);
+		STORE_SHARED(urcu_reader_status.qs_gp, 0);
 
 	internal_urcu_lock();
 	STORE_SHARED(urcu_gp_ctr, urcu_gp_ctr ^ RCU_GP_ONGOING);
@@ -240,7 +243,8 @@ void synchronize_rcu(void)
 	internal_urcu_unlock();
 
 	if (was_online)
-		_STORE_SHARED(rcu_reader_qs_gp, LOAD_SHARED(urcu_gp_ctr));
+		_STORE_SHARED(urcu_reader_status.qs_gp,
+			      LOAD_SHARED(urcu_gp_ctr));
 	smp_mb();
 }
 #endif  /* !(BITS_PER_LONG < 64) */
@@ -327,7 +331,7 @@ static void rcu_add_reader(pthread_t id)
 	}
 	registry[num_readers].tid = id;
 	/* reference to the TLS of _this_ reader thread. */
-	registry[num_readers].rcu_reader_qs_gp = &rcu_reader_qs_gp;
+	registry[num_readers].urcu_reader_status = &urcu_reader_status;
 	num_readers++;
 }
 
@@ -345,7 +349,7 @@ static void rcu_remove_reader(pthread_t id)
 			memcpy(index, &registry[num_readers - 1],
 				sizeof(struct reader_registry));
 			registry[num_readers - 1].tid = 0;
-			registry[num_readers - 1].rcu_reader_qs_gp = NULL;
+			registry[num_readers - 1].urcu_reader_status = NULL;
 			num_readers--;
 			return;
 		}

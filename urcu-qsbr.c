@@ -39,8 +39,6 @@
 
 static pthread_mutex_t urcu_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-int gp_futex;
-
 /*
  * Global grace period counter.
  */
@@ -104,24 +102,6 @@ static void internal_urcu_unlock(void)
 /*
  * synchronize_rcu() waiting. Single thread.
  */
-static void wait_gp(struct reader_registry *index)
-{
-	atomic_dec(&gp_futex);
-	smp_mb(); /* Write futex before read reader_gp */
-	if (!rcu_gp_ongoing(index->rcu_reader_qs_gp)) {
-		/* Read reader_gp before write futex */
-		smp_mb();
-		/* Callbacks are queued, don't wait. */
-		atomic_set(&gp_futex, 0);
-	} else {
-		/* Read reader_gp before read futex */
-		smp_rmb();
-		if (atomic_read(&gp_futex) == -1)
-			futex(&gp_futex, FUTEX_WAIT, -1,
-			      NULL, NULL, 0);
-	}
-}
-
 static void wait_for_quiescent_state(void)
 {
 	struct reader_registry *index;
@@ -136,7 +116,7 @@ static void wait_for_quiescent_state(void)
 
 		while (rcu_gp_ongoing(index->rcu_reader_qs_gp)) {
 			if (wait_loops++ == RCU_QS_ACTIVE_ATTEMPTS) {
-				wait_gp(index);
+				sched_yield();	/* ideally sched_yield_to() */
 			} else {
 #ifndef HAS_INCOHERENT_CACHES
 				cpu_relax();
@@ -184,6 +164,8 @@ void synchronize_rcu(void)
 
 	internal_urcu_lock();
 
+	STORE_SHARED(urcu_gp_ctr, urcu_gp_ctr ^ RCU_GP_ONGOING);
+
 	switch_next_urcu_qparity();	/* 0 -> 1 */
 
 	/*
@@ -222,6 +204,8 @@ void synchronize_rcu(void)
 	 */
 	wait_for_quiescent_state();	/* Wait readers in parity 1 */
 
+	STORE_SHARED(urcu_gp_ctr, urcu_gp_ctr ^ RCU_GP_ONGOING);
+
 	internal_urcu_unlock();
 
 	/*
@@ -249,8 +233,10 @@ void synchronize_rcu(void)
 		STORE_SHARED(rcu_reader_qs_gp, 0);
 
 	internal_urcu_lock();
+	STORE_SHARED(urcu_gp_ctr, urcu_gp_ctr ^ RCU_GP_ONGOING);
 	STORE_SHARED(urcu_gp_ctr, urcu_gp_ctr + RCU_GP_CTR);
 	wait_for_quiescent_state();
+	STORE_SHARED(urcu_gp_ctr, urcu_gp_ctr ^ RCU_GP_ONGOING);
 	internal_urcu_unlock();
 
 	if (was_online)

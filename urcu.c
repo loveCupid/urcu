@@ -49,8 +49,6 @@ void urcu_init(void)
 
 static pthread_mutex_t urcu_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-int gp_futex;
-
 /*
  * Global grace period counter.
  * Contains the current RCU_GP_CTR_BIT.
@@ -130,16 +128,19 @@ static void switch_next_urcu_qparity(void)
 }
 
 #ifdef URCU_MB
+#ifdef HAS_INCOHERENT_CACHES
 static void force_mb_single_thread(struct reader_registry *index)
 {
 	smp_mb();
 }
+#endif /* #ifdef HAS_INCOHERENT_CACHES */
 
 static void force_mb_all_threads(void)
 {
 	smp_mb();
 }
 #else /* #ifdef URCU_MB */
+#ifdef HAS_INCOHERENT_CACHES
 static void force_mb_single_thread(struct reader_registry *index)
 {
 	assert(registry);
@@ -162,6 +163,7 @@ static void force_mb_single_thread(struct reader_registry *index)
 	}
 	smp_mb();	/* read ->need_mb before ending the barrier */
 }
+#endif /* #ifdef HAS_INCOHERENT_CACHES */
 
 static void force_mb_all_threads(void)
 {
@@ -206,27 +208,6 @@ static void force_mb_all_threads(void)
 }
 #endif /* #else #ifdef URCU_MB */
 
-/*
- * synchronize_rcu() waiting. Single thread.
- */
-static void wait_gp(struct reader_registry *index)
-{
-	atomic_dec(&gp_futex);
-	force_mb_single_thread(index); /* Write futex before read reader_gp */
-	if (!rcu_old_gp_ongoing(index->urcu_active_readers)) {
-		/* Read reader_gp before write futex */
-		force_mb_single_thread(index);
-		/* Callbacks are queued, don't wait. */
-		atomic_set(&gp_futex, 0);
-	} else {
-		/* Read reader_gp before read futex */
-		force_mb_single_thread(index);
-		if (atomic_read(&gp_futex) == -1)
-			futex(&gp_futex, FUTEX_WAIT, -1,
-			      NULL, NULL, 0);
-	}
-}
-
 void wait_for_quiescent_state(void)
 {
 	struct reader_registry *index;
@@ -241,7 +222,7 @@ void wait_for_quiescent_state(void)
 #ifndef HAS_INCOHERENT_CACHES
 		while (rcu_old_gp_ongoing(index->urcu_active_readers)) {
 			if (wait_loops++ == RCU_QS_ACTIVE_ATTEMPTS) {
-				wait_gp(index);
+				sched_yield();	/* ideally sched_yield_to() */
 			} else {
 				cpu_relax();
 			}
@@ -254,7 +235,7 @@ void wait_for_quiescent_state(void)
 		while (rcu_old_gp_ongoing(index->urcu_active_readers)) {
 			switch (wait_loops++) {
 			case RCU_QS_ACTIVE_ATTEMPTS:
-				wait_gp(index);
+				sched_yield();	/* ideally sched_yield_to() */
 				break;
 			case KICK_READER_LOOPS:
 				force_mb_single_thread(index);
@@ -277,6 +258,8 @@ void synchronize_rcu(void)
 	 * because it iterates on reader threads.*/
 	/* Write new ptr before changing the qparity */
 	force_mb_all_threads();
+
+	STORE_SHARED(urcu_gp_ctr, urcu_gp_ctr ^ RCU_GP_ONGOING);
 
 	switch_next_urcu_qparity();	/* 0 -> 1 */
 
@@ -336,6 +319,8 @@ void synchronize_rcu(void)
 	 * Wait for previous parity to be empty of readers.
 	 */
 	wait_for_quiescent_state();	/* Wait readers in parity 1 */
+
+	STORE_SHARED(urcu_gp_ctr, urcu_gp_ctr ^ RCU_GP_ONGOING);
 
 	/* Finish waiting for reader threads before letting the old ptr being
 	 * freed. Must be done within internal_urcu_lock because it iterates on

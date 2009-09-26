@@ -31,8 +31,7 @@
 
 #include <stdlib.h>
 #include <pthread.h>
-#include <syscall.h>
-#include <unistd.h>
+#include <sched.h>
 
 #include <compiler.h>
 #include <arch.h>
@@ -96,10 +95,6 @@
 				(_________p1);				\
 				})
 
-#define futex(...)		syscall(__NR_futex, __VA_ARGS__)
-#define FUTEX_WAIT		0
-#define FUTEX_WAKE		1
-
 /*
  * This code section can only be included in LGPL 2.1 compatible source code.
  * See below for the function call wrappers which can be used in code meant to
@@ -124,7 +119,7 @@
 #define KICK_READER_LOOPS 10000
 
 /*
- * Active attempts to check for reader Q.S. before calling futex().
+ * Active attempts to check for reader Q.S. before calling sched_yield().
  */
 #define RCU_QS_ACTIVE_ATTEMPTS 100
 
@@ -210,6 +205,7 @@ static inline void reader_barrier()
 /* Use the amount of bits equal to half of the architecture long size */
 #define RCU_GP_CTR_BIT		(1UL << (sizeof(long) << 2))
 #define RCU_GP_CTR_NEST_MASK	(RCU_GP_CTR_BIT - 1)
+#define RCU_GP_ONGOING		(RCU_GP_CTR_BIT << 1)
 
 /*
  * Global quiescent period counter with low-order bits unused.
@@ -219,20 +215,6 @@ static inline void reader_barrier()
 extern long urcu_gp_ctr;
 
 extern long __thread urcu_active_readers;
-
-extern int gp_futex;
-
-/*
- * Wake-up waiting synchronize_rcu(). Called from many concurrent threads.
- */
-static inline void wake_up_gp(void)
-{
-	if (unlikely(atomic_read(&gp_futex) == -1)) {
-		atomic_set(&gp_futex, 0);
-		futex(&gp_futex, FUTEX_WAKE, 1,
-		      NULL, NULL, 0);
-	}
-}
 
 static inline int rcu_old_gp_ongoing(long *value)
 {
@@ -251,12 +233,17 @@ static inline int rcu_old_gp_ongoing(long *value)
 
 static inline void _rcu_read_lock(void)
 {
-	long tmp;
+	long tmp, gp_ctr;
 
 	tmp = urcu_active_readers;
 	/* urcu_gp_ctr = RCU_GP_COUNT | (~RCU_GP_CTR_BIT or RCU_GP_CTR_BIT) */
 	if (likely(!(tmp & RCU_GP_CTR_NEST_MASK))) {
-		_STORE_SHARED(urcu_active_readers, _LOAD_SHARED(urcu_gp_ctr));
+		gp_ctr = _LOAD_SHARED(urcu_gp_ctr);
+		if (unlikely(gp_ctr & RCU_GP_ONGOING)) {
+			sched_yield();
+			gp_ctr = _LOAD_SHARED(urcu_gp_ctr);
+		}
+		_STORE_SHARED(urcu_active_readers, gp_ctr);
 		/*
 		 * Set active readers count for outermost nesting level before
 		 * accessing the pointer. See force_mb_all_threads().
@@ -269,24 +256,15 @@ static inline void _rcu_read_lock(void)
 
 static inline void _rcu_read_unlock(void)
 {
-	long tmp;
-
-	tmp = urcu_active_readers;
 	/*
 	 * Finish using rcu before decrementing the pointer.
 	 * See force_mb_all_threads().
+	 * Formally only needed for outermost nesting level, but leave barrier
+	 * in place for nested unlocks to remove a branch from the common case
+	 * (no nesting).
 	 */
-	if (likely((tmp & RCU_GP_CTR_NEST_MASK) == RCU_GP_COUNT)) {
-		reader_barrier();
-		_STORE_SHARED(urcu_active_readers,
-			      urcu_active_readers - RCU_GP_COUNT);
-		/* write urcu_active_readers before read futex */
-		reader_barrier();
-		wake_up_gp();
-	} else {
-		_STORE_SHARED(urcu_active_readers,
-			      urcu_active_readers - RCU_GP_COUNT);
-	}
+	reader_barrier();
+	_STORE_SHARED(urcu_active_readers, urcu_active_readers - RCU_GP_COUNT);
 }
 
 /**

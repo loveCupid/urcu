@@ -31,6 +31,7 @@
 #include <string.h>
 #include <errno.h>
 #include <poll.h>
+#include <unistd.h>
 
 #define BUILD_QSBR_LIB
 #include "urcu-qsbr-static.h"
@@ -117,7 +118,8 @@ static void wait_for_quiescent_state(void)
 		index->urcu_reader_status->gp_waiting = 1;
 		while (rcu_gp_ongoing(&index->urcu_reader_status->qs_gp)) {
 			if (wait_loops++ == RCU_QS_ACTIVE_ATTEMPTS) {
-				sched_yield();	/* ideally sched_yield_to() */
+				/* adapted wait time, in us */
+				usleep(LOAD_SHARED(index->urcu_reader_status->qs_time_delta_usec));
 				wait_loops = 0;
 			} else {
 #ifndef HAS_INCOHERENT_CACHES

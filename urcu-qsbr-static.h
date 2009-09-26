@@ -222,16 +222,16 @@ static inline void _rcu_read_unlock(void)
 static inline void _rcu_quiescent_state(void)
 {
 	long gp_ctr;
-	struct timeval current_time;
+	struct timeval current_time, delta_time;
 
 	smp_mb();
 	gettimeofday(&current_time, NULL);
-	if (current_time.tv_sec - urcu_reader_status.qs_time_last.tv_sec >= 1)
+	timersub(&current_time, &urcu_reader_status.qs_time_last, &delta_time);
+	if (delta_time.tv_sec >= 1)
 		_STORE_SHARED(urcu_reader_status.qs_time_delta_usec, 1000000);
 	else
 		_STORE_SHARED(urcu_reader_status.qs_time_delta_usec,
-		      (unsigned long)current_time.tv_usec
-		      - (unsigned long)urcu_reader_status.qs_time_last.tv_usec);
+		      (unsigned long)delta_time.tv_usec);
 	urcu_reader_status.qs_time_last = current_time;
 	/*
 	 * volatile accesses can be reordered by the compiler when put in the
@@ -259,15 +259,15 @@ static inline void _rcu_thread_offline(void)
 
 static inline void _rcu_thread_online(void)
 {
-	struct timeval current_time;
+	struct timeval current_time, delta_time;
 
 	gettimeofday(&current_time, NULL);
-	if (current_time.tv_sec - urcu_reader_status.qs_time_last.tv_sec >= 1)
+	timersub(&current_time, &urcu_reader_status.qs_time_last, &delta_time);
+	if (delta_time.tv_sec >= 1)
 		_STORE_SHARED(urcu_reader_status.qs_time_delta_usec, 1000000);
 	else
 		_STORE_SHARED(urcu_reader_status.qs_time_delta_usec,
-		      (unsigned long)current_time.tv_usec
-		      - (unsigned long)urcu_reader_status.qs_time_last.tv_usec);
+		      (unsigned long)delta_time.tv_usec);
 	urcu_reader_status.qs_time_last = current_time;
 	_STORE_SHARED(urcu_reader_status.qs_time_delta_usec, 0);
 	_STORE_SHARED(urcu_reader_status.qs_gp, LOAD_SHARED(urcu_gp_ctr));

@@ -239,18 +239,15 @@ static inline void _rcu_thread_offline(void)
 {
 	smp_mb();
 	STORE_SHARED(urcu_reader_status.qs_gp, 0);
+	if (unlikely(LOAD_SHARED(urcu_gp_ctr) & RCU_GP_ONGOING) &&
+	    unlikely(urcu_reader_status.gp_waiting)) {
+		sched_yield();
+	}
 }
 
 static inline void _rcu_thread_online(void)
 {
-	long gp_ctr;
-
-	if (unlikely((gp_ctr = LOAD_SHARED(urcu_gp_ctr)) & RCU_GP_ONGOING) &&
-	    unlikely(urcu_reader_status.gp_waiting)) {
-		sched_yield();
-		gp_ctr = LOAD_SHARED(urcu_gp_ctr);
-	}
-	_STORE_SHARED(urcu_reader_status.qs_gp, gp_ctr);
+	_STORE_SHARED(urcu_reader_status.qs_gp, LOAD_SHARED(urcu_gp_ctr));
 	smp_mb();
 }
 

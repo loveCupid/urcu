@@ -118,6 +118,7 @@ static void wait_for_quiescent_state(void)
 		while (rcu_gp_ongoing(&index->urcu_reader_status->qs_gp)) {
 			if (wait_loops++ == RCU_QS_ACTIVE_ATTEMPTS) {
 				sched_yield();	/* ideally sched_yield_to() */
+				wait_loops = 0;
 			} else {
 #ifndef HAS_INCOHERENT_CACHES
 				cpu_relax();

@@ -220,6 +220,10 @@ void wait_for_quiescent_state(void)
 	for (index = registry; index < registry + num_readers; index++) {
 		int wait_loops = 0;
 
+		if (likely(!rcu_old_gp_ongoing(
+				&index->urcu_reader_status->active_readers)))
+			continue;
+
 		index->urcu_reader_status->gp_waiting = 1;
 #ifndef HAS_INCOHERENT_CACHES
 		while (rcu_old_gp_ongoing(

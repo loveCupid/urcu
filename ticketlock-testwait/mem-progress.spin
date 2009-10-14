@@ -54,15 +54,11 @@ inline do_pause()
 {
 	if
 	:: need_pause() ->
-		if
+		do
 		:: 1 ->
-			do
-			:: 1 ->
-				skip;
-			od;
-		:: 1 -> skip;
-		fi;
-	:: else ->
+			skip;
+		od;
+	:: 1 ->
 		skip;
 	fi;
 }

@@ -1,1 +1,1 @@
-(([] <> !np_) || (!(<> [] is_one_enabled -> [] <> last_is_one)))
+((<> [] is_one_enabled -> [] <> last_is_one) -> ([] <> !np_))

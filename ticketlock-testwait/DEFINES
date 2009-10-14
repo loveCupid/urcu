@@ -1,1 +1,3 @@
 #define refcount_gt_one (refcount > 1)
+#define is_one_enabled	(enabled(1))
+#define last_is_one	(_last == 1)

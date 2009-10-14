@@ -41,6 +41,10 @@ byte refcount = 0;
 #define need_pause()	(_pid == 2)
 
 /*
+ * do_pause() disabled:
+ * get similar effect by disabling weak fairness.
+ */
+/*
  * Test weak fairness by either not pausing or cycling for any number of
  * steps, or forever.
  * Models a slow thread. Should be added between each atomic steps.
@@ -106,10 +110,11 @@ proctype proc_B()
 
 	do
 	:: 1 ->
-		do_pause();
+progress_B:
+		//do_pause();
 		spin_lock(lock, ticket);
 		refcount = refcount + 1;
-		do_pause();
+		//do_pause();
 		refcount = refcount - 1;
 		spin_unlock(lock);
 	od;

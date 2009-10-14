@@ -82,7 +82,9 @@ run: pan
 	./pan -a -v -c1 -X -m1000000 -w19
 
 run_weak_fair: pan_fair
-	./pan_fair -a -f -v -c1 -X -m1000000 -w20
+	./pan_fair -a -v -c1 -X -m1000000 -w20
+	#fairness
+	#./pan_fair -a -f -v -c1 -X -m1000000 -w20
 
 pan_fair: pan_fair.c
 	gcc -w ${CFLAGS} -DNFAIR=4 -o pan_fair pan_fair.c

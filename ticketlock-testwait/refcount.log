@@ -1,0 +1,18 @@
+make[1]: Entering directory `/home/compudj/doc/userspace-rcu/ticketlock-testwait'
+rm -f pan* trail.out .input.spin* *.spin.trail .input.define
+touch .input.define
+cat DEFINES > pan.ltl
+cat .input.define >> pan.ltl
+spin -f "!(`cat refcount.ltl | grep -v ^//`)" >> pan.ltl
+cat DEFINES > .input.spin
+cat .input.define >> .input.spin
+cat mem.spin >> .input.spin
+rm -f .input.spin.trail
+spin -a -X -N pan.ltl .input.spin
+Exit-Status 0
+gcc -w -DHASH64 -o pan pan.c
+./pan -a -v -c1 -X -m1000000 -w19
+warning: for p.o. reduction to be valid the never claim must be stutter-invariant
+(never claims generated from LTL formulae are stutter-invariant)
+depth 0: Claim reached state 5 (line 89)
+Depth=  889941 States=    1e+06 Transitions=  2.5e+06 Memory=   103.585	t=   3.39 R=   3e+05

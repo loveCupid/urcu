@@ -333,8 +333,10 @@ void *dequeue(struct queue *q, bool *not_empty)
 
 		if (head == tail) {
 			/* If all three are consistent, the queue is empty.  */
-			if (!next)
+			if (!next) {
+				rcu_read_unlock();
 				return NULL;
+			}
 
 			/* Help moving tail further.  */
 			uatomic_cmpxchg(&q->tail, tail, next);

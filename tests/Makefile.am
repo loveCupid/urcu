@@ -15,7 +15,7 @@ noinst_PROGRAMS = test_urcu test_urcu_dynamic_link test_urcu_timing \
         test_urcu_bp test_urcu_bp_dynamic_link \
         test_urcu_lfq test_urcu_signal_lfq test_urcu_dynamic_link_lfq \
         test_urcu_signal_dynamic_link_lfq test_urcu_mb_lfq \
-        test_urcu_yield_lfq test_urcu_signal_yield_lfq test_urcu_defer_lfq \
+        test_urcu_yield_lfq test_urcu_signal_yield_lfq \
 	test_qsbr_lfq test_qsbr_dynamic_link_lfq
 
 noinst_HEADERS = rcutorture.h
@@ -155,8 +155,6 @@ test_urcu_bp_dynamic_link_SOURCES = test_urcu_bp.c $(URCU_BP)
 test_urcu_bp_dynamic_link_CFLAGS = -DDYNAMIC_LINK_TEST $(AM_CFLAGS)
 
 test_urcu_lfq_SOURCES = test_urcu_lfq.c $(URCU)
-
-test_urcu_defer_lfq_SOURCES = test_urcu_defer_lfq.c $(URCU_DEFER)
 
 test_urcu_signal_lfq_SOURCES = test_urcu_lfq.c $(URCU_SIGNAL)
 test_urcu_signal_lfq_CFLAGS = -DRCU_SIGNAL $(AM_CFLAGS)

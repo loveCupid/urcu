@@ -24,7 +24,9 @@ if COMPAT_FUTEX
 COMPAT+=compat_futex.c
 endif
 
-lib_LTLIBRARIES = liburcu.la liburcu-qsbr.la liburcu-mb.la liburcu-signal.la liburcu-bp.la liburcu-defer.la
+lib_LTLIBRARIES = liburcu.la liburcu-qsbr.la liburcu-mb.la \
+		  liburcu-signal.la liburcu-bp.la liburcu-defer.la \
+		  liburcu-rbtree.la
 
 liburcu_la_SOURCES = urcu.c urcu-pointer.c $(COMPAT)
 
@@ -39,3 +41,5 @@ liburcu_signal_la_CFLAGS = -DRCU_SIGNAL
 liburcu_bp_la_SOURCES = urcu-bp.c urcu-pointer.c $(COMPAT)
 
 liburcu_defer_la_SOURCES = urcu-defer.c $(COMPAT)
+
+liburcu_rbtree_la_SOURCES = urcu-rbtree.c $(COMPAT)

@@ -12,7 +12,7 @@ noinst_PROGRAMS = test_urcu test_urcu_dynamic_link test_urcu_timing \
         test_urcu_mb_gc test_qsbr_gc test_qsbr_lgc test_urcu_signal_lgc \
         test_urcu_mb_lgc test_qsbr_dynamic_link test_urcu_defer \
         test_uatomic test_urcu_assign test_urcu_assign_dynamic_link \
-        test_urcu_bp test_urcu_bp_dynamic_link
+        test_urcu_bp test_urcu_bp_dynamic_link test_urcu_rbtree
 noinst_HEADERS = rcutorture.h
 
 if COMPAT_ARCH
@@ -33,6 +33,7 @@ URCU_MB=$(top_srcdir)/urcu.c $(top_srcdir)/urcu-pointer.c $(COMPAT)
 URCU_SIGNAL=$(top_srcdir)/urcu.c $(top_srcdir)/urcu-pointer.c $(COMPAT)
 URCU_BP=$(top_srcdir)/urcu-bp.c $(top_srcdir)/urcu-pointer.c $(COMPAT)
 URCU_DEFER=$(top_srcdir)/urcu.c $(top_srcdir)/urcu-defer.c $(top_srcdir)/urcu-pointer.c $(COMPAT)
+URCU_RBTREE=$(URCU_DEFER) $(top_srcdir)/urcu-rbtree.c
 
 URCU_LIB=$(top_builddir)/liburcu.la
 URCU_QSBR_LIB=$(top_builddir)/liburcu-qsbr.la
@@ -136,6 +137,8 @@ test_qsbr_dynamic_link_SOURCES = test_qsbr.c $(URCU_QSBR)
 test_qsbr_dynamic_link_CFLAGS = -DDYNAMIC_LINK_TEST $(AM_CFLAGS)
 
 test_urcu_defer_SOURCES = test_urcu_defer.c $(URCU_DEFER)
+
+test_urcu_rbtree_SOURCES = test_urcu_rbtree.c $(URCU_RBTREE)
 
 test_uatomic_SOURCES = test_uatomic.c $(COMPAT)
 

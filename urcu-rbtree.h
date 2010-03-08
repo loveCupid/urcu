@@ -84,8 +84,13 @@ int rcu_rbtree_insert(struct rcu_rbtree_node **root,
 /*
  * Remove node from tree.
  * Must wait for a grace period after removal before performing deletion of the
- * node.
+ * node. Note: it is illegal to re-use the same node pointer passed to "insert"
+ * also to "remove", because it may have been copied and garbage-collected since
+ * the insertion. A "search" for the key in the tree should be done to get
+ * "node".
  * Returns 0 on success. May fail with -ENOMEM.
+ *
+ * The caller is responsible for freeing the node after a grace period.
  */
 int rcu_rbtree_remove(struct rcu_rbtree_node **root,
 		      struct rcu_rbtree_node *node,

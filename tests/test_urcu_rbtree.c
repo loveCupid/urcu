@@ -34,6 +34,7 @@
 #include <sys/syscall.h>
 #include <sched.h>
 #include <errno.h>
+#include <time.h>
 
 #include <urcu/arch.h>
 
@@ -62,8 +63,9 @@ static inline pid_t gettid(void)
 #endif
 #include <urcu.h>
 #include <urcu-rbtree.h>
+#include <urcu-defer.h>
 
-static struct rcu_rbtree_node *rbtree_root;
+static struct rcu_rbtree_node *rbtree_root = &rcu_rbtree_nil;
 
 /* TODO: error handling testing for -ENOMEM */
 struct rcu_rbtree_node *rbtree_alloc(void)
@@ -71,9 +73,19 @@ struct rcu_rbtree_node *rbtree_alloc(void)
 	return malloc(sizeof(struct rcu_rbtree_node));
 }
 
-struct rcu_rbtree_node *rbtree_free(struct rcu_rbtree_node *node)
+void rbtree_free(struct rcu_rbtree_node *node)
 {
-	return free(node);
+	free(node);
+}
+
+int tree_comp(void *a, void *b)
+{
+	if ((unsigned long)a < (unsigned long)b)
+		return -1;
+	else if ((unsigned long)a > (unsigned long)b)
+		return 1;
+	else
+		return 0;
 }
 
 static volatile int test_go, test_stop;
@@ -232,11 +244,14 @@ void *thr_reader(void *_count)
 void *thr_writer(void *_count)
 {
 	unsigned long long *count = _count;
+	struct rcu_rbtree_node *node;
 
 	printf_verbose("thread_begin %s, thread id : %lx, tid %lu\n",
 			"writer", pthread_self(), (unsigned long)gettid());
 
 	set_affinity();
+
+	rcu_defer_register_thread();
 
 	while (!test_go)
 	{
@@ -244,16 +259,23 @@ void *thr_writer(void *_count)
 	smp_mb();
 
 	for (;;) {
-
+		node = rbtree_alloc();
+		rcu_copy_mutex_lock();
+		node->key = (void *)(unsigned long)(rand() % 2048);
+		rcu_rbtree_insert(&rbtree_root, node, tree_comp, rbtree_alloc,
+				  rbtree_free);
 		if (unlikely(wduration))
 			loop_sleep(wduration);
 
+		rcu_copy_mutex_unlock();
 		nr_writes++;
 		if (unlikely(!test_duration_write()))
 			break;
 		if (unlikely(wdelay))
 			loop_sleep(wdelay);
 	}
+
+	rcu_defer_unregister_thread();
 
 	printf_verbose("thread_end %s, thread id : %lx, tid %lu\n",
 			"writer", pthread_self(), (unsigned long)gettid());
@@ -367,6 +389,8 @@ int main(int argc, char **argv)
 	tid_writer = malloc(sizeof(*tid_writer) * nr_writers);
 	count_reader = malloc(sizeof(*count_reader) * nr_readers);
 	count_writer = malloc(sizeof(*count_writer) * nr_writers);
+
+	srand(time(NULL));
 
 	next_aff = 0;
 

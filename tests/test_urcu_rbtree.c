@@ -267,6 +267,10 @@ void *thr_writer(void *_count)
 		if (unlikely(wduration))
 			loop_sleep(wduration);
 
+		rcu_rbtree_remove(&rbtree_root, node, tree_comp, rbtree_alloc,
+				  rbtree_free);
+		defer_rcu((void (*)(void *))rbtree_free, node);
+
 		rcu_copy_mutex_unlock();
 		nr_writes++;
 		if (unlikely(!test_duration_write()))

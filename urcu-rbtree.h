@@ -60,6 +60,9 @@ struct rcu_rbtree_node {
 	unsigned int color:1;
 };
 
+/* nil rbtree node. "root" must initially point to this node. */
+struct rcu_rbtree_node rcu_rbtree_nil;
+
 /*
  * Each of the search primitive and "prev"/"next" iteration must be called with
  * the RCU read-side lock held.

@@ -45,7 +45,7 @@
  */
 
 /* Sentinel (bottom nodes). Don't care about p, left, right and key values */
-static struct rcu_rbtree_node nil = {
+struct rcu_rbtree_node rcu_rbtree_nil = {
 	.color = COLOR_BLACK,
 };
 
@@ -175,7 +175,7 @@ static struct rcu_rbtree_node *left_rotate(struct rcu_rbtree_node **root,
 	smp_wmb();
 
 	/* Make parents point to the copies */
-	if (x->p == &nil)
+	if (x->p == &rcu_rbtree_nil)
 		_STORE_SHARED(*root, yc);
 	else if (x == x->p->left)
 		_STORE_SHARED(x->p->left, yc);
@@ -202,10 +202,10 @@ static void left_rotate(struct rcu_rbtree_node **root,
 
 	y = x->right;
 	x->right = y->left;
-	if (y->left != &nil)
+	if (y->left != &rcu_rbtree_nil)
 		y->left->p = x;
 	y->p = x->p;
-	if (x->p == &nil)
+	if (x->p == &rcu_rbtree_nil)
 		*root = y;
 	else if (x == x->p->left)
 		x->p->left = y;
@@ -246,7 +246,7 @@ static struct rcu_rbtree_node *right_rotate(struct rcu_rbtree_node **root,
 	smp_wmb();
 
 	/* Make parents point to the copies */
-	if (x->p == &nil)
+	if (x->p == &rcu_rbtree_nil)
 		_STORE_SHARED(*root, yc);
 	else if (x == x->p->right)
 		_STORE_SHARED(x->p->right, yc);
@@ -273,10 +273,10 @@ static void right_rotate(struct rcu_rbtree_node **root,
 
 	y = x->left;
 	x->left = y->right;
-	if (y->right != &nil)
+	if (y->right != &rcu_rbtree_nil)
 		y->right->p = x;
 	y->p = x->p;
-	if (x->p == &nil)
+	if (x->p == &rcu_rbtree_nil)
 		*root = y;
 	else if (x == x->p->right)
 		x->p->right = y;
@@ -349,10 +349,10 @@ int rcu_rbtree_insert(struct rcu_rbtree_node **root,
 {
 	struct rcu_rbtree_node *x, *y;
 
-	y = &nil;
+	y = &rcu_rbtree_nil;
 	x = *root;
 
-	while (x != &nil) {
+	while (x != &rcu_rbtree_nil) {
 		y = x;
 		if (comp(z->key, x->key) < 0)
 			x = x->left;
@@ -361,8 +361,8 @@ int rcu_rbtree_insert(struct rcu_rbtree_node **root,
 	}
 
 	z->p = y;
-	z->left = &nil;
-	z->right = &nil;
+	z->left = &rcu_rbtree_nil;
+	z->right = &rcu_rbtree_nil;
 	z->color = COLOR_RED;
 
 	/*
@@ -371,7 +371,7 @@ int rcu_rbtree_insert(struct rcu_rbtree_node **root,
 	 */
 	smp_wmb();
 
-	if (y == &nil)
+	if (y == &rcu_rbtree_nil)
 		_STORE_SHARED(*root, z);
 	else if (comp(z->key, y->key) < 0)
 		_STORE_SHARED(y->left, z);
@@ -412,7 +412,7 @@ rcu_rbtree_transplant(struct rcu_rbtree_node **root,
 	smp_wmb();
 
 	/* Assign upper-level pointer to vc, replacing u. */
-	if (u->p == &nil)
+	if (u->p == &rcu_rbtree_nil)
 		_STORE_SHARED(*root, vc);
 	else if (u == u->p->left)
 		_STORE_SHARED(u->p->left, vc);
@@ -542,7 +542,7 @@ rcu_rbtree_remove_nonil(struct rcu_rbtree_node **root,
 		/* Transplant y->right into y, external parent links */
 
 		/* Assign upper-level pointer to xc, replacing y. */
-		if (y->p == &nil)
+		if (y->p == &rcu_rbtree_nil)
 			_STORE_SHARED(*root, xc);
 		else if (y == y->p->left)
 			_STORE_SHARED(y->p->left, xc);
@@ -551,7 +551,7 @@ rcu_rbtree_remove_nonil(struct rcu_rbtree_node **root,
 	}
 
 	/* Transplant y into z, update external parent links */
-	if (z->p == &nil)
+	if (z->p == &rcu_rbtree_nil)
 		_STORE_SHARED(*root, yc);
 	else if (z == z->p->left)
 		_STORE_SHARED(z->p->left, yc);
@@ -583,9 +583,9 @@ int rcu_rbtree_remove(struct rcu_rbtree_node **root,
 	y = z;
 	y_original_color = y->color;
 
-	if (z->left == &nil) {
+	if (z->left == &rcu_rbtree_nil) {
 		x = rcu_rbtree_transplant(root, z, z->right, rballoc, rbfree);
-	} else if (z->right == &nil) {
+	} else if (z->right == &rcu_rbtree_nil) {
 		x = rcu_rbtree_transplant(root, z, z->left, rballoc, rbfree);
 	} else {
 		y = rcu_rbtree_min(z->right, comp);

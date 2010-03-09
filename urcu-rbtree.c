@@ -157,16 +157,23 @@ static struct rcu_rbtree_node *left_rotate(struct rcu_rbtree_node **root,
 
 	y = x->right;
 
-	yc = rballoc();
-	xc = rballoc();
-	*xc = *x;
-	*yc = *y;
+	if (x != &rcu_rbtree_nil) {
+		xc = rballoc();
+		*xc = *x;
+		/* Modify children and parents in the node copies */
+		xc->right = y->left;
+		xc->p = yc;
+	} else
+		xc = &rcu_rbtree_nil;
 
-	/* Modify children and parents in the node copies */
-	xc->right = y->left;
-	xc->p = yc;
-	yc->left = xc;
-	yc->p = x->p;
+	if (y != &rcu_rbtree_nil) {
+		yc = rballoc();
+		*yc = *y;
+		/* Modify children and parents in the node copies */
+		yc->left = xc;
+		yc->p = x->p;
+	} else
+		yc = &rcu_rbtree_nil;
 
 	/*
 	 * Order stores to node copies (children/parents) before stores that
@@ -183,13 +190,16 @@ static struct rcu_rbtree_node *left_rotate(struct rcu_rbtree_node **root,
 		_STORE_SHARED(x->p->right, yc);
 
 	/* Assign children parents to copies */
-	_STORE_SHARED(xc->right->p, xc);
-	_STORE_SHARED(xc->left->p, xc);
-	_STORE_SHARED(yc->right->p, yc);
-	/* yc->left is xc, its parent is already set in node copy */
-
-	defer_rcu(rbfree, x);
-	defer_rcu(rbfree, y);
+	if (x != &rcu_rbtree_nil) {
+		_STORE_SHARED(xc->right->p, xc);
+		_STORE_SHARED(xc->left->p, xc);
+		defer_rcu(rbfree, x);
+	}
+	if (y != &rcu_rbtree_nil) {
+		_STORE_SHARED(yc->right->p, yc);
+		defer_rcu(rbfree, y);
+		/* yc->left is xc, its parent is already set in node copy */
+	}
 	return xc;
 }
 
@@ -228,16 +238,23 @@ static struct rcu_rbtree_node *right_rotate(struct rcu_rbtree_node **root,
 
 	y = x->left;
 
-	yc = rballoc();
-	xc = rballoc();
-	*xc = *x;
-	*yc = *y;
+	if (x != &rcu_rbtree_nil) {
+		xc = rballoc();
+		*xc = *x;
+		/* Modify children and parents in the node copies */
+		xc->left = y->right;
+		xc->p = yc;
+	} else
+		xc = &rcu_rbtree_nil;
 
-	/* Modify children and parents in the node copies */
-	xc->left = y->right;
-	xc->p = yc;
-	yc->right = xc;
-	yc->p = x->p;
+	if (y != &rcu_rbtree_nil) {
+		yc = rballoc();
+		*yc = *y;
+		/* Modify children and parents in the node copies */
+		yc->right = xc;
+		yc->p = x->p;
+	} else
+		yc = &rcu_rbtree_nil;
 
 	/*
 	 * Order stores to node copies (children/parents) before stores that
@@ -254,13 +271,16 @@ static struct rcu_rbtree_node *right_rotate(struct rcu_rbtree_node **root,
 		_STORE_SHARED(x->p->left, yc);
 
 	/* Assign children parents to copies */
-	_STORE_SHARED(xc->left->p, xc);
-	_STORE_SHARED(xc->right->p, xc);
-	_STORE_SHARED(yc->left->p, yc);
-	/* yc->right is xc, its parent is already set in node copy */
-
-	defer_rcu(rbfree, x);
-	defer_rcu(rbfree, y);
+	if (x != &rcu_rbtree_nil) {
+		_STORE_SHARED(xc->left->p, xc);
+		_STORE_SHARED(xc->right->p, xc);
+		defer_rcu(rbfree, x);
+	}
+	if (y != &rcu_rbtree_nil) {
+		_STORE_SHARED(yc->left->p, yc);
+		defer_rcu(rbfree, y);
+		/* yc->right is xc, its parent is already set in node copy */
+	}
 	return xc;
 }
 
@@ -399,17 +419,21 @@ rcu_rbtree_transplant(struct rcu_rbtree_node **root,
 {
 	struct rcu_rbtree_node *vc;
 
-	vc = rballoc();
-	*vc = *v;
+	if (v != &rcu_rbtree_nil) {
+		vc = rballoc();
+		*vc = *v;
 
-	/* Change vc parent pointer */
-	vc->p = u->p;
+		/* Change vc parent pointer */
+		vc->p = u->p;
 
-	/*
-	 * Order stores to node copies (children/parents) before stores that
-	 * will make the copies visible to the rest of the tree.
-	 */
-	smp_wmb();
+		/*
+		 * Order stores to node copies (children/parents) before stores
+		 * that will make the copies visible to the rest of the tree.
+		 */
+		smp_wmb();
+	} else {
+		vc = &rcu_rbtree_nil;
+	}
 
 	/* Assign upper-level pointer to vc, replacing u. */
 	if (u->p == &rcu_rbtree_nil)
@@ -419,14 +443,16 @@ rcu_rbtree_transplant(struct rcu_rbtree_node **root,
 	else
 		_STORE_SHARED(u->p->right, vc);
 
-	/*
-	 * The children pointers in vc are the same as v. We can therefore
-	 * reparent v's children to vc safely.
-	 */
-	_STORE_SHARED(vc->right->p, vc);
-	_STORE_SHARED(vc->left->p, vc);
+	if (v != &rcu_rbtree_nil) {
+		/*
+		 * The children pointers in vc are the same as v. We can
+		 * therefore reparent v's children to vc safely.
+		 */
+		_STORE_SHARED(vc->right->p, vc);
+		_STORE_SHARED(vc->left->p, vc);
 
-	defer_rcu(rbfree, v);
+		defer_rcu(rbfree, v);
+	}
 	return vc;
 }
 

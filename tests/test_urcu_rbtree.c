@@ -245,7 +245,7 @@ void *thr_writer(void *_count)
 {
 	unsigned long long *count = _count;
 	struct rcu_rbtree_node *node;
-	void *key;
+	void *key[3];
 
 	printf_verbose("thread_begin %s, thread id : %lx, tid %lu\n",
 			"writer", pthread_self(), (unsigned long)gettid());
@@ -260,16 +260,44 @@ void *thr_writer(void *_count)
 	smp_mb();
 
 	for (;;) {
-		node = rbtree_alloc();
 		rcu_copy_mutex_lock();
-		key = (void *)(unsigned long)(rand() % 2048);
-		node->key = key;
+
+		node = rbtree_alloc();
+		key[0] = (void *)(unsigned long)(rand() % 2048);
+		node->key = key[0];
 		rcu_rbtree_insert(&rbtree_root, node, tree_comp, rbtree_alloc,
 				  rbtree_free);
+
+		node = rbtree_alloc();
+		key[1] = (void *)(unsigned long)(rand() % 2048);
+		node->key = key[1];
+		rcu_rbtree_insert(&rbtree_root, node, tree_comp, rbtree_alloc,
+				  rbtree_free);
+
+		node = rbtree_alloc();
+		key[2] = (void *)(unsigned long)(rand() % 2048);
+		node->key = key[2];
+		rcu_rbtree_insert(&rbtree_root, node, tree_comp, rbtree_alloc,
+				  rbtree_free);
+
+
 		if (unlikely(wduration))
 			loop_sleep(wduration);
 
-		node = rcu_rbtree_search(rbtree_root, key, tree_comp);
+		node = rcu_rbtree_search(rbtree_root, key[2], tree_comp);
+		assert(node);
+		rcu_rbtree_remove(&rbtree_root, node, tree_comp, rbtree_alloc,
+				  rbtree_free);
+		defer_rcu((void (*)(void *))rbtree_free, node);
+
+		node = rcu_rbtree_search(rbtree_root, key[1], tree_comp);
+		assert(node);
+		rcu_rbtree_remove(&rbtree_root, node, tree_comp, rbtree_alloc,
+				  rbtree_free);
+		defer_rcu((void (*)(void *))rbtree_free, node);
+
+		node = rcu_rbtree_search(rbtree_root, key[0], tree_comp);
+		assert(node);
 		rcu_rbtree_remove(&rbtree_root, node, tree_comp, rbtree_alloc,
 				  rbtree_free);
 		defer_rcu((void (*)(void *))rbtree_free, node);

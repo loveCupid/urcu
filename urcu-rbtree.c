@@ -198,8 +198,8 @@ static struct rcu_rbtree_node *left_rotate(struct rcu_rbtree_node **root,
 	/*
 	 * redirect old nodes to new.
 	 */
-	x->redir = xc;
-	y->redir = yc;
+	_STORE_SHARED(x->redir, xc);
+	_STORE_SHARED(y->redir, yc);
 
 	/*
 	 * Ensure that redirections are visible before updating external
@@ -296,8 +296,8 @@ static struct rcu_rbtree_node *right_rotate(struct rcu_rbtree_node **root,
 	/*
 	 * redirect old nodes to new.
 	 */
-	x->redir = xc;
-	y->redir = yc;
+	_STORE_SHARED(x->redir, xc);
+	_STORE_SHARED(y->redir, yc);
 
 	/*
 	 * Ensure that redirections are visible before updating external
@@ -477,7 +477,7 @@ rcu_rbtree_transplant(struct rcu_rbtree_node **root,
 		/*
 		 * redirect old node to new.
 		 */
-		v->redir = vc;
+		_STORE_SHARED(v->redir, vc);
 
 		/*
 		 * Ensure that redirections are visible before updating external
@@ -624,8 +624,8 @@ rcu_rbtree_remove_nonil(struct rcu_rbtree_node **root,
 	 * redirect old nodes to new.
 	 */
 	if (x != &rcu_rbtree_nil)
-		x->redir = xc;
-	y->redir = yc;
+		_STORE_SHARED(x->redir, xc);
+	_STORE_SHARED(y->redir, yc);
 
 	/*
 	 * Ensure that redirections are visible before updating external

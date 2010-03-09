@@ -105,20 +105,25 @@ struct rcu_rbtree_node *rcu_rbtree_next(struct rcu_rbtree_node *x,
 	if ((xr = rcu_dereference(x->right)) != &rcu_rbtree_nil)
 		return rcu_rbtree_min(xr, comp);
 	y = rcu_dereference(x->p);
-	while ((yredir = rcu_dereference(y->redir)) != NULL)
-		y = yredir;
 	for (;;) {
+		int found = 0;
 		if (y == &rcu_rbtree_nil)
 			break;
 		yr = rcu_dereference(y->right);
-		while ((yrredir = rcu_dereference(yr->redir)) != NULL)
-			yr = yrredir;
-		if (x != yr)
+		/* Find out if x is one of the parent right children versions */
+		if (x == yr) {
+			goto found;
+		} else {
+			while ((yrredir = rcu_dereference(yr->redir)) != NULL) {
+				yr = yrredir;
+				if (x == yr)
+					goto found;
+			}
 			break;
+		}
+found:
 		x = y;
 		y = rcu_dereference(y->p);
-		while ((yredir = rcu_dereference(y->redir)) != NULL)
-			y = yredir;
 	}
 	return y;
 }
@@ -126,27 +131,32 @@ struct rcu_rbtree_node *rcu_rbtree_next(struct rcu_rbtree_node *x,
 struct rcu_rbtree_node *rcu_rbtree_prev(struct rcu_rbtree_node *x,
 					rcu_rbtree_comp comp)
 {
-	struct rcu_rbtree_node *xl, *y, *yredir, *yl, *ylredir;;
+	struct rcu_rbtree_node *xl, *y, *yredir, *yl, *ylredir;
 
 	x = rcu_dereference(x);
 
 	if ((xl = rcu_dereference(x->left)) != &rcu_rbtree_nil)
-		return rcu_rbtree_max(xl, comp);
+		return rcu_rbtree_min(xl, comp);
 	y = rcu_dereference(x->p);
-	while ((yredir = rcu_dereference(y->redir)) != NULL)
-		y = yredir;
 	for (;;) {
+		int found = 0;
 		if (y == &rcu_rbtree_nil)
 			break;
 		yl = rcu_dereference(y->left);
-		while ((ylredir = rcu_dereference(yl->redir)) != NULL)
-			yl = ylredir;
-		if (x != yl)
+		/* Find out if x is one of the parent left children versions */
+		if (x == yl) {
+			goto found;
+		} else {
+			while ((ylredir = rcu_dereference(yl->redir)) != NULL) {
+				yl = ylredir;
+				if (x == yl)
+					goto found;
+			}
 			break;
+		}
+found:
 		x = y;
 		y = rcu_dereference(y->p);
-		while ((yredir = rcu_dereference(y->redir)) != NULL)
-			y = yredir;
 	}
 	return y;
 }

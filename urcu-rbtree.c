@@ -98,7 +98,7 @@ struct rcu_rbtree_node *rcu_rbtree_max(struct rcu_rbtree_node *x,
 struct rcu_rbtree_node *rcu_rbtree_next(struct rcu_rbtree_node *x,
 					rcu_rbtree_comp comp)
 {
-	struct rcu_rbtree_node *xr, *y, *yredir;
+	struct rcu_rbtree_node *xr, *y, *yredir, *yr, *yrredir;
 
 	x = rcu_dereference(x);
 
@@ -107,7 +107,14 @@ struct rcu_rbtree_node *rcu_rbtree_next(struct rcu_rbtree_node *x,
 	y = rcu_dereference(x->p);
 	while ((yredir = rcu_dereference(y->redir)) != NULL)
 		y = yredir;
-	while (y != &rcu_rbtree_nil && x == rcu_dereference(y->right)) {
+	for (;;) {
+		if (y == &rcu_rbtree_nil)
+			break;
+		yr = rcu_dereference(y->right);
+		while ((yrredir = rcu_dereference(yr->redir)) != NULL)
+			yr = yrredir;
+		if (x != yr)
+			break;
 		x = y;
 		y = rcu_dereference(y->p);
 		while ((yredir = rcu_dereference(y->redir)) != NULL)
@@ -119,7 +126,7 @@ struct rcu_rbtree_node *rcu_rbtree_next(struct rcu_rbtree_node *x,
 struct rcu_rbtree_node *rcu_rbtree_prev(struct rcu_rbtree_node *x,
 					rcu_rbtree_comp comp)
 {
-	struct rcu_rbtree_node *xl, *y, *yredir;
+	struct rcu_rbtree_node *xl, *y, *yredir, *yl, *ylredir;;
 
 	x = rcu_dereference(x);
 
@@ -128,7 +135,14 @@ struct rcu_rbtree_node *rcu_rbtree_prev(struct rcu_rbtree_node *x,
 	y = rcu_dereference(x->p);
 	while ((yredir = rcu_dereference(y->redir)) != NULL)
 		y = yredir;
-	while (y != &rcu_rbtree_nil && x == rcu_dereference(y->left)) {
+	for (;;) {
+		if (y == &rcu_rbtree_nil)
+			break;
+		yl = rcu_dereference(y->left);
+		while ((ylredir = rcu_dereference(yl->redir)) != NULL)
+			yl = ylredir;
+		if (x != yl)
+			break;
 		x = y;
 		y = rcu_dereference(y->p);
 		while ((yredir = rcu_dereference(y->redir)) != NULL)

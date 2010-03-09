@@ -56,7 +56,7 @@ struct rcu_rbtree_node {
 	void *key;
 
 	/* internally reserved */
-	struct rcu_rbtree_node *p, *left, *right;
+	struct rcu_rbtree_node *p, *left, *right, *redir;
 	unsigned int color:1;
 };
 
@@ -101,7 +101,7 @@ int rcu_rbtree_remove(struct rcu_rbtree_node **root,
 /* RCU read-side */
 
 /*
- * Search key starting from node x. Returns NULL if not found.
+ * Search key starting from node x. Returns &rcu_rbtree_nil if not found.
  */
 struct rcu_rbtree_node* rcu_rbtree_search(struct rcu_rbtree_node *x,
 					  void *key, rcu_rbtree_comp comp);

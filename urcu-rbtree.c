@@ -32,6 +32,7 @@
 
 #include <stdio.h>
 #include <pthread.h>
+#include <assert.h>
 
 #include <urcu-rbtree.h>
 #include <urcu-pointer.h>
@@ -97,16 +98,20 @@ struct rcu_rbtree_node *rcu_rbtree_max(struct rcu_rbtree_node *x,
 struct rcu_rbtree_node *rcu_rbtree_next(struct rcu_rbtree_node *x,
 					rcu_rbtree_comp comp)
 {
-	struct rcu_rbtree_node *xr, *y;
+	struct rcu_rbtree_node *xr, *y, *yredir;
 
 	x = rcu_dereference(x);
 
 	if ((xr = rcu_dereference(x->right)) != &rcu_rbtree_nil)
 		return rcu_rbtree_min(xr, comp);
 	y = rcu_dereference(x->p);
+	while ((yredir = rcu_dereference(y->redir)) != NULL)
+		y = yredir;
 	while (y != &rcu_rbtree_nil && x == rcu_dereference(y->right)) {
 		x = y;
 		y = rcu_dereference(y->p);
+		while ((yredir = rcu_dereference(y->redir)) != NULL)
+			y = yredir;
 	}
 	return y;
 }
@@ -114,16 +119,20 @@ struct rcu_rbtree_node *rcu_rbtree_next(struct rcu_rbtree_node *x,
 struct rcu_rbtree_node *rcu_rbtree_prev(struct rcu_rbtree_node *x,
 					rcu_rbtree_comp comp)
 {
-	struct rcu_rbtree_node *xl, *y;
+	struct rcu_rbtree_node *xl, *y, *yredir;
 
 	x = rcu_dereference(x);
 
 	if ((xl = rcu_dereference(x->left)) != &rcu_rbtree_nil)
 		return rcu_rbtree_max(xl, comp);
 	y = rcu_dereference(x->p);
+	while ((yredir = rcu_dereference(y->redir)) != NULL)
+		y = yredir;
 	while (y != &rcu_rbtree_nil && x == rcu_dereference(y->left)) {
 		x = y;
 		y = rcu_dereference(y->p);
+		while ((yredir = rcu_dereference(y->redir)) != NULL)
+			y = yredir;
 	}
 	return y;
 }
@@ -183,6 +192,18 @@ static struct rcu_rbtree_node *left_rotate(struct rcu_rbtree_node **root,
 	/*
 	 * Order stores to node copies (children/parents) before stores that
 	 * will make the copies visible to the rest of the tree.
+	 */
+	smp_wmb();
+
+	/*
+	 * redirect old nodes to new.
+	 */
+	x->redir = xc;
+	y->redir = yc;
+
+	/*
+	 * Ensure that redirections are visible before updating external
+	 * pointers.
 	 */
 	smp_wmb();
 
@@ -269,6 +290,18 @@ static struct rcu_rbtree_node *right_rotate(struct rcu_rbtree_node **root,
 	/*
 	 * Order stores to node copies (children/parents) before stores that
 	 * will make the copies visible to the rest of the tree.
+	 */
+	smp_wmb();
+
+	/*
+	 * redirect old nodes to new.
+	 */
+	x->redir = xc;
+	y->redir = yc;
+
+	/*
+	 * Ensure that redirections are visible before updating external
+	 * pointers.
 	 */
 	smp_wmb();
 
@@ -392,6 +425,7 @@ int rcu_rbtree_insert(struct rcu_rbtree_node **root,
 	z->left = &rcu_rbtree_nil;
 	z->right = &rcu_rbtree_nil;
 	z->color = COLOR_RED;
+	z->redir = NULL;
 
 	/*
 	 * Order stores to z (children/parents) before stores that will make it
@@ -439,6 +473,17 @@ rcu_rbtree_transplant(struct rcu_rbtree_node **root,
 		 * that will make the copies visible to the rest of the tree.
 		 */
 		smp_wmb();
+
+		/*
+		 * redirect old node to new.
+		 */
+		v->redir = vc;
+
+		/*
+		 * Ensure that redirections are visible before updating external
+		 * pointers.
+		 */
+		smp_wmb();
 	} else {
 		vc = &rcu_rbtree_nil;
 	}
@@ -471,13 +516,14 @@ static void rcu_rbtree_remove_fixup(struct rcu_rbtree_node **root,
 {
 	while (x != *root && x->color == COLOR_BLACK) {
 		if (x == x->p->left) {
-			struct rcu_rbtree_node *w;
+			struct rcu_rbtree_node *w, *t;
 
 			w = x->p->right;
 			if (w->color == COLOR_RED) {
 				w->color == COLOR_BLACK;
 				x->p->color = COLOR_RED;
-				left_rotate(root, x->p, rballoc, rbfree);
+				t = left_rotate(root, x->p, rballoc, rbfree);
+				assert(x->p->left == t->left);
 				/* x is a left node, not copied by rotation */
 				w = x->p->right;
 			}
@@ -571,6 +617,19 @@ rcu_rbtree_remove_nonil(struct rcu_rbtree_node **root,
 	/*
 	 * Order stores to node copies (children/parents) before stores that
 	 * will make the copies visible to the rest of the tree.
+	 */
+	smp_wmb();
+
+	/*
+	 * redirect old nodes to new.
+	 */
+	if (x != &rcu_rbtree_nil)
+		x->redir = xc;
+	y->redir = yc;
+
+	/*
+	 * Ensure that redirections are visible before updating external
+	 * pointers.
 	 */
 	smp_wmb();
 

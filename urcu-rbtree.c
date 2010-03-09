@@ -57,7 +57,7 @@ struct rcu_rbtree_node* rcu_rbtree_search(struct rcu_rbtree_node *x,
 {
 	x = rcu_dereference(x);
 
-	while (x != NULL && k != x->key) {
+	while (x != &rcu_rbtree_nil && k != x->key) {
 		if (k < x->key)
 			x = rcu_dereference(x->left);
 		else
@@ -73,7 +73,7 @@ struct rcu_rbtree_node *rcu_rbtree_min(struct rcu_rbtree_node *x,
 
 	x = rcu_dereference(x);
 
-	while ((xl = rcu_dereference(x->left)) != NULL)
+	while ((xl = rcu_dereference(x->left)) != &rcu_rbtree_nil)
 		x = xl;
 	return x;
 }
@@ -85,7 +85,7 @@ struct rcu_rbtree_node *rcu_rbtree_max(struct rcu_rbtree_node *x,
 
 	x = rcu_dereference(x);
 
-	while ((xr = rcu_dereference(x->right)) != NULL)
+	while ((xr = rcu_dereference(x->right)) != &rcu_rbtree_nil)
 		x = xr;
 	return x;
 }
@@ -101,10 +101,10 @@ struct rcu_rbtree_node *rcu_rbtree_next(struct rcu_rbtree_node *x,
 
 	x = rcu_dereference(x);
 
-	if ((xr = rcu_dereference(x->right)) != NULL)
+	if ((xr = rcu_dereference(x->right)) != &rcu_rbtree_nil)
 		return rcu_rbtree_min(xr, comp);
 	y = rcu_dereference(x->p);
-	while (y != NULL && x == rcu_dereference(y->right)) {
+	while (y != &rcu_rbtree_nil && x == rcu_dereference(y->right)) {
 		x = y;
 		y = rcu_dereference(y->p);
 	}
@@ -118,10 +118,10 @@ struct rcu_rbtree_node *rcu_rbtree_prev(struct rcu_rbtree_node *x,
 
 	x = rcu_dereference(x);
 
-	if ((xl = rcu_dereference(x->left)) != NULL)
+	if ((xl = rcu_dereference(x->left)) != &rcu_rbtree_nil)
 		return rcu_rbtree_max(xl, comp);
 	y = rcu_dereference(x->p);
-	while (y != NULL && x == rcu_dereference(y->left)) {
+	while (y != &rcu_rbtree_nil && x == rcu_dereference(y->left)) {
 		x = y;
 		y = rcu_dereference(y->p);
 	}
@@ -160,16 +160,21 @@ static struct rcu_rbtree_node *left_rotate(struct rcu_rbtree_node **root,
 	if (x != &rcu_rbtree_nil) {
 		xc = rballoc();
 		*xc = *x;
-		/* Modify children and parents in the node copies */
+	}
+
+	if (y != &rcu_rbtree_nil) {
+		yc = rballoc();
+		*yc = *y;
+	}
+
+	/* Modify children and parents in the node copies */
+	if (x != &rcu_rbtree_nil) {
 		xc->right = y->left;
 		xc->p = yc;
 	} else
 		xc = &rcu_rbtree_nil;
 
 	if (y != &rcu_rbtree_nil) {
-		yc = rballoc();
-		*yc = *y;
-		/* Modify children and parents in the node copies */
 		yc->left = xc;
 		yc->p = x->p;
 	} else
@@ -241,16 +246,21 @@ static struct rcu_rbtree_node *right_rotate(struct rcu_rbtree_node **root,
 	if (x != &rcu_rbtree_nil) {
 		xc = rballoc();
 		*xc = *x;
-		/* Modify children and parents in the node copies */
+	}
+
+	if (y != &rcu_rbtree_nil) {
+		yc = rballoc();
+		*yc = *y;
+	}
+
+	/* Modify children and parents in the node copies */
+	if (x != &rcu_rbtree_nil) {
 		xc->left = y->right;
 		xc->p = yc;
 	} else
 		xc = &rcu_rbtree_nil;
 
 	if (y != &rcu_rbtree_nil) {
-		yc = rballoc();
-		*yc = *y;
-		/* Modify children and parents in the node copies */
 		yc->right = xc;
 		yc->p = x->p;
 	} else
@@ -330,8 +340,7 @@ static void rcu_rbtree_insert_fixup(struct rcu_rbtree_node **root,
 				}
 				z->p->color = COLOR_BLACK;
 				z->p->p->color = COLOR_RED;
-				z = right_rotate(root, z->p->p,
-						 rballoc, rbfree);
+				right_rotate(root, z->p->p, rballoc, rbfree);
 			}
 		} else {
 			y = z->p->p->left;
@@ -348,8 +357,7 @@ static void rcu_rbtree_insert_fixup(struct rcu_rbtree_node **root,
 				}
 				z->p->color = COLOR_BLACK;
 				z->p->p->color = COLOR_RED;
-				z = left_rotate(root, z->p->p,
-						rballoc, rbfree);
+				left_rotate(root, z->p->p, rballoc, rbfree);
 			}
 		}
 	}
@@ -536,9 +544,13 @@ rcu_rbtree_remove_nonil(struct rcu_rbtree_node **root,
 
 	x = y->right;
 
-	xc = rballoc();
+	if (x != &rcu_rbtree_nil) {
+		xc = rballoc();
+		*xc = *x;
+	} else
+		xc = &rcu_rbtree_nil;
+
 	yc = rballoc();
-	*xc = *x;
 	*yc = *y;
 
 	/* Update parent and children pointers within copies */
@@ -584,14 +596,16 @@ rcu_rbtree_remove_nonil(struct rcu_rbtree_node **root,
 	else
 		_STORE_SHARED(z->p->right, yc);
 
-	/* Reparent xc's children to xc. */
-	_STORE_SHARED(xc->right->p, xc);
-	_STORE_SHARED(xc->left->p, xc);
+	if (x != &rcu_rbtree_nil) {
+		/* Reparent xc's children to xc. */
+		_STORE_SHARED(xc->right->p, xc);
+		_STORE_SHARED(xc->left->p, xc);
+		defer_rcu(rbfree, x);
+	}
+
 	/* Reparent yc's children to yc */
 	_STORE_SHARED(yc->right->p, yc);
 	_STORE_SHARED(yc->left->p, yc);
-
-	defer_rcu(rbfree, x);
 	defer_rcu(rbfree, y);
 
 	return xc;

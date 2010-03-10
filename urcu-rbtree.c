@@ -92,6 +92,13 @@ struct rcu_rbtree_node *rcu_rbtree_max(struct rcu_rbtree_node *x,
 }
 
 /*
+ * FIXME:
+ * Updates should wait for a grace period between update of the
+ * redirect pointer and update of the parent child pointer. This is to make sure
+ * that no reference to the old entry exist.
+ */
+
+/*
  * next and prev need to have mutex held to ensure that parent pointer is
  * coherent.
  */

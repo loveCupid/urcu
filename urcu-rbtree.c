@@ -45,7 +45,8 @@
  * transplantations/rotations required for the operation.
  */
 
-/* Sentinel (bottom nodes). Don't care about p, left, right and key values */
+/* Sentinel (bottom nodes).
+ * Don't care about p, left, right, pos and key values */
 struct rcu_rbtree_node rcu_rbtree_nil = {
 	.color = COLOR_BLACK,
 };
@@ -105,30 +106,14 @@ struct rcu_rbtree_node *rcu_rbtree_max(struct rcu_rbtree_node *x,
 struct rcu_rbtree_node *rcu_rbtree_next(struct rcu_rbtree_node *x,
 					rcu_rbtree_comp comp)
 {
-	struct rcu_rbtree_node *xr, *y, *yredir, *yr, *yrredir;
+	struct rcu_rbtree_node *xr, *y, *yr;
 
 	x = rcu_dereference(x);
 
 	if ((xr = rcu_dereference(x->right)) != &rcu_rbtree_nil)
 		return rcu_rbtree_min(xr, comp);
 	y = rcu_dereference(x->p);
-	for (;;) {
-		int found = 0;
-		if (y == &rcu_rbtree_nil)
-			break;
-		yr = rcu_dereference(y->right);
-		/* Find out if x is one of the parent right children versions */
-		if (x == yr) {
-			goto found;
-		} else {
-			while ((yrredir = rcu_dereference(yr->redir)) != NULL) {
-				yr = yrredir;
-				if (x == yr)
-					goto found;
-			}
-			break;
-		}
-found:
+	while (y != &rcu_rbtree_nil && x->pos == IS_RIGHT) {
 		x = y;
 		y = rcu_dereference(y->p);
 	}
@@ -138,30 +123,14 @@ found:
 struct rcu_rbtree_node *rcu_rbtree_prev(struct rcu_rbtree_node *x,
 					rcu_rbtree_comp comp)
 {
-	struct rcu_rbtree_node *xl, *y, *yredir, *yl, *ylredir;
+	struct rcu_rbtree_node *xl, *y, *yl;
 
 	x = rcu_dereference(x);
 
 	if ((xl = rcu_dereference(x->left)) != &rcu_rbtree_nil)
 		return rcu_rbtree_min(xl, comp);
 	y = rcu_dereference(x->p);
-	for (;;) {
-		int found = 0;
-		if (y == &rcu_rbtree_nil)
-			break;
-		yl = rcu_dereference(y->left);
-		/* Find out if x is one of the parent left children versions */
-		if (x == yl) {
-			goto found;
-		} else {
-			while ((ylredir = rcu_dereference(yl->redir)) != NULL) {
-				yl = ylredir;
-				if (x == yl)
-					goto found;
-			}
-			break;
-		}
-found:
+	while (y != &rcu_rbtree_nil && x->pos == IS_LEFT) {
 		x = y;
 		y = rcu_dereference(y->p);
 	}
@@ -187,29 +156,43 @@ found:
 
 /* RCU: copy x and y, atomically point to new versions. GC old. */
 /* Should be eventually followed by a smp_wmc() */
-/* Returns the new x. Previous x->right references are changed to yc. */
+/* Returns the new x. Previous x->right references are changed to yc.
+ * Previous y->left->right is changed to bc. */
 static struct rcu_rbtree_node *left_rotate(struct rcu_rbtree_node **root,
 					   struct rcu_rbtree_node *x,
 					   rcu_rbtree_alloc rballoc,
 					   rcu_rbtree_free rbfree)
 {
-	struct rcu_rbtree_node *xc, *y, *yc;
+	struct rcu_rbtree_node *xc, *y, *yc, *b, *bc;
 
 	y = x->right;
 
 	if (x != &rcu_rbtree_nil) {
 		xc = rballoc();
 		*xc = *x;
+		xc->pos = IS_LEFT;
 	}
 
 	if (y != &rcu_rbtree_nil) {
 		yc = rballoc();
 		*yc = *y;
+		yc->pos = x->pos;
+		b = y->left;
+	} else {
+		b = &rcu_rbtree_nil;
+	}
+
+	if (b != &rcu_rbtree_nil) {
+		/* Beta position changes from left to right. */
+		bc = rballoc();
+		*bc = *b;
+		assert(b->pos == IS_LEFT);
+		bc->pos = IS_RIGHT;
 	}
 
 	/* Modify children and parents in the node copies */
 	if (x != &rcu_rbtree_nil) {
-		xc->right = y->left;
+		xc->right = bc;
 		xc->p = yc;
 	} else
 		xc = &rcu_rbtree_nil;
@@ -226,36 +209,28 @@ static struct rcu_rbtree_node *left_rotate(struct rcu_rbtree_node **root,
 	 */
 	smp_wmb();
 
-	/*
-	 * redirect old nodes to new.
-	 */
-	_STORE_SHARED(x->redir, xc);
-	_STORE_SHARED(y->redir, yc);
-
-	/*
-	 * Ensure that redirections are visible before updating external
-	 * pointers.
-	 */
-	smp_wmb();
-
 	/* Make parents point to the copies */
 	if (x->p == &rcu_rbtree_nil)
 		_STORE_SHARED(*root, yc);
-	else if (x == x->p->left)
+	else if (x->pos == IS_LEFT)
 		_STORE_SHARED(x->p->left, yc);
 	else
 		_STORE_SHARED(x->p->right, yc);
 
 	/* Assign children parents to copies */
 	if (x != &rcu_rbtree_nil) {
-		_STORE_SHARED(xc->right->p, xc);
-		_STORE_SHARED(xc->left->p, xc);
+		_STORE_SHARED(xc->left->p, xc);	/* alpha stays left */
 		defer_rcu(rbfree, x);
 	}
 	if (y != &rcu_rbtree_nil) {
-		_STORE_SHARED(yc->right->p, yc);
+		_STORE_SHARED(yc->right->p, yc);/* gamma stays right */
 		defer_rcu(rbfree, y);
 		/* yc->left is xc, its parent is already set in node copy */
+	}
+	if (b != &rcu_rbtree_nil) {
+		_STORE_SHARED(bc->right->p, bc);
+		_STORE_SHARED(bc->left->p, bc);
+		defer_rcu(rbfree, b);
 	}
 	return xc;
 }
@@ -285,36 +260,50 @@ static void left_rotate(struct rcu_rbtree_node **root,
 
 /* RCU: copy x and y, atomically point to new versions. GC old. */
 /* Should be eventually followed by a smp_wmc() */
-/* Returns the new x. Previous x->left references are changed to yc. */
+/* Returns the new y. Previous y->left references are changed to xc.
+ * Previous y->left->right is changed to bc */
 static struct rcu_rbtree_node *right_rotate(struct rcu_rbtree_node **root,
-					    struct rcu_rbtree_node *x,
+					    struct rcu_rbtree_node *y,
 					    rcu_rbtree_alloc rballoc,
 					    rcu_rbtree_free rbfree)
 {
-	struct rcu_rbtree_node *xc, *y, *yc;
+	struct rcu_rbtree_node *x, *xc, *yc, *b, *bc;;
 
-	y = x->left;
+	x = y->left;
 
 	if (x != &rcu_rbtree_nil) {
 		xc = rballoc();
 		*xc = *x;
+		xc->pos = y->pos;
+		b = x->right;
+	} else {
+		b = &rcu_rbtree_nil;
 	}
 
 	if (y != &rcu_rbtree_nil) {
 		yc = rballoc();
 		*yc = *y;
+		yc->pos = IS_RIGHT;
+	}
+
+	if (b != &rcu_rbtree_nil) {
+		/* Beta position changes from right to left. */
+		bc = rballoc();
+		*bc = *b;
+		assert(b->pos == IS_RIGHT);
+		bc->pos = IS_LEFT;
 	}
 
 	/* Modify children and parents in the node copies */
 	if (x != &rcu_rbtree_nil) {
-		xc->left = y->right;
-		xc->p = yc;
+		xc->right = yc;
+		xc->p = y->p;
 	} else
 		xc = &rcu_rbtree_nil;
 
 	if (y != &rcu_rbtree_nil) {
-		yc->right = xc;
-		yc->p = x->p;
+		yc->left = bc;
+		yc->p = xc;
 	} else
 		yc = &rcu_rbtree_nil;
 
@@ -324,38 +313,30 @@ static struct rcu_rbtree_node *right_rotate(struct rcu_rbtree_node **root,
 	 */
 	smp_wmb();
 
-	/*
-	 * redirect old nodes to new.
-	 */
-	_STORE_SHARED(x->redir, xc);
-	_STORE_SHARED(y->redir, yc);
-
-	/*
-	 * Ensure that redirections are visible before updating external
-	 * pointers.
-	 */
-	smp_wmb();
-
 	/* Make parents point to the copies */
-	if (x->p == &rcu_rbtree_nil)
-		_STORE_SHARED(*root, yc);
-	else if (x == x->p->right)
-		_STORE_SHARED(x->p->right, yc);
+	if (y->p == &rcu_rbtree_nil)
+		_STORE_SHARED(*root, xc);
+	else if (y->pos == IS_RIGHT)
+		_STORE_SHARED(y->p->right, xc);
 	else
-		_STORE_SHARED(x->p->left, yc);
+		_STORE_SHARED(y->p->left, xc);
 
 	/* Assign children parents to copies */
 	if (x != &rcu_rbtree_nil) {
-		_STORE_SHARED(xc->left->p, xc);
-		_STORE_SHARED(xc->right->p, xc);
+		_STORE_SHARED(xc->left->p, xc);	/* alpha stays left */
+		/* xc->right is yc, its parent is already set in node copy */
 		defer_rcu(rbfree, x);
 	}
 	if (y != &rcu_rbtree_nil) {
-		_STORE_SHARED(yc->left->p, yc);
+		_STORE_SHARED(yc->right->p, yc);/* gamma stays right */
 		defer_rcu(rbfree, y);
-		/* yc->right is xc, its parent is already set in node copy */
 	}
-	return xc;
+	if (b != &rcu_rbtree_nil) {
+		_STORE_SHARED(bc->right->p, bc);
+		_STORE_SHARED(bc->left->p, bc);
+		defer_rcu(rbfree, b);
+	}
+	return yc;
 }
 
 #if 0 //orig
@@ -456,7 +437,13 @@ int rcu_rbtree_insert(struct rcu_rbtree_node **root,
 	z->left = &rcu_rbtree_nil;
 	z->right = &rcu_rbtree_nil;
 	z->color = COLOR_RED;
-	z->redir = NULL;
+
+	if (y == &rcu_rbtree_nil)
+		z->pos = IS_RIGHT;	/* arbitrary for root node */
+	else if (comp(z->key, y->key) < 0)
+		z->pos = IS_LEFT;
+	else
+		z->pos = IS_RIGHT;
 
 	/*
 	 * Order stores to z (children/parents) before stores that will make it
@@ -498,21 +485,11 @@ rcu_rbtree_transplant(struct rcu_rbtree_node **root,
 
 		/* Change vc parent pointer */
 		vc->p = u->p;
+		vc->pos = u->pos;
 
 		/*
 		 * Order stores to node copies (children/parents) before stores
 		 * that will make the copies visible to the rest of the tree.
-		 */
-		smp_wmb();
-
-		/*
-		 * redirect old node to new.
-		 */
-		_STORE_SHARED(v->redir, vc);
-
-		/*
-		 * Ensure that redirections are visible before updating external
-		 * pointers.
 		 */
 		smp_wmb();
 	} else {
@@ -532,8 +509,10 @@ rcu_rbtree_transplant(struct rcu_rbtree_node **root,
 		 * The children pointers in vc are the same as v. We can
 		 * therefore reparent v's children to vc safely.
 		 */
-		_STORE_SHARED(vc->right->p, vc);
-		_STORE_SHARED(vc->left->p, vc);
+		if (vc->right != &rcu_rbtree_nil)
+			_STORE_SHARED(vc->right->p, vc);
+		if (vc->left != &rcu_rbtree_nil)
+			_STORE_SHARED(vc->left->p, vc);
 
 		defer_rcu(rbfree, v);
 	}
@@ -576,13 +555,14 @@ static void rcu_rbtree_remove_fixup(struct rcu_rbtree_node **root,
 				x = *root;
 			}
 		} else {
-			struct rcu_rbtree_node *w;
+			struct rcu_rbtree_node *w, *t;
 
 			w = x->p->left;
 			if (w->color == COLOR_RED) {
 				w->color == COLOR_BLACK;
 				x->p->color = COLOR_RED;
-				right_rotate(root, x->p, rballoc, rbfree);
+				t = right_rotate(root, x->p, rballoc, rbfree);
+				assert(x->p->right == t->right);
 				/* x is a right node, not copied by rotation */
 				w = x->p->left;
 			}
@@ -608,7 +588,9 @@ static void rcu_rbtree_remove_fixup(struct rcu_rbtree_node **root,
 	x->color = COLOR_BLACK;
 }
 
-/* Returns the new copy of y->right */
+/*
+ * Returns the new copy of y->right.
+ * Delete z. All non-copied children left/right positions are unchanged. */
 static struct rcu_rbtree_node *
 rcu_rbtree_remove_nonil(struct rcu_rbtree_node **root,
 			struct rcu_rbtree_node *z,
@@ -651,19 +633,6 @@ rcu_rbtree_remove_nonil(struct rcu_rbtree_node **root,
 	 */
 	smp_wmb();
 
-	/*
-	 * redirect old nodes to new.
-	 */
-	if (x != &rcu_rbtree_nil)
-		_STORE_SHARED(x->redir, xc);
-	_STORE_SHARED(y->redir, yc);
-
-	/*
-	 * Ensure that redirections are visible before updating external
-	 * pointers.
-	 */
-	smp_wmb();
-
 	/* Update external pointers */
 
 	if (y->p != z) {
@@ -689,13 +658,19 @@ rcu_rbtree_remove_nonil(struct rcu_rbtree_node **root,
 	if (x != &rcu_rbtree_nil) {
 		/* Reparent xc's children to xc. */
 		_STORE_SHARED(xc->right->p, xc);
+		assert(yc->right == &rcu_rbtree_nil
+		       || xc->right->pos == IS_RIGHT);
 		_STORE_SHARED(xc->left->p, xc);
+		assert(yc->right == &rcu_rbtree_nil
+		       || xc->left->pos == IS_LEFT);
 		defer_rcu(rbfree, x);
 	}
 
 	/* Reparent yc's children to yc */
 	_STORE_SHARED(yc->right->p, yc);
+	assert(yc->right == &rcu_rbtree_nil || yc->right->pos == IS_RIGHT);
 	_STORE_SHARED(yc->left->p, yc);
+	assert(yc->right == &rcu_rbtree_nil || yc->left->pos == IS_LEFT);
 	defer_rcu(rbfree, y);
 
 	return xc;

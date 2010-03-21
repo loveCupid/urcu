@@ -35,6 +35,9 @@
 #define COLOR_BLACK	0
 #define COLOR_RED	1
 
+#define IS_LEFT		0
+#define IS_RIGHT	1
+
 /*
  * Node key comparison function.
  * < 0 : a lower than b.
@@ -56,8 +59,9 @@ struct rcu_rbtree_node {
 	void *key;
 
 	/* internally reserved */
-	struct rcu_rbtree_node *p, *left, *right, *redir;
+	struct rcu_rbtree_node *p, *left, *right;
 	unsigned int color:1;
+	unsigned int pos:1;
 };
 
 /* nil rbtree node. "root" must initially point to this node. */

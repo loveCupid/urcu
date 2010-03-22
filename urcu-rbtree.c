@@ -37,6 +37,8 @@
 #include <urcu-rbtree.h>
 #include <urcu-pointer.h>
 
+#define DEBUG
+
 #ifdef DEBUG
 #define dbg_printf(args...)	printf(args)
 #else
@@ -526,6 +528,8 @@ static void rcu_rbtree_remove_fixup(struct rcu_rbtree_node **root,
 			struct rcu_rbtree_node *w, *t;
 
 			w = x->p->right;
+			assert(w != &rcu_rbtree_nil);
+
 			if (w->color == COLOR_RED) {
 				w->color == COLOR_BLACK;
 				x->p->color = COLOR_RED;
@@ -555,6 +559,8 @@ static void rcu_rbtree_remove_fixup(struct rcu_rbtree_node **root,
 			struct rcu_rbtree_node *w, *t;
 
 			w = x->p->left;
+			assert(w != &rcu_rbtree_nil);
+
 			if (w->color == COLOR_RED) {
 				w->color == COLOR_BLACK;
 				x->p->color = COLOR_RED;

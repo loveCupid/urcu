@@ -37,6 +37,12 @@
 #include <urcu-rbtree.h>
 #include <urcu-pointer.h>
 
+#ifdef DEBUG
+#define dbg_printf(args...)	printf(args)
+#else
+#define dbg_printf(args...)
+#endif
+
 /*
  * TODO
  * Deal with memory allocation errors.
@@ -165,6 +171,8 @@ static struct rcu_rbtree_node *left_rotate(struct rcu_rbtree_node **root,
 {
 	struct rcu_rbtree_node *xc, *y, *yc, *b, *bc;
 
+	dbg_printf("left rotate %p\n", x->key);
+
 	y = x->right;
 
 	if (x != &rcu_rbtree_nil) {
@@ -188,7 +196,8 @@ static struct rcu_rbtree_node *left_rotate(struct rcu_rbtree_node **root,
 		*bc = *b;
 		assert(b->pos == IS_LEFT);
 		bc->pos = IS_RIGHT;
-	}
+	} else
+		bc = &rcu_rbtree_nil;
 
 	/* Modify children and parents in the node copies */
 	if (x != &rcu_rbtree_nil) {
@@ -269,6 +278,8 @@ static struct rcu_rbtree_node *right_rotate(struct rcu_rbtree_node **root,
 {
 	struct rcu_rbtree_node *x, *xc, *yc, *b, *bc;;
 
+	dbg_printf("right rotate %p\n", y->key);
+
 	x = y->left;
 
 	if (x != &rcu_rbtree_nil) {
@@ -292,7 +303,8 @@ static struct rcu_rbtree_node *right_rotate(struct rcu_rbtree_node **root,
 		*bc = *b;
 		assert(b->pos == IS_RIGHT);
 		bc->pos = IS_LEFT;
-	}
+	} else
+		bc = &rcu_rbtree_nil;
 
 	/* Modify children and parents in the node copies */
 	if (x != &rcu_rbtree_nil) {
@@ -339,35 +351,14 @@ static struct rcu_rbtree_node *right_rotate(struct rcu_rbtree_node **root,
 	return yc;
 }
 
-#if 0 //orig
-static void right_rotate(struct rcu_rbtree_node **root,
-			 struct rcu_rbtree_node *x,
-			 rcu_rbtree_alloc rballoc)
-{
-	struct rcu_rbtree_node *y;
-
-	y = x->left;
-	x->left = y->right;
-	if (y->right != &rcu_rbtree_nil)
-		y->right->p = x;
-	y->p = x->p;
-	if (x->p == &rcu_rbtree_nil)
-		*root = y;
-	else if (x == x->p->right)
-		x->p->right = y;
-	else
-		x->p->left = y;
-	y->right = x;
-	x->p = y;
-}
-#endif //0
-
 static void rcu_rbtree_insert_fixup(struct rcu_rbtree_node **root,
 				    struct rcu_rbtree_node *z,
 				    rcu_rbtree_alloc rballoc,
 				    rcu_rbtree_free rbfree)
 {
 	struct rcu_rbtree_node *y;
+
+	dbg_printf("insert fixup %p\n", z->key);
 
 	while (z->p->color == COLOR_RED) {
 		if (z->p == z->p->p->left) {
@@ -421,6 +412,8 @@ int rcu_rbtree_insert(struct rcu_rbtree_node **root,
 		      rcu_rbtree_free rbfree)
 {
 	struct rcu_rbtree_node *x, *y;
+
+	dbg_printf("insert %p\n", z->key);
 
 	y = &rcu_rbtree_nil;
 	x = *root;
@@ -479,6 +472,8 @@ rcu_rbtree_transplant(struct rcu_rbtree_node **root,
 {
 	struct rcu_rbtree_node *vc;
 
+	dbg_printf("transplant %p\n", v->key);
+
 	if (v != &rcu_rbtree_nil) {
 		vc = rballoc();
 		*vc = *v;
@@ -524,6 +519,8 @@ static void rcu_rbtree_remove_fixup(struct rcu_rbtree_node **root,
 				    rcu_rbtree_alloc rballoc,
 				    rcu_rbtree_free rbfree)
 {
+	dbg_printf("remove fixup %p\n", x->key);
+
 	while (x != *root && x->color == COLOR_BLACK) {
 		if (x == x->p->left) {
 			struct rcu_rbtree_node *w, *t;
@@ -600,6 +597,8 @@ rcu_rbtree_remove_nonil(struct rcu_rbtree_node **root,
 			rcu_rbtree_free rbfree)
 {
 	struct rcu_rbtree_node *x, *xc, *yc;
+
+	dbg_printf("remove nonil %p\n", z->key);
 
 	x = y->right;
 
@@ -684,6 +683,8 @@ int rcu_rbtree_remove(struct rcu_rbtree_node **root,
 {
 	struct rcu_rbtree_node *x, *y;
 	unsigned int y_original_color;
+
+	dbg_printf("remove %p\n", z->key);
 
 	y = z;
 	y_original_color = y->color;

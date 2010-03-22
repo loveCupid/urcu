@@ -42,7 +42,7 @@
 #define NR_CPUS 16384
 
 /* number of insert/delete */
-#define NR_RAND 3
+#define NR_RAND 4
 
 #if defined(_syscall0)
 _syscall0(pid_t, gettid)
@@ -276,6 +276,13 @@ void *thr_writer(void *_count)
 
 		if (unlikely(wduration))
 			loop_sleep(wduration);
+
+		node = rcu_rbtree_min(rbtree_root, tree_comp);
+		while (node != &rcu_rbtree_nil) {
+			printf("0x%lX ", (unsigned long)node->key);
+			node = rcu_rbtree_next(node, tree_comp);
+		}
+		printf("\n");
 
 		for (i = 0; i < NR_RAND; i++) {
 			node = rcu_rbtree_search(rbtree_root, key[i],

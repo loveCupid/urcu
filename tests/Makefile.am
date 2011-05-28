@@ -15,7 +15,8 @@ noinst_PROGRAMS = test_urcu test_urcu_dynamic_link test_urcu_timing \
         test_urcu_bp test_urcu_bp_dynamic_link test_cycles_per_loop \
 	test_urcu_lfq test_urcu_wfq test_urcu_lfs test_urcu_wfs \
 	test_urcu_wfq_dynlink test_urcu_wfs_dynlink \
-	test_urcu_lfq_dynlink test_urcu_lfs_dynlink
+	test_urcu_lfq_dynlink test_urcu_lfs_dynlink \
+	test_urcu_rbtree
 noinst_HEADERS = rcutorture.h
 
 if COMPAT_ARCH
@@ -47,6 +48,7 @@ WFQUEUE_LIB=$(top_builddir)/libwfqueue.la
 WFSTACK_LIB=$(top_builddir)/libwfstack.la
 RCULFQUEUE_LIB=$(top_builddir)/librculfqueue.la
 RCULFSTACK_LIB=$(top_builddir)/librculfstack.la
+URCU_RBTREE=$(URCU_DEFER) $(top_srcdir)/urcu-rbtree.c
 
 EXTRA_DIST = $(top_srcdir)/tests/api_*.h
 
@@ -178,6 +180,8 @@ test_urcu_wfs_SOURCES = test_urcu_wfs.c
 test_urcu_wfs_dynlink_SOURCES = test_urcu_wfs.c
 test_urcu_wfs_dynlink_CFLAGS = -DDYNAMIC_LINK_TEST $(AM_CFLAGS)
 test_urcu_wfs_dynlink_LDADD = $(WFSTACK_LIB)
+
+test_urcu_rbtree_SOURCES = test_urcu_rbtree.c $(URCU_RBTREE)
 
 urcutorture.c: api.h
 

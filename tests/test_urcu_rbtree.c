@@ -47,7 +47,8 @@
 #define NR_CPUS 16384
 
 /* number of insert/delete */
-#define NR_RAND 4
+//#define NR_RAND 4
+#define NR_RAND 7
 
 #if defined(_syscall0)
 _syscall0(pid_t, gettid)
@@ -182,6 +183,9 @@ static unsigned long long __thread nr_reads;
 static unsigned int nr_readers;
 static unsigned int nr_writers;
 
+static unsigned long global_items;
+static void **global_key = NULL;
+
 pthread_mutex_t rcu_copy_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 void rcu_copy_mutex_lock(void)
@@ -208,6 +212,8 @@ void rcu_copy_mutex_unlock(void)
 void *thr_reader(void *_count)
 {
 	unsigned long long *count = _count;
+	struct rcu_rbtree_node *node;
+	int i;
 
 	printf_verbose("thread_begin %s, thread id : %lx, tid %lu\n",
 			"reader", pthread_self(), (unsigned long)gettid());
@@ -224,6 +230,11 @@ void *thr_reader(void *_count)
 	for (;;) {
 		rcu_read_lock();
 
+		for (i = 0; i < global_items; i++) {
+			node = rcu_rbtree_search(&rbtree, rbtree.root,
+						 global_key[i]);
+			assert(!rcu_rbtree_is_nil(node));
+		}
 		debug_yield_read();
 		if (unlikely(rduration))
 			loop_sleep(rduration);
@@ -340,6 +351,7 @@ int main(int argc, char **argv)
 	unsigned long long *count_reader, *count_writer;
 	unsigned long long tot_reads = 0, tot_writes = 0;
 	int i, a;
+	struct rcu_rbtree_node *node;
 
 	if (argc < 4) {
 		show_usage(argc, argv);
@@ -410,6 +422,13 @@ int main(int argc, char **argv)
 		case 'v':
 			verbose_mode = 1;
 			break;
+		case 'g':
+			if (argc < i + 2) {
+				show_usage(argc, argv);
+				return -1;
+			}
+			global_items = atol(argv[++i]);
+			break;
 		}
 	}
 
@@ -424,6 +443,7 @@ int main(int argc, char **argv)
 	tid_writer = malloc(sizeof(*tid_writer) * nr_writers);
 	count_reader = malloc(sizeof(*count_reader) * nr_readers);
 	count_writer = malloc(sizeof(*count_writer) * nr_writers);
+	global_key = malloc(sizeof(*global_key) * global_items);
 
 	srand(time(NULL));
 
@@ -440,6 +460,14 @@ int main(int argc, char **argv)
 				     &count_writer[i]);
 		if (err != 0)
 			exit(1);
+	}
+
+	/* Insert items looked up by readers */
+	for (i = 0; i < global_items; i++) {
+		node = rbtree_alloc();
+		global_key[i] = (void *)(unsigned long)(rand() % 2048);
+		node->key = global_key[i];
+		rcu_rbtree_insert(&rbtree, node);
 	}
 
 	cmm_smp_mb();
@@ -463,17 +491,26 @@ int main(int argc, char **argv)
 		tot_writes += count_writer[i];
 	}
 	
+	for (i = 0; i < global_items; i++) {
+		node = rcu_rbtree_search(&rbtree, rbtree.root, global_key[i]);
+		assert(!rcu_rbtree_is_nil(node));
+		rcu_rbtree_remove(&rbtree, node);
+		call_rcu(&node->head, rbtree_free);
+	}
+
 	printf_verbose("total number of reads : %llu, writes %llu\n", tot_reads,
 	       tot_writes);
 	printf("SUMMARY %-25s testdur %4lu nr_readers %3u rdur %6lu wdur %6lu "
 		"nr_writers %3u "
-		"wdelay %6lu nr_reads %12llu nr_writes %12llu nr_ops %12llu\n",
+		"wdelay %6lu nr_reads %12llu nr_writes %12llu nr_ops %12llu "
+		"global_items %6lu\n",
 		argv[0], duration, nr_readers, rduration, wduration,
 		nr_writers, wdelay, tot_reads, tot_writes,
-		tot_reads + tot_writes);
+		tot_reads + tot_writes, global_items);
 	free(tid_reader);
 	free(tid_writer);
 	free(count_reader);
 	free(count_writer);
+	free(global_key);
 	return 0;
 }

@@ -58,6 +58,7 @@ struct rcu_rbtree_node {
 
 	/* internally reserved */
 	struct rcu_rbtree_node *p, *left, *right;
+	struct rcu_rbtree_node *decay_next;
 	unsigned int color:1;
 	unsigned int pos:1;
 	unsigned int nil:1;
@@ -95,6 +96,7 @@ struct rcu_rbtree {
 
 /*
  * Node insertion. Returns 0 on success. May fail with -ENOMEM.
+ * Caller must have exclusive write access and hold RCU read-side lock.
  */
 int rcu_rbtree_insert(struct rcu_rbtree *rbtree,
 		      struct rcu_rbtree_node *node);
@@ -109,6 +111,7 @@ int rcu_rbtree_insert(struct rcu_rbtree *rbtree,
  * Returns 0 on success. May fail with -ENOMEM.
  *
  * The caller is responsible for freeing the node after a grace period.
+ * Caller must have exclusive write access and hold RCU read-side lock.
  */
 int rcu_rbtree_remove(struct rcu_rbtree *rbtree,
 		      struct rcu_rbtree_node *node);
@@ -116,7 +119,7 @@ int rcu_rbtree_remove(struct rcu_rbtree *rbtree,
 /* RCU read-side */
 
 /*
- * Search key starting from node x. Returns &rcu_rbtree_nil if not found.
+ * Search key starting from node x. Returns nil node if not found.
  */
 struct rcu_rbtree_node* rcu_rbtree_search(struct rcu_rbtree *rbtree,
 					  struct rcu_rbtree_node *x,

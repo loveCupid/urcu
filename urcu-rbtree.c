@@ -33,6 +33,7 @@
 #include <stdio.h>
 #include <pthread.h>
 #include <assert.h>
+#include <string.h>
 
 #include <urcu/rcurbtree.h>
 #include <urcu-pointer.h>
@@ -45,6 +46,43 @@
 #else
 #define dbg_printf(args...)
 #endif
+
+static
+void set_decay(struct rcu_rbtree_node *x, struct rcu_rbtree_node *xc)
+{
+	x->decay_next = xc;
+}
+
+static
+struct rcu_rbtree_node *get_decay(struct rcu_rbtree_node *x)
+{
+	while (x->decay_next)
+		x = x->decay_next;
+	return x;
+}
+
+static
+struct rcu_rbtree_node *is_decay(struct rcu_rbtree_node *x)
+{
+	return x->decay_next;
+}
+
+static
+struct rcu_rbtree_node *dup_decay_node(struct rcu_rbtree *rbtree,
+				struct rcu_rbtree_node *x)
+{
+	struct rcu_rbtree_node *xc;
+
+	if (rcu_rbtree_is_nil(x))
+		return x;
+
+	xc = rbtree->rballoc();
+	memcpy(xc, x, sizeof(struct rcu_rbtree_node));
+	xc->decay_next = NULL;
+	set_decay(x, xc);
+	defer_rcu(rbtree->rbfree, x);
+	return xc;
+}
 
 /*
  * TODO
@@ -61,11 +99,12 @@ void show_tree(struct rcu_rbtree *rbtree)
 
 	node = rcu_rbtree_min(rbtree, rbtree->root);
 	while (!rcu_rbtree_is_nil(node)) {
+		assert(!is_decay(node));
 		printf("{ 0x%lX p:%lX r:%lX l:%lX %s %s %s} ",
 			(unsigned long)node->key,
-			node->p->key,
-			node->right->key,
-			node->left->key,
+			(unsigned long) node->p->key,
+			(unsigned long) node->right->key,
+			(unsigned long) node->left->key,
 			node->color ? "red" : "black",
 			node->pos ? "right" : "left",
 			node->nil ? "nil" : "");
@@ -142,7 +181,7 @@ struct rcu_rbtree_node *rcu_rbtree_max(struct rcu_rbtree *rbtree,
 struct rcu_rbtree_node *rcu_rbtree_next(struct rcu_rbtree *rbtree,
 					struct rcu_rbtree_node *x)
 {
-	struct rcu_rbtree_node *xr, *y, *yr;
+	struct rcu_rbtree_node *xr, *y;
 
 	x = rcu_dereference(x);
 
@@ -159,7 +198,7 @@ struct rcu_rbtree_node *rcu_rbtree_next(struct rcu_rbtree *rbtree,
 struct rcu_rbtree_node *rcu_rbtree_prev(struct rcu_rbtree *rbtree,
 					struct rcu_rbtree_node *x)
 {
-	struct rcu_rbtree_node *xl, *y, *yl;
+	struct rcu_rbtree_node *xl, *y;
 
 	x = rcu_dereference(x);
 
@@ -192,18 +231,19 @@ struct rcu_rbtree_node *rcu_rbtree_prev(struct rcu_rbtree *rbtree,
 
 /* RCU: copy x and y, atomically point to new versions. GC old. */
 /* Should be eventually followed by a cmm_smp_wmc() */
-/* Returns the new x. Previous x->right references are changed to yc.
- * Previous y->left->right is changed to bc. */
 
 static
-struct rcu_rbtree_node *left_rotate(struct rcu_rbtree *rbtree,
-			struct rcu_rbtree_node *x)
+void left_rotate(struct rcu_rbtree *rbtree,
+		 struct rcu_rbtree_node *x)
 {
 	struct rcu_rbtree_node *y;
-	struct rcu_rbtree_node *t;
 
-	t = x->p;
 	y = x->right;
+
+	/* Now operate on new copy, decay old versions */
+	x = dup_decay_node(rbtree, x);
+	y = dup_decay_node(rbtree, y);
+
 	x->right = y->left;
 	if (!rcu_rbtree_is_nil(y->left)) {
 		y->left->p = x;
@@ -212,7 +252,7 @@ struct rcu_rbtree_node *left_rotate(struct rcu_rbtree *rbtree,
 	y->p = x->p;
 	if (rcu_rbtree_is_nil(x->p))
 		rbtree->root = y;
-	else if (x == x->p->left) {
+	else if (x->pos == IS_LEFT) {
 		x->p->left = y;
 		y->pos = IS_LEFT;
 	} else {
@@ -222,18 +262,40 @@ struct rcu_rbtree_node *left_rotate(struct rcu_rbtree *rbtree,
 	y->left = x;
 	x->pos = IS_LEFT;
 	x->p = y;
-	return t;
+	/* Point children to new copy */
+	if (!rcu_rbtree_is_nil(x->left))
+		x->left->p = x;
+	if (!rcu_rbtree_is_nil(y->right))
+		y->right->p = y;
+
+	/* Sanity checks */
+	assert(y == rbtree->root || y->p->left == y || y->p->right == y);
+	assert(x == rbtree->root || x->p->left == x || x->p->right == x);
+	assert(rcu_rbtree_is_nil(x->right) || x->right->p == x);
+	assert(rcu_rbtree_is_nil(x->left) || x->left->p == x);
+	assert(rcu_rbtree_is_nil(y->right) || y->right->p == y);
+	assert(rcu_rbtree_is_nil(y->left) || y->left->p == y);
+	assert(!is_decay(rbtree->root));
+	assert(!is_decay(x));
+	assert(!is_decay(y));
+	assert(!is_decay(x->right));
+	assert(!is_decay(x->left));
+	assert(!is_decay(y->right));
+	assert(!is_decay(y->left));
 }
 
 static
-struct rcu_rbtree_node *right_rotate(struct rcu_rbtree *rbtree,
-			struct rcu_rbtree_node *x)
+void right_rotate(struct rcu_rbtree *rbtree,
+		  struct rcu_rbtree_node *x)
 {
 	struct rcu_rbtree_node *y;
-	struct rcu_rbtree_node *t;
 
-	t = x->p;
 	y = x->left;
+
+	/* Now operate on new copy, decay old versions */
+	x = dup_decay_node(rbtree, x);
+	y = dup_decay_node(rbtree, y);
+
 	x->left = y->right;
 	if (!rcu_rbtree_is_nil(y->right)) {
 		y->right->p = x;
@@ -242,7 +304,7 @@ struct rcu_rbtree_node *right_rotate(struct rcu_rbtree *rbtree,
 	y->p = x->p;
 	if (rcu_rbtree_is_nil(x->p))
 		rbtree->root = y;
-	else if (x == x->p->right) {
+	else if (x->pos == IS_RIGHT) {
 		x->p->right = y;
 		y->pos = IS_RIGHT;
 	} else {
@@ -252,7 +314,26 @@ struct rcu_rbtree_node *right_rotate(struct rcu_rbtree *rbtree,
 	y->right = x;
 	x->pos = IS_RIGHT;
 	x->p = y;
-	return t;
+	/* Point children to new copy */
+	if (!rcu_rbtree_is_nil(x->right))
+		x->right->p = x;
+	if (!rcu_rbtree_is_nil(y->left))
+		y->left->p = y;
+
+	/* Sanity checks */
+	assert(y == rbtree->root || y->p->right == y || y->p->left == y);
+	assert(x == rbtree->root || x->p->right == x || x->p->left == x);
+	assert(rcu_rbtree_is_nil(x->left) || x->left->p == x);
+	assert(rcu_rbtree_is_nil(x->right) || x->right->p == x);
+	assert(rcu_rbtree_is_nil(y->left) || y->left->p == y);
+	assert(rcu_rbtree_is_nil(y->right) || y->right->p == y);
+	assert(!is_decay(rbtree->root));
+	assert(!is_decay(x));
+	assert(!is_decay(y));
+	assert(!is_decay(x->left));
+	assert(!is_decay(x->right));
+	assert(!is_decay(y->left));
+	assert(!is_decay(y->right));
 }
 
 static void rcu_rbtree_insert_fixup(struct rcu_rbtree *rbtree,
@@ -261,6 +342,7 @@ static void rcu_rbtree_insert_fixup(struct rcu_rbtree *rbtree,
 	struct rcu_rbtree_node *y;
 
 	dbg_printf("insert fixup %p\n", z->key);
+	assert(!is_decay(rbtree->root));
 
 	while (z->p->color == COLOR_RED) {
 		if (z->p == z->p->p->left) {
@@ -274,10 +356,17 @@ static void rcu_rbtree_insert_fixup(struct rcu_rbtree *rbtree,
 				if (z == z->p->right) {
 					z = z->p;
 					left_rotate(rbtree, z);
+					z = get_decay(z);
+					assert(!is_decay(rbtree->root));
 				}
 				z->p->color = COLOR_BLACK;
 				z->p->p->color = COLOR_RED;
+				assert(!is_decay(z));
+				assert(!is_decay(z->p));
+				assert(!is_decay(z->p->p));
 				right_rotate(rbtree, z->p->p);
+				assert(!is_decay(z));
+				assert(!is_decay(rbtree->root));
 			}
 		} else {
 			y = z->p->p->left;
@@ -290,10 +379,14 @@ static void rcu_rbtree_insert_fixup(struct rcu_rbtree *rbtree,
 				if (z == z->p->left) {
 					z = z->p;
 					right_rotate(rbtree, z);
+					z = get_decay(z);
+					assert(!is_decay(rbtree->root));
 				}
 				z->p->color = COLOR_BLACK;
 				z->p->p->color = COLOR_RED;
 				left_rotate(rbtree, z->p->p);
+				assert(!is_decay(z));
+				assert(!is_decay(rbtree->root));
 			}
 		}
 	}
@@ -311,6 +404,7 @@ int rcu_rbtree_insert(struct rcu_rbtree *rbtree,
 	struct rcu_rbtree_node *x, *y;
 
 	dbg_printf("insert %p\n", z->key);
+	assert(!is_decay(rbtree->root));
 
 	y = make_nil(rbtree);
 	if (!rbtree->root)
@@ -330,6 +424,7 @@ int rcu_rbtree_insert(struct rcu_rbtree *rbtree,
 	z->right = make_nil(rbtree);
 	z->color = COLOR_RED;
 	z->nil = 0;
+	z->decay_next = NULL;
 
 	if (rcu_rbtree_is_nil(y))
 		z->pos = IS_RIGHT;	/* arbitrary for root node */
@@ -362,15 +457,12 @@ int rcu_rbtree_insert(struct rcu_rbtree *rbtree,
 
 /*
  * Transplant v into u position.
- * Returns new copy of v.
  */
-static struct rcu_rbtree_node *
-rcu_rbtree_transplant(struct rcu_rbtree *rbtree,
-		      struct rcu_rbtree_node *u,
-		      struct rcu_rbtree_node *v)
+static
+void rcu_rbtree_transplant(struct rcu_rbtree *rbtree,
+			struct rcu_rbtree_node *u,
+			struct rcu_rbtree_node *v)
 {
-	struct rcu_rbtree_node *vc;
-
 	dbg_printf("transplant %p\n", v->key);
 
 	if (rcu_rbtree_is_nil(u->p))
@@ -383,7 +475,7 @@ rcu_rbtree_transplant(struct rcu_rbtree *rbtree,
 		v->pos = IS_RIGHT;
 	}
 	v->p = u->p;
-	return v;
+	assert(!is_decay(rbtree->root));
 }
 
 static void rcu_rbtree_remove_fixup(struct rcu_rbtree *rbtree,
@@ -393,16 +485,16 @@ static void rcu_rbtree_remove_fixup(struct rcu_rbtree *rbtree,
 
 	while (x != rbtree->root && x->color == COLOR_BLACK) {
 		if (x == x->p->left) {
-			struct rcu_rbtree_node *w, *t;
+			struct rcu_rbtree_node *w;
 
 			w = x->p->right;
 
 			if (w->color == COLOR_RED) {
-				w->color == COLOR_BLACK;
+				w->color = COLOR_BLACK;
 				x->p->color = COLOR_RED;
-				t = left_rotate(rbtree, x->p);
-				assert(x->p->left == t->left);
-				/* x is a left node, not copied by rotation */
+				left_rotate(rbtree, x->p);
+				x = get_decay(x);
+				assert(!is_decay(rbtree->root));
 				w = x->p->right;
 			}
 			if (w->left->color == COLOR_BLACK
@@ -414,25 +506,26 @@ static void rcu_rbtree_remove_fixup(struct rcu_rbtree *rbtree,
 					w->left->color = COLOR_BLACK;
 					w->color = COLOR_RED;
 					right_rotate(rbtree, w);
+					x = get_decay(x);
 					w = x->p->right;
 				}
 				w->color = x->p->color;
 				x->p->color = COLOR_BLACK;
 				w->right->color = COLOR_BLACK;
 				left_rotate(rbtree, x->p);
+				assert(!is_decay(rbtree->root));
 				x = rbtree->root;
 			}
 		} else {
-			struct rcu_rbtree_node *w, *t;
+			struct rcu_rbtree_node *w;
 
 			w = x->p->left;
 
 			if (w->color == COLOR_RED) {
-				w->color == COLOR_BLACK;
+				w->color = COLOR_BLACK;
 				x->p->color = COLOR_RED;
-				t = right_rotate(rbtree, x->p);
-				assert(x->p->right == t->right);
-				/* x is a right node, not copied by rotation */
+				right_rotate(rbtree, x->p);
+				x = get_decay(x);
 				w = x->p->left;
 			}
 			if (w->right->color == COLOR_BLACK
@@ -444,6 +537,8 @@ static void rcu_rbtree_remove_fixup(struct rcu_rbtree *rbtree,
 					w->right->color = COLOR_BLACK;
 					w->color = COLOR_RED;
 					left_rotate(rbtree, w);
+					assert(!is_decay(rbtree->root));
+					x = get_decay(x);
 					w = x->p->left;
 				}
 				w->color = x->p->color;
@@ -458,14 +553,14 @@ static void rcu_rbtree_remove_fixup(struct rcu_rbtree *rbtree,
 }
 
 /*
- * Returns the new copy of y->right.
- * Delete z. All non-copied children left/right positions are unchanged. */
-static struct rcu_rbtree_node *
-rcu_rbtree_remove_nonil(struct rcu_rbtree *rbtree,
-			struct rcu_rbtree_node *z,
-			struct rcu_rbtree_node *y)
+ * Delete z. All non-copied children left/right positions are unchanged.
+ */
+static
+void rcu_rbtree_remove_nonil(struct rcu_rbtree *rbtree,
+			     struct rcu_rbtree_node *z,
+			     struct rcu_rbtree_node *y)
 {
-	struct rcu_rbtree_node *x, *xc, *yc;
+	struct rcu_rbtree_node *x;
 
 	dbg_printf("remove nonil %p\n", z->key);
 	show_tree(rbtree);
@@ -475,14 +570,17 @@ rcu_rbtree_remove_nonil(struct rcu_rbtree *rbtree,
 		x->p = y;
 	else {
 		rcu_rbtree_transplant(rbtree, y, y->right);
+		assert(!is_decay(y));
+		assert(!is_decay(z));
 		y->right = z->right;
 		y->right->p = y;
 	}
 	rcu_rbtree_transplant(rbtree, z, y);
+	assert(!is_decay(y));
+	assert(!is_decay(z));
 	y->left = z->left;
 	y->left->p = y;
 	y->color = z->color;
-	return x;
 }
 
 int rcu_rbtree_remove(struct rcu_rbtree *rbtree,
@@ -491,6 +589,7 @@ int rcu_rbtree_remove(struct rcu_rbtree *rbtree,
 	struct rcu_rbtree_node *x, *y;
 	unsigned int y_original_color;
 
+	assert(!is_decay(rbtree->root));
 	dbg_printf("remove %p\n", z->key);
 	show_tree(rbtree);
 
@@ -498,15 +597,21 @@ int rcu_rbtree_remove(struct rcu_rbtree *rbtree,
 	y_original_color = y->color;
 
 	if (rcu_rbtree_is_nil(z->left)) {
-		x = rcu_rbtree_transplant(rbtree, z, z->right);
+		rcu_rbtree_transplant(rbtree, z, z->right);
+		assert(!is_decay(z));
+		x = z->right;
 		show_tree(rbtree);
 	} else if (rcu_rbtree_is_nil(z->right)) {
-		x = rcu_rbtree_transplant(rbtree, z, z->left);
+		rcu_rbtree_transplant(rbtree, z, z->left);
+		assert(!is_decay(z));
+		x = z->left;
 		show_tree(rbtree);
 	} else {
 		y = rcu_rbtree_min(rbtree, z->right);
 		y_original_color = y->color;
-		x = rcu_rbtree_remove_nonil(rbtree, z, y);
+		rcu_rbtree_remove_nonil(rbtree, z, y);
+		assert(!is_decay(y));
+		x = y->right;
 		show_tree(rbtree);
 	}
 	if (y_original_color == COLOR_BLACK)

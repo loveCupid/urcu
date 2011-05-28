@@ -265,6 +265,7 @@ void *thr_writer(void *_count)
 
 	for (;;) {
 		rcu_copy_mutex_lock();
+		rcu_read_lock();
 
 		for (i = 0; i < NR_RAND; i++) {
 			node = rbtree_alloc();
@@ -298,6 +299,7 @@ void *thr_writer(void *_count)
 			defer_rcu((void (*)(void *))rbtree_free, node);
 		}
 
+		rcu_read_unlock();
 		rcu_copy_mutex_unlock();
 		nr_writes++;
 		if (unlikely(!test_duration_write()))

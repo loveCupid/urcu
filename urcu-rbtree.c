@@ -51,7 +51,8 @@
  * Undefine this to enable the non-RCU rotate and transplant functions
  * (for debugging).
  */
-#define RBTREE_RCU_SUPPORT_ROTATE
+#define RBTREE_RCU_SUPPORT_ROTATE_LEFT
+#define RBTREE_RCU_SUPPORT_ROTATE_RIGHT
 #define RBTREE_RCU_SUPPORT_TRANSPLANT
 
 static
@@ -63,6 +64,8 @@ void set_decay(struct rcu_rbtree_node *x, struct rcu_rbtree_node *xc)
 static
 struct rcu_rbtree_node *get_decay(struct rcu_rbtree_node *x)
 {
+	if (!x)
+		return NULL;
 	while (x->decay_next)
 		x = x->decay_next;
 	return x;
@@ -239,7 +242,8 @@ struct rcu_rbtree_node *rcu_rbtree_prev(struct rcu_rbtree *rbtree,
 /* RCU: copy x and y, atomically point to new versions. GC old. */
 /* Should be eventually followed by a cmm_smp_wmc() */
 
-#ifdef RBTREE_RCU_SUPPORT_ROTATE
+#ifdef RBTREE_RCU_SUPPORT_ROTATE_LEFT
+
 static
 void left_rotate(struct rcu_rbtree *rbtree,
 		 struct rcu_rbtree_node *x)
@@ -251,9 +255,9 @@ void left_rotate(struct rcu_rbtree *rbtree,
 	y_left = y->left;
 
 	/* Now operate on new copy, decay old versions */
-	//x = dup_decay_node(rbtree, x);
-	//y = dup_decay_node(rbtree, y);
-	//y_left = dup_decay_node(rbtree, y_left);
+	x = dup_decay_node(rbtree, x);
+	y = dup_decay_node(rbtree, y);
+	y_left = dup_decay_node(rbtree, y_left);
 
 	x_pos = x->pos;
 	x_p = x->p;
@@ -280,11 +284,13 @@ void left_rotate(struct rcu_rbtree *rbtree,
 	else
 		_CMM_STORE_SHARED(x_p->right, y);
 
-	/* Point children to new copy (parent only used by updates) */
-	if (!rcu_rbtree_is_nil(x->left))
-		x->left->p = x;
-	if (!rcu_rbtree_is_nil(y->right))
-		y->right->p = y;
+	/* Point children to new copy (parent only used by updates/next/prev) */
+	x->left->p = get_decay(x->left->p);
+	y->right->p = get_decay(y->right->p);
+	if (!rcu_rbtree_is_nil(y_left)) {
+		y_left->right->p = get_decay(y_left->right->p);
+		y_left->left->p = get_decay(y_left->left->p);
+	}
 
 	/* Sanity checks */
 	assert(y == rbtree->root || y->p->left == y || y->p->right == y);
@@ -302,71 +308,9 @@ void left_rotate(struct rcu_rbtree *rbtree,
 	assert(!is_decay(y->left));
 }
 
-static
-void right_rotate(struct rcu_rbtree *rbtree,
-		  struct rcu_rbtree_node *x)
-{
-	struct rcu_rbtree_node *y, *y_right, *x_p;
-	unsigned int x_pos;
-
-	y = x->left;
-	y_right = y->right;
-
-	/* Now operate on new copy, decay old versions */
-	//x = dup_decay_node(rbtree, x);
-	//y = dup_decay_node(rbtree, y);
-	//y_right = dup_decay_node(rbtree, y_right);
-
-	x_pos = x->pos;
-	x_p = x->p;
-
-	/* Internal node modifications */
-	x->left = y_right;
-	y->p = x->p;
-	y->pos = x->pos;
-	x->pos = IS_RIGHT;
-	y->right = x;
-	x->p = y;
-	if (!rcu_rbtree_is_nil(y_right)) {
-		y_right->p = x;
-		y_right->pos = IS_LEFT;
-	}
-
-	cmm_smp_wmb();	/* write into node before publish */
-
-	/* External references update (visible by readers) */
-	if (rcu_rbtree_is_nil(x_p))
-		_CMM_STORE_SHARED(rbtree->root, y);
-	else if (x_pos == IS_RIGHT)
-		_CMM_STORE_SHARED(x_p->right, y);
-	else
-		_CMM_STORE_SHARED(x_p->left, y);
-
-	/* Point children to new copy (parent only used by updates) */
-	if (!rcu_rbtree_is_nil(x->right))
-		x->right->p = x;
-	if (!rcu_rbtree_is_nil(y->left))
-		y->left->p = y;
-
-	/* Sanity checks */
-	assert(y == rbtree->root || y->p->right == y || y->p->left == y);
-	assert(x == rbtree->root || x->p->right == x || x->p->left == x);
-	assert(rcu_rbtree_is_nil(x->left) || x->left->p == x);
-	assert(rcu_rbtree_is_nil(x->right) || x->right->p == x);
-	assert(rcu_rbtree_is_nil(y->left) || y->left->p == y);
-	assert(rcu_rbtree_is_nil(y->right) || y->right->p == y);
-	assert(!is_decay(rbtree->root));
-	assert(!is_decay(x));
-	assert(!is_decay(y));
-	assert(!is_decay(x->left));
-	assert(!is_decay(x->right));
-	assert(!is_decay(y->left));
-	assert(!is_decay(y->right));
-}
-
 #else
 
-/* non-rcu versions */
+/* non-rcu version */
 static
 void left_rotate(struct rcu_rbtree *rbtree,
 		 struct rcu_rbtree_node *x)
@@ -394,6 +338,76 @@ void left_rotate(struct rcu_rbtree *rbtree,
 	x->p = y;
 }
 
+#endif
+
+#ifdef RBTREE_RCU_SUPPORT_ROTATE_RIGHT
+static
+void right_rotate(struct rcu_rbtree *rbtree,
+		  struct rcu_rbtree_node *x)
+{
+	struct rcu_rbtree_node *y, *y_right, *x_p;
+	unsigned int x_pos;
+
+	y = x->left;
+	y_right = y->right;
+
+	/* Now operate on new copy, decay old versions */
+	x = dup_decay_node(rbtree, x);
+	y = dup_decay_node(rbtree, y);
+	y_right = dup_decay_node(rbtree, y_right);
+
+	x_pos = x->pos;
+	x_p = x->p;
+
+	/* Internal node modifications */
+	x->left = y_right;
+	y->p = x->p;
+	y->pos = x->pos;
+	x->pos = IS_RIGHT;
+	y->right = x;
+	x->p = y;
+	if (!rcu_rbtree_is_nil(y_right)) {
+		y_right->p = x;
+		y_right->pos = IS_LEFT;
+	}
+
+	cmm_smp_wmb();	/* write into node before publish */
+
+	/* External references update (visible by readers) */
+	if (rcu_rbtree_is_nil(x_p))
+		_CMM_STORE_SHARED(rbtree->root, y);
+	else if (x_pos == IS_RIGHT)
+		_CMM_STORE_SHARED(x_p->right, y);
+	else
+		_CMM_STORE_SHARED(x_p->left, y);
+
+	/* Point children to new copy (parent only used by updates/next/prev) */
+	x->right->p = get_decay(x->right->p);
+	y->left->p = get_decay(y->left->p);
+	if (!rcu_rbtree_is_nil(y_right)) {
+		y_right->left->p = get_decay(y_right->left->p);
+		y_right->right->p = get_decay(y_right->right->p);
+	}
+
+	/* Sanity checks */
+	assert(y == rbtree->root || y->p->right == y || y->p->left == y);
+	assert(x == rbtree->root || x->p->right == x || x->p->left == x);
+	assert(rcu_rbtree_is_nil(x->left) || x->left->p == x);
+	assert(rcu_rbtree_is_nil(x->right) || x->right->p == x);
+	assert(rcu_rbtree_is_nil(y->left) || y->left->p == y);
+	assert(rcu_rbtree_is_nil(y->right) || y->right->p == y);
+	assert(!is_decay(rbtree->root));
+	assert(!is_decay(x));
+	assert(!is_decay(y));
+	assert(!is_decay(x->left));
+	assert(!is_decay(x->right));
+	assert(!is_decay(y->left));
+	assert(!is_decay(y->right));
+}
+
+#else
+
+/* non-rcu version */
 static
 void right_rotate(struct rcu_rbtree *rbtree,
 		  struct rcu_rbtree_node *x)
@@ -555,8 +569,8 @@ void rcu_rbtree_transplant(struct rcu_rbtree *rbtree,
 {
 	dbg_printf("transplant %p\n", v->key);
 
-	//if (!rcu_rbtree_is_nil(v))
-	//	v = dup_decay_node(rbtree, v);
+	if (!rcu_rbtree_is_nil(v))
+		v = dup_decay_node(rbtree, v);
 
 	if (rcu_rbtree_is_nil(u->p)) {
 		v->p = u->p;
@@ -573,12 +587,10 @@ void rcu_rbtree_transplant(struct rcu_rbtree *rbtree,
 		cmm_smp_wmb();	/* write into node before publish */
 		_CMM_STORE_SHARED(u->p->right, v);
 	}
-	/* Set children parent to new node (only used by updates) */
+	/* Point children to new copy (parent only used by updates/next/prev) */
 	if (!rcu_rbtree_is_nil(v)) {
-		if (!rcu_rbtree_is_nil(v->right))
-			v->right->p = v;
-		if (!rcu_rbtree_is_nil(v->left))
-			v->left->p = v;
+		v->right->p = get_decay(v->right->p);
+		v->left->p = get_decay(v->left->p);
 	}
 	assert(!is_decay(rbtree->root));
 }

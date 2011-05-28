@@ -47,8 +47,8 @@
 #define NR_CPUS 16384
 
 /* number of insert/delete */
-//#define NR_RAND 4
-#define NR_RAND 7
+#define NR_RAND 6
+//#define NR_RAND 7
 
 #if defined(_syscall0)
 _syscall0(pid_t, gettid)

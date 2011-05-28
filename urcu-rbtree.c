@@ -47,6 +47,13 @@
 #define dbg_printf(args...)
 #endif
 
+/*
+ * Undefine this to enable the non-RCU rotate and transplant functions
+ * (for debugging).
+ */
+#define RBTREE_RCU_SUPPORT_ROTATE
+#define RBTREE_RCU_SUPPORT_TRANSPLANT
+
 static
 void set_decay(struct rcu_rbtree_node *x, struct rcu_rbtree_node *xc)
 {
@@ -232,6 +239,7 @@ struct rcu_rbtree_node *rcu_rbtree_prev(struct rcu_rbtree *rbtree,
 /* RCU: copy x and y, atomically point to new versions. GC old. */
 /* Should be eventually followed by a cmm_smp_wmc() */
 
+#ifdef RBTREE_RCU_SUPPORT_ROTATE
 static
 void left_rotate(struct rcu_rbtree *rbtree,
 		 struct rcu_rbtree_node *x)
@@ -243,9 +251,9 @@ void left_rotate(struct rcu_rbtree *rbtree,
 	y_left = y->left;
 
 	/* Now operate on new copy, decay old versions */
-	x = dup_decay_node(rbtree, x);
-	y = dup_decay_node(rbtree, y);
-	y_left = dup_decay_node(rbtree, y_left);
+	//x = dup_decay_node(rbtree, x);
+	//y = dup_decay_node(rbtree, y);
+	//y_left = dup_decay_node(rbtree, y_left);
 
 	x_pos = x->pos;
 	x_p = x->p;
@@ -305,9 +313,9 @@ void right_rotate(struct rcu_rbtree *rbtree,
 	y_right = y->right;
 
 	/* Now operate on new copy, decay old versions */
-	x = dup_decay_node(rbtree, x);
-	y = dup_decay_node(rbtree, y);
-	y_right = dup_decay_node(rbtree, y_right);
+	//x = dup_decay_node(rbtree, x);
+	//y = dup_decay_node(rbtree, y);
+	//y_right = dup_decay_node(rbtree, y_right);
 
 	x_pos = x->pos;
 	x_p = x->p;
@@ -355,6 +363,65 @@ void right_rotate(struct rcu_rbtree *rbtree,
 	assert(!is_decay(y->left));
 	assert(!is_decay(y->right));
 }
+
+#else
+
+/* non-rcu versions */
+static
+void left_rotate(struct rcu_rbtree *rbtree,
+		 struct rcu_rbtree_node *x)
+{
+	struct rcu_rbtree_node *y;
+
+	y = x->right;
+	x->right = y->left;
+	if (!rcu_rbtree_is_nil(y->left)) {
+		y->left->p = x;
+		y->left->pos = IS_RIGHT;
+	}
+	y->p = x->p;
+	if (rcu_rbtree_is_nil(x->p))
+		rbtree->root = y;
+	else if (x == x->p->left) {
+		x->p->left = y;
+		y->pos = IS_LEFT;
+	} else {
+		x->p->right = y;
+		y->pos = IS_RIGHT;
+	}
+	y->left = x;
+	x->pos = IS_LEFT;
+	x->p = y;
+}
+
+static
+void right_rotate(struct rcu_rbtree *rbtree,
+		  struct rcu_rbtree_node *x)
+{
+	struct rcu_rbtree_node *y;
+
+	y = x->left;
+	x->left = y->right;
+	if (!rcu_rbtree_is_nil(y->right)) {
+		y->right->p = x;
+		y->right->pos = IS_LEFT;
+	}
+	y->p = x->p;
+	if (rcu_rbtree_is_nil(x->p))
+		rbtree->root = y;
+	else if (x == x->p->right) {
+		x->p->right = y;
+		y->pos = IS_RIGHT;
+	} else {
+		x->p->left = y;
+		y->pos = IS_LEFT;
+	}
+	y->right = x;
+	x->pos = IS_RIGHT;
+	x->p = y;
+}
+
+#endif
 
 static void rcu_rbtree_insert_fixup(struct rcu_rbtree *rbtree,
 				    struct rcu_rbtree_node *z)
@@ -478,6 +545,9 @@ int rcu_rbtree_insert(struct rcu_rbtree *rbtree,
 /*
  * Transplant v into u position.
  */
+
+#ifdef RBTREE_RCU_SUPPORT_TRANSPLANT
+
 static
 void rcu_rbtree_transplant(struct rcu_rbtree *rbtree,
 			struct rcu_rbtree_node *u,
@@ -485,8 +555,8 @@ void rcu_rbtree_transplant(struct rcu_rbtree *rbtree,
 {
 	dbg_printf("transplant %p\n", v->key);
 
-	if (!rcu_rbtree_is_nil(v))
-		v = dup_decay_node(rbtree, v);
+	//if (!rcu_rbtree_is_nil(v))
+	//	v = dup_decay_node(rbtree, v);
 
 	if (rcu_rbtree_is_nil(u->p)) {
 		v->p = u->p;
@@ -505,11 +575,37 @@ void rcu_rbtree_transplant(struct rcu_rbtree *rbtree,
 	}
 	/* Set children parent to new node (only used by updates) */
 	if (!rcu_rbtree_is_nil(v)) {
-		v->right->p = v;
-		v->left->p = v;
+		if (!rcu_rbtree_is_nil(v->right))
+			v->right->p = v;
+		if (!rcu_rbtree_is_nil(v->left))
+			v->left->p = v;
 	}
 	assert(!is_decay(rbtree->root));
 }
+
+#else
+
+/* Non-RCU version */
+static
+void rcu_rbtree_transplant(struct rcu_rbtree *rbtree,
+			   struct rcu_rbtree_node *u,
+			   struct rcu_rbtree_node *v)
+{
+	dbg_printf("transplant %p\n", v->key);
+
+	if (rcu_rbtree_is_nil(u->p))
+		rbtree->root = v;
+	else if (u == u->p->left) {
+		u->p->left = v;
+		v->pos = IS_LEFT;
+	} else {
+		u->p->right = v;
+		v->pos = IS_RIGHT;
+	}
+	v->p = u->p;
+}
+
+#endif
 
 static void rcu_rbtree_remove_fixup(struct rcu_rbtree *rbtree,
 				    struct rcu_rbtree_node *x)
@@ -660,8 +756,9 @@ int rcu_rbtree_remove(struct rcu_rbtree *rbtree,
 		y = rcu_rbtree_min(rbtree, z->right);
 		assert(!is_decay(y));
 		y_original_color = y->color;
+		x = y->right;
 		rcu_rbtree_remove_nonil(rbtree, z, y);
-		x = get_decay(y->right);
+		x = get_decay(x);
 		show_tree(rbtree);
 	}
 	if (y_original_color == COLOR_BLACK)

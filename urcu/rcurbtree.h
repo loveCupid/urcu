@@ -31,6 +31,7 @@
  */
 
 #include <pthread.h>
+#include <urcu-call-rcu.h>
 
 #define COLOR_BLACK	0
 #define COLOR_RED	1
@@ -50,7 +51,7 @@ typedef int (*rcu_rbtree_comp)(void *a, void *b);
  * Node allocation and deletion functions.
  */
 typedef struct rcu_rbtree_node *(*rcu_rbtree_alloc)(void);
-typedef void (*rcu_rbtree_free)(void *node);
+typedef void (*rcu_rbtree_free)(struct rcu_head *head);
 
 struct rcu_rbtree_node {
 	/* must be set upon insertion */
@@ -59,6 +60,7 @@ struct rcu_rbtree_node {
 	/* internally reserved */
 	struct rcu_rbtree_node *p, *left, *right;
 	struct rcu_rbtree_node *decay_next;
+	struct rcu_head head;		/* For delayed free */
 	unsigned int color:1;
 	unsigned int pos:1;
 	unsigned int nil:1;

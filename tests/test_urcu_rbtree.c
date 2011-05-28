@@ -74,8 +74,10 @@ struct rcu_rbtree_node *rbtree_alloc(void)
 	return calloc(1, sizeof(struct rcu_rbtree_node));
 }
 
-void rbtree_free(void *node)
+void rbtree_free(struct rcu_head *head)
 {
+	struct rcu_rbtree_node *node =
+		caa_container_of(head, struct rcu_rbtree_node, head);
 	free(node);
 }
 
@@ -256,7 +258,7 @@ void *thr_writer(void *_count)
 
 	set_affinity();
 
-	rcu_defer_register_thread();
+	rcu_register_thread();
 
 	while (!test_go)
 	{
@@ -296,7 +298,7 @@ void *thr_writer(void *_count)
 			node = rcu_rbtree_search(&rbtree, rbtree.root, key[i]);
 			assert(!rcu_rbtree_is_nil(node));
 			rcu_rbtree_remove(&rbtree, node);
-			defer_rcu((void (*)(void *))rbtree_free, node);
+			call_rcu(&node->head, rbtree_free);
 		}
 
 		rcu_read_unlock();
@@ -308,7 +310,7 @@ void *thr_writer(void *_count)
 			loop_sleep(wdelay);
 	}
 
-	rcu_defer_unregister_thread();
+	rcu_unregister_thread();
 
 	printf_verbose("thread_end %s, thread id : %lx, tid %lu\n",
 			"writer", pthread_self(), (unsigned long)gettid());

@@ -53,16 +53,21 @@ typedef int (*rcu_rbtree_comp)(void *a, void *b);
 typedef struct rcu_rbtree_node *(*rcu_rbtree_alloc)(void);
 typedef void (*rcu_rbtree_free)(struct rcu_head *head);
 
+/*
+ * struct rcu_rbtree_node must be aligned at least on 2 bytes.
+ * Lowest bit reserved for position (left/right) in pointer to parent.
+ */
 struct rcu_rbtree_node {
 	/* must be set upon insertion */
 	void *key;
 
 	/* internally reserved */
-	struct rcu_rbtree_node *p, *left, *right;
+	/* parent uses low bit for "0 -> is left, 1 -> is right" */
+	unsigned long parent;
+	struct rcu_rbtree_node *left, *right;
 	struct rcu_rbtree_node *decay_next;
 	struct rcu_head head;		/* For delayed free */
 	unsigned int color:1;
-	unsigned int pos:1;
 	unsigned int nil:1;
 };
 

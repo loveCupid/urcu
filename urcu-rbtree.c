@@ -576,17 +576,16 @@ void rcu_rbtree_transplant(struct rcu_rbtree *rbtree,
 		v->p = u->p;
 		cmm_smp_wmb();	/* write into node before publish */
 		_CMM_STORE_SHARED(rbtree->root, v);
-	} else if (u == u->p->left) {
-		v->pos = IS_LEFT;
-		v->p = u->p;
-		cmm_smp_wmb();	/* write into node before publish */
-		_CMM_STORE_SHARED(u->p->left, v);
 	} else {
-		v->pos = IS_RIGHT;
+		v->pos = u->pos;
 		v->p = u->p;
 		cmm_smp_wmb();	/* write into node before publish */
-		_CMM_STORE_SHARED(u->p->right, v);
+		if (u->pos == IS_LEFT)
+			_CMM_STORE_SHARED(u->p->left, v);
+		else
+			_CMM_STORE_SHARED(u->p->right, v);
 	}
+
 	/* Point children to new copy (parent only used by updates/next/prev) */
 	if (!rcu_rbtree_is_nil(v)) {
 		v->right->p = get_decay(v->right->p);

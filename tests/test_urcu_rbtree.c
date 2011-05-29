@@ -462,6 +462,8 @@ int main(int argc, char **argv)
 			exit(1);
 	}
 
+	rcu_register_thread();
+	rcu_read_lock();
 	/* Insert items looked up by readers */
 	for (i = 0; i < global_items; i++) {
 		node = rbtree_alloc();
@@ -469,6 +471,7 @@ int main(int argc, char **argv)
 		node->key = global_key[i];
 		rcu_rbtree_insert(&rbtree, node);
 	}
+	rcu_read_unlock();
 
 	cmm_smp_mb();
 
@@ -491,12 +494,15 @@ int main(int argc, char **argv)
 		tot_writes += count_writer[i];
 	}
 	
+	rcu_read_lock();
 	for (i = 0; i < global_items; i++) {
 		node = rcu_rbtree_search(&rbtree, rbtree.root, global_key[i]);
 		assert(!rcu_rbtree_is_nil(node));
 		rcu_rbtree_remove(&rbtree, node);
 		call_rcu(&node->head, rbtree_free);
 	}
+	rcu_read_unlock();
+	rcu_unregister_thread();
 
 	printf_verbose("total number of reads : %llu, writes %llu\n", tot_reads,
 	       tot_writes);

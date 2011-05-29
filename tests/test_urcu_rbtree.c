@@ -228,17 +228,18 @@ void *thr_reader(void *_count)
 	cmm_smp_mb();
 
 	for (;;) {
-		rcu_read_lock();
 
 		for (i = 0; i < global_items; i++) {
-			node = rcu_rbtree_search(&rbtree, rbtree.root,
+			rcu_read_lock();
+			node = rcu_rbtree_search(&rbtree,
+						 rcu_dereference(rbtree.root),
 						 global_key[i]);
 			assert(!rcu_rbtree_is_nil(node));
+			rcu_read_unlock();
 		}
 		debug_yield_read();
 		if (unlikely(rduration))
 			loop_sleep(rduration);
-		rcu_read_unlock();
 		nr_reads++;
 		if (unlikely(!test_duration_read()))
 			break;
@@ -278,18 +279,21 @@ void *thr_writer(void *_count)
 
 	for (;;) {
 		rcu_copy_mutex_lock();
-		rcu_read_lock();
 
 		for (i = 0; i < NR_RAND; i++) {
 			node = rbtree_alloc();
 			key[i] = (void *)(unsigned long)(rand() % 2048);
 			node->key = key[i];
+			rcu_read_lock();
 			rcu_rbtree_insert(&rbtree, node);
+			rcu_read_unlock();
 		}
+		rcu_copy_mutex_unlock();
 
 		if (unlikely(wduration))
 			loop_sleep(wduration);
 
+		rcu_copy_mutex_lock();
 		for (i = 0; i < NR_RAND; i++) {
 #if 0
 			node = rcu_rbtree_min(rbtree, rbtree->root);
@@ -306,13 +310,14 @@ void *thr_writer(void *_count)
 			}
 			printf("\n");
 #endif
+			rcu_read_lock();
 			node = rcu_rbtree_search(&rbtree, rbtree.root, key[i]);
 			assert(!rcu_rbtree_is_nil(node));
 			rcu_rbtree_remove(&rbtree, node);
+			rcu_read_unlock();
 			call_rcu(&node->head, rbtree_free);
 		}
 
-		rcu_read_unlock();
 		rcu_copy_mutex_unlock();
 		nr_writes++;
 		if (unlikely(!test_duration_write()))

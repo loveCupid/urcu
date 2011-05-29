@@ -34,6 +34,7 @@
 #include <pthread.h>
 #include <assert.h>
 #include <string.h>
+#include <unistd.h>
 
 #include <urcu/rcurbtree.h>
 #include <urcu-pointer.h>
@@ -54,6 +55,35 @@
 #define RBTREE_RCU_SUPPORT_ROTATE_LEFT
 #define RBTREE_RCU_SUPPORT_ROTATE_RIGHT
 #define RBTREE_RCU_SUPPORT_TRANSPLANT
+
+#ifdef EXTRA_DEBUG
+static pthread_mutex_t test_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t outer_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+static
+void lock_outer_mutex(void)
+{
+	pthread_mutex_lock(&outer_mutex);
+}
+
+static
+void unlock_outer_mutex(void)
+{
+	pthread_mutex_unlock(&outer_mutex);
+}
+
+static
+void lock_test_mutex(void)
+{
+	pthread_mutex_lock(&test_mutex);
+}
+
+static
+void unlock_test_mutex(void)
+{
+	pthread_mutex_unlock(&test_mutex);
+}
+#endif
 
 static
 void set_decay(struct rcu_rbtree_node *x, struct rcu_rbtree_node *xc)
@@ -139,10 +169,57 @@ struct rcu_rbtree_node* rcu_rbtree_search(struct rcu_rbtree *rbtree,
 	x = rcu_dereference(x);
 
 	while (!rcu_rbtree_is_nil(x) && k != x->key) {
+		usleep(10);
 		if (rbtree->comp(k, x->key) < 0)
 			x = rcu_dereference(x->left);
 		else
 			x = rcu_dereference(x->right);
+	}
+	return x;
+}
+
+static
+struct rcu_rbtree_node *rcu_rbtree_min_dup_decay(struct rcu_rbtree *rbtree,
+						 struct rcu_rbtree_node *x,
+						 struct rcu_rbtree_node **zr)
+{
+	struct rcu_rbtree_node *xl;
+
+	x = rcu_dereference(x);
+
+	if (rcu_rbtree_is_nil(x)) {
+		*zr = x;
+		return x;
+	} else
+		*zr = x = dup_decay_node(rbtree, x);
+
+	while (!rcu_rbtree_is_nil(xl = rcu_dereference(x->left))) {
+		x = dup_decay_node(rbtree, xl);
+		x->p = get_decay(x->p);
+		x->p->left = get_decay(x->p->left);
+	}
+	return x;
+}
+
+static
+struct rcu_rbtree_node *rcu_rbtree_min_update_decay(struct rcu_rbtree *rbtree,
+						    struct rcu_rbtree_node *x)
+{
+	struct rcu_rbtree_node *xl;
+
+	x = rcu_dereference(x);
+
+	if (rcu_rbtree_is_nil(x))
+		return x;
+	else {
+		x->right->p = get_decay(x->right->p);
+		x->left->p = get_decay(x->left->p);
+	}
+
+	while (!rcu_rbtree_is_nil(xl = rcu_dereference(x->left))) {
+		x = xl;
+		xl->right->p = get_decay(xl->right->p);
+		xl->left->p = get_decay(xl->left->p);
 	}
 	return x;
 }
@@ -317,6 +394,7 @@ void left_rotate(struct rcu_rbtree *rbtree,
 {
 	struct rcu_rbtree_node *y;
 
+	lock_test_mutex();
 	y = x->right;
 	x->right = y->left;
 	if (!rcu_rbtree_is_nil(y->left)) {
@@ -336,6 +414,7 @@ void left_rotate(struct rcu_rbtree *rbtree,
 	y->left = x;
 	x->pos = IS_LEFT;
 	x->p = y;
+	unlock_test_mutex();
 }
 
 #endif
@@ -414,6 +493,7 @@ void right_rotate(struct rcu_rbtree *rbtree,
 {
 	struct rcu_rbtree_node *y;
 
+	lock_test_mutex();
 	y = x->left;
 	x->left = y->right;
 	if (!rcu_rbtree_is_nil(y->right)) {
@@ -433,6 +513,7 @@ void right_rotate(struct rcu_rbtree *rbtree,
 	y->right = x;
 	x->pos = IS_RIGHT;
 	x->p = y;
+	unlock_test_mutex();
 }
 
 #endif
@@ -604,6 +685,7 @@ void rcu_rbtree_transplant(struct rcu_rbtree *rbtree,
 {
 	dbg_printf("transplant %p\n", v->key);
 
+	lock_test_mutex();
 	if (rcu_rbtree_is_nil(u->p))
 		rbtree->root = v;
 	else if (u == u->p->left) {
@@ -614,6 +696,7 @@ void rcu_rbtree_transplant(struct rcu_rbtree *rbtree,
 		v->pos = IS_RIGHT;
 	}
 	v->p = u->p;
+	unlock_test_mutex();
 }
 
 #endif
@@ -720,23 +803,39 @@ void rcu_rbtree_remove_nonil(struct rcu_rbtree *rbtree,
 	assert(!is_decay(y->p));
 	x = y->right;
 	assert(!is_decay(x));
-	if (y->p == z)
+	if (y->p == z) {
+		y = dup_decay_node(rbtree, y);
 		x->p = y;
-	else {
-		rcu_rbtree_transplant(rbtree, y, y->right);
+		y->left = z->left;
+		rcu_rbtree_transplant(rbtree, z, y);
+	} else {
+		struct rcu_rbtree_node *oy_right, *z_right;
+
+		/*
+		 * Need to make sure y is always visible by readers.
+		 */
+		y = rcu_rbtree_min_dup_decay(rbtree, z->right, &z_right);
 		assert(!is_decay(y));
 		assert(!is_decay(z));
-		assert(!is_decay(z->right));
-		y->right = z->right;
+		oy_right = y->right;
+		y->right = z_right;
 		y->right->p = y;
+		assert(!is_decay(z->left));
+		y->left = z->left;
+		assert(!is_decay(oy_right));
+		rcu_rbtree_transplant(rbtree, y, oy_right);
+		rcu_rbtree_transplant(rbtree, z, y);
+		/* Update children */
+		(void) rcu_rbtree_min_update_decay(rbtree, y->right);
 	}
-	rcu_rbtree_transplant(rbtree, z, y);
 	y = get_decay(y);
 	assert(!is_decay(z));
 	assert(!is_decay(z->left));
-	y->left = z->left;
-	y->left->p = y;
 	y->color = z->color;
+	y->left->p = y;
+	y->right->p = get_decay(y->right->p);
+	assert(!is_decay(y->left));
+	assert(!is_decay(y->right));
 }
 
 int rcu_rbtree_remove(struct rcu_rbtree *rbtree,

@@ -60,11 +60,14 @@ typedef void (*rcu_rbtree_free)(struct rcu_head *head);
 struct rcu_rbtree_node {
 	/* must be set upon insertion */
 	void *key;
+	/* augmented tree */
+	void *min_child_key, *max_child_key;
 
 	/* internally reserved */
 	/* parent uses low bit for "0 -> is left, 1 -> is right" */
 	unsigned long parent;
-	struct rcu_rbtree_node *left, *right;
+	/* _left and _right must be updated with set_left(), set_right() */
+	struct rcu_rbtree_node *_left, *_right;
 	struct rcu_rbtree_node *decay_next;
 	struct rcu_head head;		/* For delayed free */
 	unsigned int color:1;
@@ -89,7 +92,7 @@ struct rcu_rbtree {
 				.color = COLOR_BLACK,	\
 				.nil = 1,		\
 			},				\
-			.root = &x.nil_node,		\
+			.root = &(x).nil_node,		\
 		};
 
 /*

@@ -88,7 +88,7 @@ void set_parent(struct rcu_rbtree_node *node,
 		struct rcu_rbtree_node *parent,
 		unsigned int pos)
 {
-	node->parent = ((unsigned long) parent) | pos;
+	_CMM_STORE_SHARED(node->parent, ((unsigned long) parent) | pos);
 }
 
 static

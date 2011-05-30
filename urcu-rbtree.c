@@ -40,8 +40,6 @@
 #include <urcu-pointer.h>
 #include <urcu-call-rcu.h>
 
-#define DEBUG
-
 #ifdef DEBUG
 #define dbg_printf(args...)	printf(args)
 #else
@@ -162,6 +160,7 @@ struct rcu_rbtree_node *dup_decay_node(struct rcu_rbtree *rbtree,
  * transplantations/rotations required for the operation.
  */
 
+#ifdef DEBUG
 static
 void show_tree(struct rcu_rbtree *rbtree)
 {
@@ -182,6 +181,12 @@ void show_tree(struct rcu_rbtree *rbtree)
 	}
 	printf("\n");
 }
+#else /* DEBUG */
+static
+void show_tree(struct rcu_rbtree *rbtree)
+{
+}
+#endif /* DEBUG */
 
 static
 struct rcu_rbtree_node *make_nil(struct rcu_rbtree *rbtree)

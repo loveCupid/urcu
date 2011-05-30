@@ -71,7 +71,6 @@ struct rcu_rbtree_node {
 	struct rcu_rbtree_node *decay_next;
 	struct rcu_head head;		/* For delayed free */
 	unsigned int color:1;
-	unsigned int nil:1;
 };
 
 struct rcu_rbtree {
@@ -90,7 +89,6 @@ struct rcu_rbtree {
 			.rbfree = _rbfree,		\
 			.nil_node = {			\
 				.color = COLOR_BLACK,	\
-				.nil = 1,		\
 			},				\
 			.root = &(x).nil_node,		\
 		};
@@ -121,12 +119,19 @@ int rcu_rbtree_insert(struct rcu_rbtree *rbtree,
  * Returns 0 on success. May fail with -ENOMEM.
  *
  * The caller is responsible for freeing the node after a grace period.
- * Caller must have exclusive write access and hold RCU read-side lock.
+ * Caller must have exclusive write access and hold RCU read-side lock
+ * across "search" and "remove".
  */
 int rcu_rbtree_remove(struct rcu_rbtree *rbtree,
 		      struct rcu_rbtree_node *node);
 
 /* RCU read-side */
+
+/*
+ * For all these read-side privimitives, RCU read-side lock must be held
+ * across the duration for which the search is done and the returned
+ * rbtree node is expected to be valid.
+ */
 
 /*
  * Search key starting from node x. Returns nil node if not found.
@@ -137,7 +142,7 @@ struct rcu_rbtree_node *rcu_rbtree_search(struct rcu_rbtree *rbtree,
 
 /*
  * Search for node with, respectively, smallest or largest value within
- * the ranges (ranges are inclusive).
+ * the ranges (ranges are inclusive), starting from node x.
  */
 struct rcu_rbtree_node *rcu_rbtree_search_min(struct rcu_rbtree *rbtree,
 					  struct rcu_rbtree_node *x,
@@ -147,15 +152,27 @@ struct rcu_rbtree_node *rcu_rbtree_search_max(struct rcu_rbtree *rbtree,
 					  struct rcu_rbtree_node *x,
 					  void *range_low, void *range_high);
 
+/*
+ * Search for minimum node of the tree under node x.
+ */
 struct rcu_rbtree_node *rcu_rbtree_min(struct rcu_rbtree *rbtree,
 				       struct rcu_rbtree_node *x);
 
+/*
+ * Search for maximum node of the tree under node x.
+ */
 struct rcu_rbtree_node *rcu_rbtree_max(struct rcu_rbtree *rbtree,
 				       struct rcu_rbtree_node *x);
 
+/*
+ * Get next node after node x.
+ */
 struct rcu_rbtree_node *rcu_rbtree_next(struct rcu_rbtree *rbtree,
 					struct rcu_rbtree_node *x);
 
+/*
+ * Get previous node before node x.
+ */
 struct rcu_rbtree_node *rcu_rbtree_prev(struct rcu_rbtree *rbtree,
 					struct rcu_rbtree_node *x);
 
@@ -164,9 +181,9 @@ struct rcu_rbtree_node *rcu_rbtree_prev(struct rcu_rbtree *rbtree,
  * Don't care about p, left, right, pos and key values.
  */
 static
-int rcu_rbtree_is_nil(struct rcu_rbtree_node *node)
+int rcu_rbtree_is_nil(struct rcu_rbtree *rbtree, struct rcu_rbtree_node *node)
 {
-	return node->nil;
+	return node == &rbtree->nil_node;
 }
 
 #endif /* URCU_RBTREE_H */

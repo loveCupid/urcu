@@ -253,7 +253,7 @@ void *thr_reader(void *_count)
 			node = rcu_rbtree_search(&rbtree,
 						 rcu_dereference(rbtree.root),
 						 global_key[i]);
-			assert(!rcu_rbtree_is_nil(node));
+			assert(!rcu_rbtree_is_nil(&rbtree, node));
 			rcu_read_unlock();
 		}
 
@@ -263,7 +263,7 @@ void *thr_reader(void *_count)
 			node = rcu_rbtree_search_min(&rbtree,
 						 rcu_dereference(rbtree.root),
 						 global_key[i], global_key[i]);
-			assert(!rcu_rbtree_is_nil(node));
+			assert(!rcu_rbtree_is_nil(&rbtree, node));
 			rcu_read_unlock();
 		}
 
@@ -273,7 +273,7 @@ void *thr_reader(void *_count)
 			node = rcu_rbtree_search_max(&rbtree,
 						 rcu_dereference(rbtree.root),
 						 global_key[i], global_key[i]);
-			assert(!rcu_rbtree_is_nil(node));
+			assert(!rcu_rbtree_is_nil(&rbtree, node));
 			rcu_read_unlock();
 		}
 
@@ -283,7 +283,7 @@ void *thr_reader(void *_count)
 		rcu_read_lock();
 		node = rcu_rbtree_min(&rbtree,
 				      rcu_dereference(rbtree.root));
-		while (!rcu_rbtree_is_nil(node)) {
+		while (!rcu_rbtree_is_nil(&rbtree, node)) {
 			set_lookup_index(node, lookup_hit);
 			node = rcu_rbtree_next(&rbtree, node);
 		}
@@ -298,7 +298,7 @@ void *thr_reader(void *_count)
 		rcu_read_lock();
 		node = rcu_rbtree_max(&rbtree,
 				      rcu_dereference(rbtree.root));
-		while (!rcu_rbtree_is_nil(node)) {
+		while (!rcu_rbtree_is_nil(&rbtree, node)) {
 			set_lookup_index(node, lookup_hit);
 			node = rcu_rbtree_prev(&rbtree, node);
 		}
@@ -369,7 +369,7 @@ void *thr_writer(void *_count)
 		for (i = 0; i < NR_RAND; i++) {
 #if 0
 			node = rcu_rbtree_min(rbtree, rbtree->root);
-			while (!rcu_rbtree_is_nil(node)) {
+			while (!rcu_rbtree_is_nil(&rbtree, node)) {
 				printf("{ 0x%lX p:%lX r:%lX l:%lX %s %s %s} ",
 					(unsigned long)node->key,
 					node->p->key,
@@ -384,7 +384,7 @@ void *thr_writer(void *_count)
 #endif
 			rcu_read_lock();
 			node = rcu_rbtree_search(&rbtree, rbtree.root, key[i]);
-			assert(!rcu_rbtree_is_nil(node));
+			assert(!rcu_rbtree_is_nil(&rbtree, node));
 			rcu_rbtree_remove(&rbtree, node);
 			rcu_read_unlock();
 			call_rcu(&node->head, rbtree_free);
@@ -574,7 +574,7 @@ int main(int argc, char **argv)
 	rcu_read_lock();
 	for (i = 0; i < global_items; i++) {
 		node = rcu_rbtree_search(&rbtree, rbtree.root, global_key[i]);
-		assert(!rcu_rbtree_is_nil(node));
+		assert(!rcu_rbtree_is_nil(&rbtree, node));
 		rcu_rbtree_remove(&rbtree, node);
 		call_rcu(&node->head, rbtree_free);
 	}

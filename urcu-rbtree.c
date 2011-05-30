@@ -915,17 +915,21 @@ int rcu_rbtree_insert(struct rcu_rbtree *rbtree,
 	else
 		set_parent(z, y, IS_RIGHT);
 
-	/*
-	 * Order stores to z (children/parents) before stores that will make it
-	 * visible to the rest of the tree.
-	 */
-	cmm_smp_wmb();
-
 	if (rcu_rbtree_is_nil(rbtree, y)) {
+		/*
+		 * Order stores to z (children/parents) before stores
+		 * that will make it visible to the rest of the tree.
+		 */
+		cmm_smp_wmb();
 		_CMM_STORE_SHARED(rbtree->root, z);
 	} else if (rbtree->comp(z->key, y->key) < 0) {
 		set_left_dup_decay(rbtree, y, z, &top, &top_child,
 				&top_child_pos);
+		/*
+		 * Order stores to z (children/parents) before stores
+		 * that will make it visible to the rest of the tree.
+		 */
+		cmm_smp_wmb();
 		if (rcu_rbtree_is_nil(rbtree, top))
 			_CMM_STORE_SHARED(rbtree->root, top_child);
 		else if (top_child_pos == IS_LEFT)
@@ -936,6 +940,11 @@ int rcu_rbtree_insert(struct rcu_rbtree *rbtree,
 	} else {
 		set_right_dup_decay(rbtree, y, z, &top, &top_child,
 				&top_child_pos);
+		/*
+		 * Order stores to z (children/parents) before stores
+		 * that will make it visible to the rest of the tree.
+		 */
+		cmm_smp_wmb();
 		if (rcu_rbtree_is_nil(rbtree, top))
 			_CMM_STORE_SHARED(rbtree->root, top_child);
 		else if (top_child_pos == IS_LEFT)
@@ -981,7 +990,6 @@ void rcu_rbtree_transplant(struct rcu_rbtree *rbtree,
 		_CMM_STORE_SHARED(rbtree->root, v);
 	} else {
 		set_parent(v, get_parent(u), get_pos(u));
-		cmm_smp_wmb();	/* write into node before publish */
 
 		if (get_pos(u) == IS_LEFT) {
 			_set_left_dup_decay(rbtree, get_parent(u), v,
@@ -992,6 +1000,8 @@ void rcu_rbtree_transplant(struct rcu_rbtree *rbtree,
 			set_right_dup_decay(rbtree, get_parent(u), v,
 					&top, &top_child, &top_child_pos);
 		}
+
+		cmm_smp_wmb();	/* write into node before publish */
 
 		if (rcu_rbtree_is_nil(rbtree, top))
 			_CMM_STORE_SHARED(rbtree->root, top_child);

@@ -128,7 +128,7 @@ int rcu_rbtree_remove(struct rcu_rbtree *rbtree,
 /*
  * Search key starting from node x. Returns nil node if not found.
  */
-struct rcu_rbtree_node* rcu_rbtree_search(struct rcu_rbtree *rbtree,
+struct rcu_rbtree_node *rcu_rbtree_search(struct rcu_rbtree *rbtree,
 					  struct rcu_rbtree_node *x,
 					  void *key);
 

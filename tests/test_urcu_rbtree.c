@@ -210,15 +210,18 @@ void rcu_copy_mutex_unlock(void)
 }
 
 static
-int lookup_index(struct rcu_rbtree_node *node)
+void set_lookup_index(struct rcu_rbtree_node *node,
+		char *lookup_hit)
 {
 	int i;
 
 	for (i = 0; i < global_items; i++) {
-		if (node->key == global_key[i])
-			return i;
+		if (node->key == global_key[i]
+		    && !lookup_hit[i]) {
+			lookup_hit[i] = 1;
+			break;
+		}
 	}
-	return -1;
 }
 
 void *thr_reader(void *_count)
@@ -260,9 +263,7 @@ void *thr_reader(void *_count)
 		node = rcu_rbtree_min(&rbtree,
 				      rcu_dereference(rbtree.root));
 		while (!rcu_rbtree_is_nil(node)) {
-			index = lookup_index(node);
-			if (index >= 0)
-				lookup_hit[index] = 1;
+			set_lookup_index(node, lookup_hit);
 			node = rcu_rbtree_next(&rbtree, node);
 		}
 		rcu_read_unlock();
@@ -277,9 +278,7 @@ void *thr_reader(void *_count)
 		node = rcu_rbtree_max(&rbtree,
 				      rcu_dereference(rbtree.root));
 		while (!rcu_rbtree_is_nil(node)) {
-			index = lookup_index(node);
-			if (index >= 0)
-				lookup_hit[index] = 1;
+			set_lookup_index(node, lookup_hit);
 			node = rcu_rbtree_prev(&rbtree, node);
 		}
 		rcu_read_unlock();

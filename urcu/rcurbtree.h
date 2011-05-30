@@ -135,6 +135,18 @@ struct rcu_rbtree_node *rcu_rbtree_search(struct rcu_rbtree *rbtree,
 					  struct rcu_rbtree_node *x,
 					  void *key);
 
+/*
+ * Search for node with, respectively, smallest or largest value within
+ * the ranges (ranges are inclusive).
+ */
+struct rcu_rbtree_node *rcu_rbtree_search_min(struct rcu_rbtree *rbtree,
+					  struct rcu_rbtree_node *x,
+					  void *range_low, void *range_high);
+
+struct rcu_rbtree_node *rcu_rbtree_search_max(struct rcu_rbtree *rbtree,
+					  struct rcu_rbtree_node *x,
+					  void *range_low, void *range_high);
+
 struct rcu_rbtree_node *rcu_rbtree_min(struct rcu_rbtree *rbtree,
 				       struct rcu_rbtree_node *x);
 

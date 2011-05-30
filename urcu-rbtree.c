@@ -389,13 +389,58 @@ struct rcu_rbtree_node* rcu_rbtree_search(struct rcu_rbtree *rbtree,
 					  void *k)
 {
 	x = rcu_dereference(x);
+	int comp;
 
-	while (!rcu_rbtree_is_nil(x) && k != x->key) {
+	while (!rcu_rbtree_is_nil(x) && (comp = rbtree->comp(k, x->key)) != 0) {
 		usleep(10);
-		if (rbtree->comp(k, x->key) < 0)
+		if (comp < 0)
 			x = rcu_dereference(x->_left);
 		else
 			x = rcu_dereference(x->_right);
+	}
+	return x;
+}
+
+struct rcu_rbtree_node* rcu_rbtree_search_min(struct rcu_rbtree *rbtree,
+					  struct rcu_rbtree_node *x,
+					  void *range_low, void *range_high)
+{
+	x = rcu_dereference(x);
+
+	while (!rcu_rbtree_is_nil(x)) {
+		usleep(10);
+		if (rbtree->comp(x->max_child_key, range_low) > 0) {
+			x = rcu_dereference(x->_left);
+		} else if (rbtree->comp(x->key, range_low) >= 0
+			   && rbtree->comp(x->key, range_high) <= 0) {
+			break;
+		} else if (rbtree->comp(range_low, x->min_child_key) > 0) {
+			x = rcu_dereference(x->_right);
+		} else {
+			x = make_nil(rbtree);
+		}
+	}
+	return x;
+}
+
+struct rcu_rbtree_node* rcu_rbtree_search_max(struct rcu_rbtree *rbtree,
+					  struct rcu_rbtree_node *x,
+					  void *range_low, void *range_high)
+{
+	x = rcu_dereference(x);
+
+	while (!rcu_rbtree_is_nil(x)) {
+		usleep(10);
+		if (rbtree->comp(x->min_child_key, range_high) < 0) {
+			x = rcu_dereference(x->_right);
+		} else if (rbtree->comp(x->key, range_low) >= 0
+			   && rbtree->comp(x->key, range_high) <= 0) {
+			break;
+		} else if (rbtree->comp(range_high, x->max_child_key) < 0) {
+			x = rcu_dereference(x->_left);
+		} else {
+			x = make_nil(rbtree);
+		}
 	}
 	return x;
 }

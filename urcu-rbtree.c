@@ -43,8 +43,10 @@
 
 #ifdef DEBUG
 #define dbg_printf(args...)	printf(args)
+#define dbg_usleep(usecs)	usleep(usecs)
 #else
 #define dbg_printf(args...)
+#define dbg_usleep(usecs)
 #endif
 
 /*
@@ -392,7 +394,7 @@ struct rcu_rbtree_node *rcu_rbtree_search(struct rcu_rbtree *rbtree,
 	int comp;
 
 	while (!rcu_rbtree_is_nil(x) && (comp = rbtree->comp(k, x->key)) != 0) {
-		usleep(10);
+		dbg_usleep(10);
 		if (comp < 0)
 			x = rcu_dereference(x->_left);
 		else
@@ -412,7 +414,7 @@ struct rcu_rbtree_node *rcu_rbtree_search_min(struct rcu_rbtree *rbtree,
 		(unsigned long) x->key,
 		(unsigned long) range_low, (unsigned long) range_high);
 	while (!rcu_rbtree_is_nil(x)) {
-		usleep(10);
+		dbg_usleep(10);
 		xl = rcu_dereference(x->_left);
 		dbg_printf("search min x %lx\n", (unsigned long) x->key);
 		dbg_printf("search min xl %lx\n", (unsigned long) xl->key);
@@ -447,7 +449,7 @@ struct rcu_rbtree_node *rcu_rbtree_search_max(struct rcu_rbtree *rbtree,
 		(unsigned long) x->key,
 		(unsigned long) range_low, (unsigned long) range_high);
 	while (!rcu_rbtree_is_nil(x)) {
-		usleep(10);
+		dbg_usleep(10);
 		xr = rcu_dereference(x->_right);
 		dbg_printf("search max x %lx\n", (unsigned long) x->key);
 		dbg_printf("search max xl %lx\n", (unsigned long) xr->key);

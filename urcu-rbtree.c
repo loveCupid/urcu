@@ -384,7 +384,7 @@ struct rcu_rbtree_node *make_nil(struct rcu_rbtree *rbtree)
 /*
  * Iterative rbtree search.
  */
-struct rcu_rbtree_node* rcu_rbtree_search(struct rcu_rbtree *rbtree,
+struct rcu_rbtree_node *rcu_rbtree_search(struct rcu_rbtree *rbtree,
 					  struct rcu_rbtree_node *x,
 					  void *k)
 {
@@ -401,44 +401,70 @@ struct rcu_rbtree_node* rcu_rbtree_search(struct rcu_rbtree *rbtree,
 	return x;
 }
 
-struct rcu_rbtree_node* rcu_rbtree_search_min(struct rcu_rbtree *rbtree,
+struct rcu_rbtree_node *rcu_rbtree_search_min(struct rcu_rbtree *rbtree,
 					  struct rcu_rbtree_node *x,
 					  void *range_low, void *range_high)
 {
+	struct rcu_rbtree_node *xl;
 	x = rcu_dereference(x);
 
+	dbg_printf("start search min x %lx low %lx high %lx\n",
+		(unsigned long) x->key,
+		(unsigned long) range_low, (unsigned long) range_high);
 	while (!rcu_rbtree_is_nil(x)) {
 		usleep(10);
-		if (rbtree->comp(x->max_child_key, range_low) > 0) {
-			x = rcu_dereference(x->_left);
+		xl = rcu_dereference(x->_left);
+		dbg_printf("search min x %lx\n", (unsigned long) x->key);
+		dbg_printf("search min xl %lx\n", (unsigned long) xl->key);
+		if (!rcu_rbtree_is_nil(xl)
+		    && (rbtree->comp(xl->max_child_key, range_low) >= 0
+			|| rbtree->comp(xl->key, range_low) == 0)) {
+			dbg_printf("go left\n");
+			x = xl;
 		} else if (rbtree->comp(x->key, range_low) >= 0
 			   && rbtree->comp(x->key, range_high) <= 0) {
+			dbg_printf("got it!\n");
 			break;
-		} else if (rbtree->comp(range_low, x->min_child_key) > 0) {
+		} else if (rbtree->comp(range_low, x->min_child_key) >= 0) {
+			dbg_printf("go right\n");
 			x = rcu_dereference(x->_right);
 		} else {
+			dbg_printf("not found!\n");
 			x = make_nil(rbtree);
 		}
 	}
 	return x;
 }
 
-struct rcu_rbtree_node* rcu_rbtree_search_max(struct rcu_rbtree *rbtree,
+struct rcu_rbtree_node *rcu_rbtree_search_max(struct rcu_rbtree *rbtree,
 					  struct rcu_rbtree_node *x,
 					  void *range_low, void *range_high)
 {
+	struct rcu_rbtree_node *xr;
 	x = rcu_dereference(x);
 
+	dbg_printf("start search max x %lx low %lx high %lx\n",
+		(unsigned long) x->key,
+		(unsigned long) range_low, (unsigned long) range_high);
 	while (!rcu_rbtree_is_nil(x)) {
 		usleep(10);
-		if (rbtree->comp(x->min_child_key, range_high) < 0) {
-			x = rcu_dereference(x->_right);
+		xr = rcu_dereference(x->_right);
+		dbg_printf("search max x %lx\n", (unsigned long) x->key);
+		dbg_printf("search max xl %lx\n", (unsigned long) xr->key);
+		if (!rcu_rbtree_is_nil(xr)
+		    && (rbtree->comp(xr->min_child_key, range_high) <= 0
+			|| rbtree->comp(xr->key, range_high) == 0)) {
+			dbg_printf("go right\n");
+			x = xr;
 		} else if (rbtree->comp(x->key, range_low) >= 0
 			   && rbtree->comp(x->key, range_high) <= 0) {
+			dbg_printf("got it!\n");
 			break;
-		} else if (rbtree->comp(range_high, x->max_child_key) < 0) {
+		} else if (rbtree->comp(range_high, x->max_child_key) <= 0) {
+			dbg_printf("go left\n");
 			x = rcu_dereference(x->_left);
 		} else {
+			dbg_printf("not found!\n");
 			x = make_nil(rbtree);
 		}
 	}

@@ -326,7 +326,7 @@ struct rcu_rbtree_node *rcu_rbtree_prev(struct rcu_rbtree *rbtree,
 	x = rcu_dereference(x);
 
 	if (!rcu_rbtree_is_nil(xl = rcu_dereference(x->left)))
-		return rcu_rbtree_min(rbtree, xl);
+		return rcu_rbtree_max(rbtree, xl);
 	y = get_parent_and_pos(x, &x_pos);
 	while (!rcu_rbtree_is_nil(y) && x_pos == IS_LEFT) {
 		x = y;

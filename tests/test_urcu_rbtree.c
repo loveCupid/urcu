@@ -209,11 +209,24 @@ void rcu_copy_mutex_unlock(void)
 	}
 }
 
+static
+int lookup_index(struct rcu_rbtree_node *node)
+{
+	int i;
+
+	for (i = 0; i < global_items; i++) {
+		if (node->key == global_key[i])
+			return i;
+	}
+	return -1;
+}
+
 void *thr_reader(void *_count)
 {
 	unsigned long long *count = _count;
 	struct rcu_rbtree_node *node;
-	int i;
+	int i, index;
+	char *lookup_hit;
 
 	printf_verbose("thread_begin %s, thread id : %lx, tid %lu\n",
 			"reader", pthread_self(), (unsigned long)gettid());
@@ -222,6 +235,8 @@ void *thr_reader(void *_count)
 
 	rcu_register_thread();
 
+	lookup_hit = malloc(sizeof(*lookup_hit) * global_items);
+
 	while (!test_go)
 	{
 	}
@@ -229,6 +244,7 @@ void *thr_reader(void *_count)
 
 	for (;;) {
 
+		/* search */
 		for (i = 0; i < global_items; i++) {
 			rcu_read_lock();
 			node = rcu_rbtree_search(&rbtree,
@@ -237,6 +253,40 @@ void *thr_reader(void *_count)
 			assert(!rcu_rbtree_is_nil(node));
 			rcu_read_unlock();
 		}
+		/* min + next */
+		memset(lookup_hit, 0, sizeof(*lookup_hit) * global_items);
+
+		rcu_read_lock();
+		node = rcu_rbtree_min(&rbtree,
+				      rcu_dereference(rbtree.root));
+		while (!rcu_rbtree_is_nil(node)) {
+			index = lookup_index(node);
+			if (index >= 0)
+				lookup_hit[index] = 1;
+			node = rcu_rbtree_next(&rbtree, node);
+		}
+		rcu_read_unlock();
+
+		for (i = 0; i < global_items; i++)
+			assert(lookup_hit[i]);
+
+		/* max + prev */
+		memset(lookup_hit, 0, sizeof(*lookup_hit) * global_items);
+
+		rcu_read_lock();
+		node = rcu_rbtree_max(&rbtree,
+				      rcu_dereference(rbtree.root));
+		while (!rcu_rbtree_is_nil(node)) {
+			index = lookup_index(node);
+			if (index >= 0)
+				lookup_hit[index] = 1;
+			node = rcu_rbtree_prev(&rbtree, node);
+		}
+		rcu_read_unlock();
+
+		for (i = 0; i < global_items; i++)
+			assert(lookup_hit[i]);
+
 		debug_yield_read();
 		if (unlikely(rduration))
 			loop_sleep(rduration);
@@ -250,6 +300,8 @@ void *thr_reader(void *_count)
 	/* test extra thread registration */
 	rcu_register_thread();
 	rcu_unregister_thread();
+
+	free(lookup_hit);
 
 	*count = nr_reads;
 	printf_verbose("thread_end %s, thread id : %lx, tid %lu\n",

@@ -163,182 +163,17 @@ struct rcu_rbtree_node *dup_decay_node(struct rcu_rbtree *rbtree,
  * children range.
  */
 static
-void _set_left_dup_decay(struct rcu_rbtree *rbtree,
-			struct rcu_rbtree_node *node,
-			struct rcu_rbtree_node *left,
-			struct rcu_rbtree_node **top,
-			struct rcu_rbtree_node **top_child,
-			unsigned int *top_child_pos, int copy)
+void set_left(struct rcu_rbtree *rbtree, struct rcu_rbtree_node *node,
+			struct rcu_rbtree_node *left)
 {
-	struct rcu_rbtree_node *first_node = node;	/* already a copy */
-
 	node->_left = left;
-	do {
-		void *min_child_key;
-
-		if (rcu_rbtree_is_nil(rbtree, left)) {
-			min_child_key = node->key;
-		} else {
-			min_child_key = left->min_child_key;
-			assert(rbtree->comp(left->key, left->min_child_key) >= 0);
-			assert(rbtree->comp(node->key, left->min_child_key) >= 0);
-		}
-		if (min_child_key != node->min_child_key) {
-			if (node != first_node) {
-				if (copy) {
-					node = dup_decay_node(rbtree, node);
-					node->_left = left;
-					set_parent(left, node, IS_LEFT);
-				}
-			}
-			node->min_child_key = min_child_key;
-		} else {
-			if (node != first_node) {
-				if (top)
-					*top = node;
-				if (top_child)
-					*top_child = left;
-				if (top_child_pos)
-					*top_child_pos = get_pos(left);
-			} else {
-				if (top)
-					*top = get_parent(node);
-				if (top_child)
-					*top_child = node;
-				if (top_child_pos)
-					*top_child_pos = get_pos(node);
-			}
-			return;
-		}
-		left = node;
-	} while (get_pos(node) == IS_LEFT
-		 && !rcu_rbtree_is_nil(rbtree, node = get_parent(node)));
-
-	if (rcu_rbtree_is_nil(rbtree, node)) {
-		if (top)
-			*top = node;
-		if (top_child)
-			*top_child = left;
-		if (top_child_pos)
-			*top_child_pos = IS_LEFT;	/* arbitrary */
-	} else {
-		assert(get_pos(node) == IS_RIGHT);
-		if (top)
-			*top = get_parent(node);
-		if (top_child)
-			*top_child = node;
-		if (top_child_pos)
-			*top_child_pos = IS_RIGHT;
-	}
 }
 
 static
-void set_left_dup_decay(struct rcu_rbtree *rbtree,
-			struct rcu_rbtree_node *node,
-			struct rcu_rbtree_node *left,
-			struct rcu_rbtree_node **top,
-			struct rcu_rbtree_node **top_child,
-			unsigned int *top_child_pos)
+void set_right(struct rcu_rbtree *rbtree, struct rcu_rbtree_node *node,
+			struct rcu_rbtree_node *right)
 {
-	_set_left_dup_decay(rbtree, node, left, top, top_child,
-			    top_child_pos, 1);
-}
-
-static
-void set_left_update_decay(struct rcu_rbtree *rbtree, struct rcu_rbtree_node *node,
-	      struct rcu_rbtree_node *left)
-{
-	struct rcu_rbtree_node *first_node = node;	/* already a copy */
-
-	do {
-		if (node != first_node) {
-			set_parent(node->_right,
-				get_decay(get_parent(node->_right)), IS_RIGHT);
-		}
-	} while (get_pos(node) == IS_LEFT
-		 && !rcu_rbtree_is_nil(rbtree, node = get_parent(node)));
-}
-
-static
-void set_right_dup_decay(struct rcu_rbtree *rbtree, struct rcu_rbtree_node *node,
-			struct rcu_rbtree_node *right,
-			struct rcu_rbtree_node **top,
-			struct rcu_rbtree_node **top_child,
-			unsigned int *top_child_pos)
-{
-	struct rcu_rbtree_node *first_node = node;	/* already a copy */
-
 	node->_right = right;
-	do {
-		void *max_child_key;
-
-		if (rcu_rbtree_is_nil(rbtree, right)) {
-			max_child_key = node->key;
-		} else {
-			max_child_key = right->max_child_key;
-			assert(rbtree->comp(right->key, right->max_child_key) <= 0);
-			assert(rbtree->comp(node->key, right->max_child_key) <= 0);
-		}
-		if (max_child_key != node->max_child_key) {
-			if (node != first_node) {
-				node = dup_decay_node(rbtree, node);
-				node->_right = right;
-				set_parent(right, node, IS_RIGHT);
-			}
-			node->max_child_key = max_child_key;
-		} else {
-			if (node != first_node) {
-				if (top)
-					*top = node;
-				if (top_child)
-					*top_child = right;
-				if (top_child_pos)
-					*top_child_pos = get_pos(right);
-			} else {
-				if (top)
-					*top = get_parent(node);
-				if (top_child)
-					*top_child = node;
-				if (top_child_pos)
-					*top_child_pos = get_pos(node);
-			}
-			return;
-		}
-		right = node;
-	} while (get_pos(node) == IS_RIGHT
-		 && !rcu_rbtree_is_nil(rbtree, node = get_parent(node)));
-
-	if (rcu_rbtree_is_nil(rbtree, node)) {
-		if (top)
-			*top = node;
-		if (top_child)
-			*top_child = right;
-		if (top_child_pos)
-			*top_child_pos = IS_RIGHT;	/* arbitrary */
-	} else {
-		assert(get_pos(node) == IS_LEFT);
-		if (top)
-			*top = get_parent(node);
-		if (top_child)
-			*top_child = node;
-		if (top_child_pos)
-			*top_child_pos = IS_LEFT;
-	}
-}
-
-static
-void set_right_update_decay(struct rcu_rbtree *rbtree, struct rcu_rbtree_node *node,
-	      struct rcu_rbtree_node *right)
-{
-	struct rcu_rbtree_node *first_node = node;	/* already a copy */
-
-	do {
-		if (node != first_node) {
-			set_parent(node->_left,
-				get_decay(get_parent(node->_left)), IS_LEFT);
-		}
-	} while (get_pos(node) == IS_RIGHT
-		 && !rcu_rbtree_is_nil(rbtree, node = get_parent(node)));
 }
 
 /*
@@ -365,7 +200,7 @@ void show_tree(struct rcu_rbtree *rbtree)
 			(unsigned long) node->_left->key,
 			node->color ? "red" : "black",
 			get_pos(node) ? "right" : "left",
-			node->nil ? "nil" : "");
+			rcu_rbtree_is_nil(rbtree, node) ? "nil" : "");
 		node = rcu_rbtree_next(rbtree, node);
 	}
 	printf("\n");
@@ -399,76 +234,6 @@ struct rcu_rbtree_node *rcu_rbtree_search(struct rcu_rbtree *rbtree,
 			x = rcu_dereference(x->_left);
 		else
 			x = rcu_dereference(x->_right);
-	}
-	return x;
-}
-
-struct rcu_rbtree_node *rcu_rbtree_search_min(struct rcu_rbtree *rbtree,
-					  struct rcu_rbtree_node *x,
-					  void *range_low, void *range_high)
-{
-	struct rcu_rbtree_node *xl;
-	x = rcu_dereference(x);
-
-	dbg_printf("start search min x %lx low %lx high %lx\n",
-		(unsigned long) x->key,
-		(unsigned long) range_low, (unsigned long) range_high);
-	while (!rcu_rbtree_is_nil(rbtree, x)) {
-		dbg_usleep(10);
-		xl = rcu_dereference(x->_left);
-		dbg_printf("search min x %lx\n", (unsigned long) x->key);
-		dbg_printf("search min xl %lx\n", (unsigned long) xl->key);
-		if (!rcu_rbtree_is_nil(rbtree, xl)
-		    && (rbtree->comp(xl->max_child_key, range_low) >= 0
-			|| rbtree->comp(xl->key, range_low) == 0)) {
-			dbg_printf("go left\n");
-			x = xl;
-		} else if (rbtree->comp(x->key, range_low) >= 0
-			   && rbtree->comp(x->key, range_high) <= 0) {
-			dbg_printf("got it!\n");
-			break;
-		} else if (rbtree->comp(range_low, x->min_child_key) >= 0) {
-			dbg_printf("go right\n");
-			x = rcu_dereference(x->_right);
-		} else {
-			dbg_printf("not found!\n");
-			x = make_nil(rbtree);
-		}
-	}
-	return x;
-}
-
-struct rcu_rbtree_node *rcu_rbtree_search_max(struct rcu_rbtree *rbtree,
-					  struct rcu_rbtree_node *x,
-					  void *range_low, void *range_high)
-{
-	struct rcu_rbtree_node *xr;
-	x = rcu_dereference(x);
-
-	dbg_printf("start search max x %lx low %lx high %lx\n",
-		(unsigned long) x->key,
-		(unsigned long) range_low, (unsigned long) range_high);
-	while (!rcu_rbtree_is_nil(rbtree, x)) {
-		dbg_usleep(10);
-		xr = rcu_dereference(x->_right);
-		dbg_printf("search max x %lx\n", (unsigned long) x->key);
-		dbg_printf("search max xl %lx\n", (unsigned long) xr->key);
-		if (!rcu_rbtree_is_nil(rbtree, xr)
-		    && (rbtree->comp(xr->min_child_key, range_high) <= 0
-			|| rbtree->comp(xr->key, range_high) == 0)) {
-			dbg_printf("go right\n");
-			x = xr;
-		} else if (rbtree->comp(x->key, range_low) >= 0
-			   && rbtree->comp(x->key, range_high) <= 0) {
-			dbg_printf("got it!\n");
-			break;
-		} else if (rbtree->comp(range_high, x->max_child_key) <= 0) {
-			dbg_printf("go left\n");
-			x = rcu_dereference(x->_left);
-		} else {
-			dbg_printf("not found!\n");
-			x = make_nil(rbtree);
-		}
 	}
 	return x;
 }
@@ -626,8 +391,7 @@ static
 void left_rotate(struct rcu_rbtree *rbtree,
 		 struct rcu_rbtree_node *x)
 {
-	struct rcu_rbtree_node *y, *y_left, *top, *top_child;
-	unsigned int top_child_pos;
+	struct rcu_rbtree_node *y, *y_left;
 
 	y = x->_right;
 	y_left = y->_left;
@@ -640,10 +404,8 @@ void left_rotate(struct rcu_rbtree *rbtree,
 	/* Internal node modifications */
 	set_parent(y, get_parent(x), get_pos(x));
 	set_parent(x, y, IS_LEFT);
-	set_left_dup_decay(rbtree, y, x, &top, &top_child, &top_child_pos);
-	set_right_dup_decay(rbtree, x, y_left, NULL, NULL, NULL);
-	assert(!is_decay(top));
-	assert(!is_decay(top_child));
+	set_left(rbtree, y, x);
+	set_right(rbtree, x, y_left);
 
 	if (!rcu_rbtree_is_nil(rbtree, y_left))
 		set_parent(y_left, x, IS_RIGHT);
@@ -651,12 +413,12 @@ void left_rotate(struct rcu_rbtree *rbtree,
 	cmm_smp_wmb();	/* write into node before publish */
 
 	/* External references update (visible by readers) */
-	if (rcu_rbtree_is_nil(rbtree, top))
-		_CMM_STORE_SHARED(rbtree->root, top_child);
-	else if (top_child_pos == IS_LEFT)
-		_CMM_STORE_SHARED(top->_left, top_child);
+	if (rcu_rbtree_is_nil(rbtree, get_parent(y)))
+		_CMM_STORE_SHARED(rbtree->root, y);
+	else if (get_pos(y) == IS_LEFT)
+		_CMM_STORE_SHARED(get_parent(y)->_left, y);
 	else
-		_CMM_STORE_SHARED(top->_right, top_child);
+		_CMM_STORE_SHARED(get_parent(y)->_right, y);
 
 	/* Point children to new copy (parent only used by updates/next/prev) */
 	set_parent(x->_left, get_decay(get_parent(x->_left)),
@@ -671,7 +433,6 @@ void left_rotate(struct rcu_rbtree *rbtree,
 			get_decay(get_parent(y_left->_left)),
 			get_pos(y_left->_left));
 	}
-	set_left_update_decay(rbtree, y, x);
 
 	/* Sanity checks */
 	assert(y == rbtree->root || get_parent(y)->_left == y
@@ -725,8 +486,7 @@ static
 void right_rotate(struct rcu_rbtree *rbtree,
 		  struct rcu_rbtree_node *x)
 {
-	struct rcu_rbtree_node *y, *y_right, *top, *top_child;
-	unsigned int top_child_pos;
+	struct rcu_rbtree_node *y, *y_right;
 
 	y = x->_left;
 	y_right = y->_right;
@@ -739,10 +499,8 @@ void right_rotate(struct rcu_rbtree *rbtree,
 	/* Internal node modifications */
 	set_parent(y, get_parent(x), get_pos(x));
 	set_parent(x, y, IS_RIGHT);
-	set_right_dup_decay(rbtree, y, x, &top, &top_child, &top_child_pos);
-	set_left_dup_decay(rbtree, x, y_right, NULL, NULL, NULL);
-	assert(!is_decay(top));
-	assert(!is_decay(top_child));
+	set_right(rbtree, y, x);
+	set_left(rbtree, x, y_right);
 
 	if (!rcu_rbtree_is_nil(rbtree, y_right))
 		set_parent(y_right, x, IS_LEFT);
@@ -750,12 +508,12 @@ void right_rotate(struct rcu_rbtree *rbtree,
 	cmm_smp_wmb();	/* write into node before publish */
 
 	/* External references update (visible by readers) */
-	if (rcu_rbtree_is_nil(rbtree, top))
-		_CMM_STORE_SHARED(rbtree->root, top_child);
-	else if (top_child_pos == IS_RIGHT)
-		_CMM_STORE_SHARED(top->_right, top_child);
+	if (rcu_rbtree_is_nil(rbtree, get_parent(y)))
+		_CMM_STORE_SHARED(rbtree->root, y);
+	else if (get_pos(y) == IS_RIGHT)
+		_CMM_STORE_SHARED(get_parent(y)->_right, y);
 	else
-		_CMM_STORE_SHARED(top->_left, top_child);
+		_CMM_STORE_SHARED(get_parent(y)->_left, y);
 
 	/* Point children to new copy (parent only used by updates/next/prev) */
 	set_parent(x->_right, get_decay(get_parent(x->_right)),
@@ -770,8 +528,6 @@ void right_rotate(struct rcu_rbtree *rbtree,
 			get_decay(get_parent(y_right->_right)),
 			get_pos(y_right->_right));
 	}
-	set_right_update_decay(rbtree, y, x);
-	
 
 	/* Sanity checks */
 	assert(y == rbtree->root || get_parent(y)->_right == y
@@ -885,8 +641,7 @@ static void rcu_rbtree_insert_fixup(struct rcu_rbtree *rbtree,
 int rcu_rbtree_insert(struct rcu_rbtree *rbtree,
 		      struct rcu_rbtree_node *z)
 {
-	struct rcu_rbtree_node *x, *y, *top, *top_child;
-	unsigned int top_child_pos;
+	struct rcu_rbtree_node *x, *y;
 
 	dbg_printf("insert %p\n", z->key);
 	assert(!is_decay(rbtree->root));
@@ -903,8 +658,6 @@ int rcu_rbtree_insert(struct rcu_rbtree *rbtree,
 
 	z->_left = make_nil(rbtree);
 	z->_right = make_nil(rbtree);
-	z->min_child_key = z->key;
-	z->max_child_key = z->key;
 	z->color = COLOR_RED;
 	z->decay_next = NULL;
 
@@ -923,35 +676,31 @@ int rcu_rbtree_insert(struct rcu_rbtree *rbtree,
 		cmm_smp_wmb();
 		_CMM_STORE_SHARED(rbtree->root, z);
 	} else if (rbtree->comp(z->key, y->key) < 0) {
-		set_left_dup_decay(rbtree, y, z, &top, &top_child,
-				&top_child_pos);
+		set_left(rbtree, y, z);
 		/*
 		 * Order stores to z (children/parents) before stores
 		 * that will make it visible to the rest of the tree.
 		 */
 		cmm_smp_wmb();
-		if (rcu_rbtree_is_nil(rbtree, top))
-			_CMM_STORE_SHARED(rbtree->root, top_child);
-		else if (top_child_pos == IS_LEFT)
-			_CMM_STORE_SHARED(top->_left, top_child);
+		if (rcu_rbtree_is_nil(rbtree, y))
+			_CMM_STORE_SHARED(rbtree->root, z);
+		else if (get_pos(z) == IS_LEFT)
+			_CMM_STORE_SHARED(y->_left, z);
 		else
-			_CMM_STORE_SHARED(top->_right, top_child);
-		set_left_update_decay(rbtree, y, z);
+			_CMM_STORE_SHARED(y->_right, z);
 	} else {
-		set_right_dup_decay(rbtree, y, z, &top, &top_child,
-				&top_child_pos);
+		set_right(rbtree, y, z);
 		/*
 		 * Order stores to z (children/parents) before stores
 		 * that will make it visible to the rest of the tree.
 		 */
 		cmm_smp_wmb();
-		if (rcu_rbtree_is_nil(rbtree, top))
-			_CMM_STORE_SHARED(rbtree->root, top_child);
-		else if (top_child_pos == IS_LEFT)
-			_CMM_STORE_SHARED(top->_left, top_child);
+		if (rcu_rbtree_is_nil(rbtree, y))
+			_CMM_STORE_SHARED(rbtree->root, z);
+		else if (get_pos(z) == IS_LEFT)
+			_CMM_STORE_SHARED(y->_left, z);
 		else
-			_CMM_STORE_SHARED(top->_right, top_child);
-		set_right_update_decay(rbtree, y, z);
+			_CMM_STORE_SHARED(y->_right, z);
 	}
 	rcu_rbtree_insert_fixup(rbtree, z);
 	/*
@@ -975,9 +724,6 @@ void rcu_rbtree_transplant(struct rcu_rbtree *rbtree,
 			struct rcu_rbtree_node *v,
 			unsigned int copy_parents)
 {
-	struct rcu_rbtree_node *top, *top_child;
-	unsigned int top_child_pos;
-
 	dbg_printf("transplant %p\n", v->key);
 
 	if (!rcu_rbtree_is_nil(rbtree, v))
@@ -991,33 +737,19 @@ void rcu_rbtree_transplant(struct rcu_rbtree *rbtree,
 	} else {
 		set_parent(v, get_parent(u), get_pos(u));
 
-		if (get_pos(u) == IS_LEFT) {
-			_set_left_dup_decay(rbtree, get_parent(u), v,
-					&top, &top_child, &top_child_pos,
-					copy_parents);
-		} else {
-			assert(copy_parents);
-			set_right_dup_decay(rbtree, get_parent(u), v,
-					&top, &top_child, &top_child_pos);
-		}
+		if (get_pos(u) == IS_LEFT)
+			set_left(rbtree, get_parent(u), v);
+		else
+			set_right(rbtree, get_parent(u), v);
 
 		cmm_smp_wmb();	/* write into node before publish */
 
-		if (rcu_rbtree_is_nil(rbtree, top))
-			_CMM_STORE_SHARED(rbtree->root, top_child);
-		else if (top_child_pos == IS_LEFT)
-			_CMM_STORE_SHARED(top->_left, top_child);
+		if (rcu_rbtree_is_nil(rbtree, get_parent(u)))
+			_CMM_STORE_SHARED(rbtree->root, v);
+		else if (get_pos(u) == IS_LEFT)
+			_CMM_STORE_SHARED(get_parent(u)->_left, v);
 		else
-			_CMM_STORE_SHARED(top->_right, top_child);
-
-		/* Point children to new copy (parent only used by updates/next/prev) */
-		if (get_pos(u) == IS_LEFT) {
-			if (copy_parents)
-				set_left_update_decay(rbtree, get_parent(u), v);
-		} else {
-			assert(copy_parents);
-			set_right_update_decay(rbtree, get_parent(u), v);
-		}
+			_CMM_STORE_SHARED(get_parent(u)->_right, v);
 	}
 
 	/* Point children to new copy (parent only used by updates/next/prev) */
@@ -1145,8 +877,7 @@ void rcu_rbtree_remove_nonil(struct rcu_rbtree *rbtree,
 			     struct rcu_rbtree_node *z,
 			     struct rcu_rbtree_node *y)
 {
-	struct rcu_rbtree_node *x, *top, *top_child;
-	unsigned int top_child_pos;
+	struct rcu_rbtree_node *x;
 
 	dbg_printf("remove nonil %p\n", z->key);
 	show_tree(rbtree);
@@ -1161,9 +892,7 @@ void rcu_rbtree_remove_nonil(struct rcu_rbtree *rbtree,
 		y = dup_decay_node(rbtree, y);
 		set_parent(x, y, get_pos(x));	/* parent for nil */
 		/* y is z's right node: set left will just update y */
-		set_left_dup_decay(rbtree, y, z->_left,
-				&top, &top_child, &top_child_pos);
-		assert(top_child == y);
+		set_left(rbtree, y, z->_left);
 		rcu_rbtree_transplant(rbtree, z, y, 1);
 	} else {
 		struct rcu_rbtree_node *oy_right, *z_right;
@@ -1182,18 +911,8 @@ void rcu_rbtree_remove_nonil(struct rcu_rbtree *rbtree,
 		 */
 		y->_right = z_right;
 		set_parent(y->_right, y, IS_RIGHT);
-		if (rcu_rbtree_is_nil(rbtree, y->_right))
-			y->max_child_key = y->key;
-		else
-			y->max_child_key = y->_right->max_child_key;
-
 		assert(!is_decay(z->_left));
 		y->_left = z->_left;
-		if (rcu_rbtree_is_nil(rbtree, y->_left))
-			y->min_child_key = y->key;
-		else
-			y->min_child_key = y->_left->min_child_key;
-
 		assert(!is_decay(oy_right));
 		/*
 		 * Transplant of oy_right to old y's location will only

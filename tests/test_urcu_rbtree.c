@@ -43,6 +43,8 @@
 
 #include <urcu/arch.h>
 
+extern int __thread disable_debug;
+
 /* hardcoded number of CPUs */
 #define NR_CPUS 16384
 
@@ -246,7 +248,6 @@ void *thr_reader(void *_count)
 	cmm_smp_mb();
 
 	for (;;) {
-
 		/* search */
 		for (i = 0; i < global_items; i++) {
 			rcu_read_lock();
@@ -256,27 +257,18 @@ void *thr_reader(void *_count)
 			assert(!rcu_rbtree_is_nil(&rbtree, node));
 			rcu_read_unlock();
 		}
-
-		/* search range min */
+#if 0
+		/* search range */
 		for (i = 0; i < global_items; i++) {
 			rcu_read_lock();
-			node = rcu_rbtree_search_min(&rbtree,
+			node = rcu_rbtree_search_range(&rbtree,
 						 rcu_dereference(rbtree.root),
-						 global_key[i], global_key[i]);
+						 global_key[i],
+						 (void*) ((unsigned long) global_key[i] + 1));
 			assert(!rcu_rbtree_is_nil(&rbtree, node));
 			rcu_read_unlock();
 		}
-
-		/* search range max */
-		for (i = 0; i < global_items; i++) {
-			rcu_read_lock();
-			node = rcu_rbtree_search_max(&rbtree,
-						 rcu_dereference(rbtree.root),
-						 global_key[i], global_key[i]);
-			assert(!rcu_rbtree_is_nil(&rbtree, node));
-			rcu_read_unlock();
-		}
-
+#endif //0
 		/* min + next */
 		memset(lookup_hit, 0, sizeof(*lookup_hit) * global_items);
 
@@ -342,6 +334,8 @@ void *thr_writer(void *_count)
 
 	set_affinity();
 
+	//disable_debug = 1;
+
 	rcu_register_thread();
 
 	while (!test_go)
@@ -354,8 +348,10 @@ void *thr_writer(void *_count)
 
 		for (i = 0; i < NR_RAND; i++) {
 			node = rbtree_alloc();
-			key[i] = (void *)(unsigned long)(rand() % 2048);
+			//key[i] = (void *)(unsigned long)(rand() % 2048);
+			key[i] = (void *)(unsigned long)(rand() % 6);
 			node->key = key[i];
+			node->high = (void *)((unsigned long) key[i] + 1);
 			rcu_read_lock();
 			rcu_rbtree_insert(&rbtree, node);
 			rcu_read_unlock();
@@ -544,8 +540,9 @@ int main(int argc, char **argv)
 	/* Insert items looked up by readers */
 	for (i = 0; i < global_items; i++) {
 		node = rbtree_alloc();
-		global_key[i] = (void *)(unsigned long)(rand() % 2048);
+		global_key[i] = (void *)(unsigned long)(rand() % 6);
 		node->key = global_key[i];
+		node->high = (void *)((unsigned long) global_key[i] + 1);
 		rcu_rbtree_insert(&rbtree, node);
 	}
 	rcu_read_unlock();

@@ -56,12 +56,15 @@ typedef void (*rcu_rbtree_free)(struct rcu_head *head);
 /*
  * struct rcu_rbtree_node must be aligned at least on 2 bytes.
  * Lowest bit reserved for position (left/right) in pointer to parent.
+ *
+ * Set "high" to key + 1 to insert single-value nodes.
  */
 struct rcu_rbtree_node {
 	/* must be set upon insertion */
-	void *key;
+	void *key;	/* "key" is range low */
+	void *high;	/* high is range end (exclusive) */
 	/* augmented tree */
-	void *min_child_key, *max_child_key;
+	void *max_high;	/* max high of node and children */
 
 	/* internally reserved */
 	/* parent uses low bit for "0 -> is left, 1 -> is right" */
@@ -141,14 +144,14 @@ struct rcu_rbtree_node *rcu_rbtree_search(struct rcu_rbtree *rbtree,
 					  void *key);
 
 /*
- * Search for node with, respectively, smallest or largest value within
- * the ranges (ranges are inclusive), starting from node x.
+ * Search range starting from node x. Returns nil node if not found.
+ *
+ * Note: ranges in the rbtree should not partially overlap when this search
+ * range function is used. Otherwise, a range matching the low value (but not
+ * containing the high value) could hide a range that would match this query.
+ * It is OK for the ranges to overlap entirely though.
  */
-struct rcu_rbtree_node *rcu_rbtree_search_min(struct rcu_rbtree *rbtree,
-					  struct rcu_rbtree_node *x,
-					  void *range_low, void *range_high);
-
-struct rcu_rbtree_node *rcu_rbtree_search_max(struct rcu_rbtree *rbtree,
+struct rcu_rbtree_node *rcu_rbtree_search_range(struct rcu_rbtree *rbtree,
 					  struct rcu_rbtree_node *x,
 					  void *range_low, void *range_high);
 

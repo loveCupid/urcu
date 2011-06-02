@@ -368,6 +368,74 @@ struct rcu_rbtree_node *rcu_rbtree_prev(struct rcu_rbtree *rbtree,
 }
 
 /*
+ * "node" needs to be non-visible by readers.
+ */
+static
+void populate_node_end(struct rcu_rbtree *rbtree, struct rcu_rbtree_node *node,
+		unsigned int copy)
+{
+	struct rcu_rbtree_node *prev = NULL, *orig_node = node, *top;
+
+	do {
+		void *max_end;
+
+		assert(!rcu_rbtree_is_nil(rbtree, node));
+		max_end = node->end;
+		if (!rcu_rbtree_is_nil(rbtree, node->_right))
+			max_end = max(max_end, node->_right->max_end);
+		if (!rcu_rbtree_is_nil(rbtree, node->_left))
+			max_end = max(max_end, node->_left->max_end);
+
+		if (max_end != node->max_end) {
+			if (prev && copy) {
+				node = dup_decay_node(rbtree, node);
+				if (get_pos(prev) == IS_RIGHT)
+					node->_right = prev;
+				else
+					node->_left = prev;
+				set_parent(prev, node, get_pos(prev));
+			}
+			node->max_end = max_end;
+		} else {
+			/*
+			 * We did not have to change the current node,
+			 * so set the pointer to the prev node. If prev
+			 * was null, this means we are coming in the
+			 * first loop, and must update the parent of the
+			 * node received as parameter (node).
+			 */
+			if (prev)
+				node = prev;
+			top = get_parent(node);
+			cmm_smp_wmb();	/* write into node before publish */
+			/* make new branch visible to readers */
+			if (rcu_rbtree_is_nil(rbtree, top))
+				_CMM_STORE_SHARED(rbtree->root, node);
+			if (get_pos(node) == IS_LEFT)
+				_CMM_STORE_SHARED(top->_left, node);
+			else
+				_CMM_STORE_SHARED(top->_right, node);
+			goto end;
+		}
+		prev = node;
+	} while (!rcu_rbtree_is_nil(rbtree, node = get_parent(node)));
+
+	top = node;	/* nil */
+	cmm_smp_wmb();	/* write into node before publish */
+	/* make new branch visible to readers */
+	_CMM_STORE_SHARED(rbtree->root, prev);
+
+end:
+	/* update children */
+	node = orig_node;
+	do {
+		assert(!rcu_rbtree_is_nil(rbtree, node));
+		set_parent(node->_left, get_decay(get_parent(node->_left)), IS_LEFT);
+		set_parent(node->_right, get_decay(get_parent(node->_right)), IS_RIGHT);
+	} while ((node = get_parent(node)) != top);
+}
+
+/*
  * We have to ensure these assumptions are correct for prev/next
  * traversal:
  *
@@ -664,14 +732,8 @@ int rcu_rbtree_insert(struct rcu_rbtree *rbtree,
 	z->decay_next = NULL;
 	z->max_end = z->end;
 
-	if (rcu_rbtree_is_nil(rbtree, y))
-		set_parent(z, y, IS_RIGHT); /* pos arbitrary for root node */
-	else if (rbtree->comp(z->begin, y->begin) < 0)
-		set_parent(z, y, IS_LEFT);
-	else
-		set_parent(z, y, IS_RIGHT);
-
 	if (rcu_rbtree_is_nil(rbtree, y)) {
+		set_parent(z, y, IS_RIGHT); /* pos arbitrary for root node */
 		/*
 		 * Order stores to z (children/parents) before stores
 		 * that will make it visible to the rest of the tree.
@@ -679,29 +741,21 @@ int rcu_rbtree_insert(struct rcu_rbtree *rbtree,
 		cmm_smp_wmb();
 		_CMM_STORE_SHARED(rbtree->root, z);
 	} else if (rbtree->comp(z->begin, y->begin) < 0) {
-		/*
-		 * Order stores to z (children/parents) before stores
-		 * that will make it visible to the rest of the tree.
-		 */
-		cmm_smp_wmb();
-		if (rcu_rbtree_is_nil(rbtree, y))
-			_CMM_STORE_SHARED(rbtree->root, z);
-		else if (get_pos(z) == IS_LEFT)
+		y = dup_decay_node(rbtree, y);
+		set_parent(z, y, IS_LEFT);
+		if (get_pos(z) == IS_LEFT)
 			_CMM_STORE_SHARED(y->_left, z);
 		else
 			_CMM_STORE_SHARED(y->_right, z);
+		populate_node_end(rbtree, y, 1);
 	} else {
-		/*
-		 * Order stores to z (children/parents) before stores
-		 * that will make it visible to the rest of the tree.
-		 */
-		cmm_smp_wmb();
-		if (rcu_rbtree_is_nil(rbtree, y))
-			_CMM_STORE_SHARED(rbtree->root, z);
-		else if (get_pos(z) == IS_LEFT)
+		y = dup_decay_node(rbtree, y);
+		set_parent(z, y, IS_RIGHT);
+		if (get_pos(z) == IS_LEFT)
 			_CMM_STORE_SHARED(y->_left, z);
 		else
 			_CMM_STORE_SHARED(y->_right, z);
+		populate_node_end(rbtree, y, 1);
 	}
 	rcu_rbtree_insert_fixup(rbtree, z);
 	/*

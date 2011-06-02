@@ -136,14 +136,17 @@ int rcu_rbtree_remove(struct rcu_rbtree *rbtree,
  */
 
 /*
- * Search key starting from node x. Returns nil node if not found.
+ * Search point in range starting from node x (node x is typically the
+ * rbtree root node). Returns nil node if not found.
  */
 struct rcu_rbtree_node *rcu_rbtree_search(struct rcu_rbtree *rbtree,
 					  struct rcu_rbtree_node *x,
-					  void *key);
+					  void *point);
 
 /*
- * Search range starting from node x. Returns nil node if not found.
+ * Search range starting from node x (typically the rbtree root node).
+ * Returns the first range containing the range specified as parameters.
+ * Returns nil node if not found.
  *
  * Note: ranges in the rbtree should not partially overlap when this search
  * range function is used. Otherwise, a range matching the low value (but not
@@ -152,7 +155,17 @@ struct rcu_rbtree_node *rcu_rbtree_search(struct rcu_rbtree *rbtree,
  */
 struct rcu_rbtree_node *rcu_rbtree_search_range(struct rcu_rbtree *rbtree,
 					  struct rcu_rbtree_node *x,
-					  void *range_low, void *range_high);
+					  void *begin, void *end);
+
+/*
+ * Search exact range begin value starting from node x (typically rbtree
+ * root node). Returns nil node if not found.
+ * This function is only useful if you do not use the range feature at
+ * all and only care about range begin values.
+ */
+struct rcu_rbtree_node *rcu_rbtree_search_begin_key(struct rcu_rbtree *rbtree,
+					  struct rcu_rbtree_node *x,
+					  void *key);
 
 /*
  * Search for minimum node of the tree under node x.

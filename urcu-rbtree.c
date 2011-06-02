@@ -176,6 +176,23 @@ void set_right(struct rcu_rbtree *rbtree, struct rcu_rbtree_node *node,
 	node->_right = right;
 }
 
+static
+void *calculate_node_max_end(struct rcu_rbtree *rbtree, struct rcu_rbtree_node *node)
+{
+	void *max_end;
+
+	max_end = node->end;
+	if (!rcu_rbtree_is_nil(rbtree, node->_right)) {
+		if (rbtree->comp(max_end, node->_right->max_end) < 0)
+			max_end = node->_right->max_end;
+	}
+	if (!rcu_rbtree_is_nil(rbtree, node->_left)) {
+		if (rbtree->comp(max_end, node->_left->max_end) < 0)
+			max_end = node->_left->max_end;
+	}
+	return max_end;
+}
+
 /*
  * TODO
  * Deal with memory allocation errors.
@@ -206,9 +223,23 @@ void show_tree(struct rcu_rbtree *rbtree)
 	}
 	printf("\n");
 }
+
+#define check_max_end(rbtree, x)				\
+	do {							\
+		if (rcu_rbtree_is_nil(rbtree, x))		\
+			break;					\
+		assert(rbtree->comp(x->max_end,			\
+			calculate_node_max_end(rbtree, x)) == 0); \
+	} while (0)
+
 #else /* DEBUG */
 static
 void show_tree(struct rcu_rbtree *rbtree)
+{
+}
+
+static
+void check_max_end(struct rcu_rbtree *rbtree, struct rcu_rbtree_node *x)
 {
 }
 #endif /* DEBUG */
@@ -223,6 +254,61 @@ struct rcu_rbtree_node *make_nil(struct rcu_rbtree *rbtree)
  * Iterative rbtree search.
  */
 struct rcu_rbtree_node *rcu_rbtree_search(struct rcu_rbtree *rbtree,
+					  struct rcu_rbtree_node *x,
+					  void *point)
+{
+	struct rcu_rbtree_node *xl;
+
+	dbg_printf("searching point 0x%lx\n", (unsigned long) point);
+	x = rcu_dereference(x);
+
+	while (!rcu_rbtree_is_nil(rbtree, x)) {
+		dbg_usleep(10);
+		xl = rcu_dereference(x->_left);
+		dbg_printf("search x %lx x_end %lx x_max_end %lx\n", (unsigned long) x->begin,
+						(unsigned long) x->end, (unsigned long) x->max_end);
+		dbg_printf("search xl %lx xl_end %lx xl_max_end %lx\n", (unsigned long) xl->begin,
+			(unsigned long) xl->end, (unsigned long) xl->max_end);
+		if (!rcu_rbtree_is_nil(rbtree, xl)
+		    && (rbtree->comp(xl->max_end, point) > 0)) {
+			dbg_printf("go left\n");
+			x = xl;
+		} else if (rbtree->comp(x->begin, point) >= 0
+			   && rbtree->comp(point, x->end) < 0) {
+			dbg_printf("got it!\n");
+			break;
+		} else if (rbtree->comp(point, x->begin) > 0) {
+			dbg_printf("go right\n");
+			x = rcu_dereference(x->_right);
+		} else {
+			dbg_printf("not found!\n");
+			x = make_nil(rbtree);
+		}
+	}
+	if (rcu_rbtree_is_nil(rbtree, x))
+		dbg_printf("Reached bottom of tree.\n");
+
+	return x;
+}
+
+struct rcu_rbtree_node *rcu_rbtree_search_range(struct rcu_rbtree *rbtree,
+					  struct rcu_rbtree_node *x,
+					  void *begin, void *end)
+{
+	struct rcu_rbtree_node *node;
+
+	node = rcu_rbtree_search(rbtree, x, begin);
+	if (rcu_rbtree_is_nil(rbtree, node))
+		return node;
+	if (rbtree->comp(node->end, end) < 0)
+		return NULL;	/* High is outside lookup range */
+	return node;
+}
+
+/*
+ * Search by exact range start value.
+ */
+struct rcu_rbtree_node *rcu_rbtree_search_begin_key(struct rcu_rbtree *rbtree,
 					  struct rcu_rbtree_node *x,
 					  void *k)
 {
@@ -366,23 +452,6 @@ struct rcu_rbtree_node *rcu_rbtree_prev(struct rcu_rbtree *rbtree,
 	return y;
 }
 
-static
-void *calculate_node_max_end(struct rcu_rbtree *rbtree, struct rcu_rbtree_node *node)
-{
-	void *max_end;
-
-	max_end = node->end;
-	if (!rcu_rbtree_is_nil(rbtree, node->_right)) {
-		if (rbtree->comp(max_end, node->_right->max_end) < 0)
-			max_end = node->_right->max_end;
-	}
-	if (!rcu_rbtree_is_nil(rbtree, node->_left)) {
-		if (rbtree->comp(max_end, node->_left->max_end) < 0)
-			max_end = node->_left->max_end;
-	}
-	return max_end;
-}
-
 /*
  * "node" needs to be non-visible by readers.
  */
@@ -398,27 +467,27 @@ void populate_node_end(struct rcu_rbtree *rbtree, struct rcu_rbtree_node *node,
 		assert(node);
 		assert(!rcu_rbtree_is_nil(rbtree, node));
 
+		if (prev && copy_parents) {
+			node = dup_decay_node(rbtree, node);
+			if (get_pos(prev) == IS_RIGHT)
+				node->_right = prev;
+			else
+				node->_left = prev;
+			set_parent(prev, node, get_pos(prev));
+		}
+
 		max_end = calculate_node_max_end(rbtree, node);
-		if (rbtree->comp(max_end, node->max_end) != 0) {
-			if (prev && copy_parents) {
-				node = dup_decay_node(rbtree, node);
-				if (get_pos(prev) == IS_RIGHT)
-					node->_right = prev;
-				else
-					node->_left = prev;
-				set_parent(prev, node, get_pos(prev));
-			}
+		/*
+		 * Compare the node max_end keys to make sure we replace
+		 * references to a key belonging to a node we remove
+		 * from the tree. Otherwise we would still be using this
+		 * pointer as an invalid reference after garbage
+		 * collection of the node and of its associated
+		 * begin/end pointers.
+		 */
+		if (max_end != node->max_end) {
 			node->max_end = max_end;
 		} else {
-			/*
-			 * We did not have to change the current node,
-			 * so set the pointer to the prev node. If prev
-			 * was null, this means we are coming in the
-			 * first loop, and must update the parent of the
-			 * node received as parameter (node).
-			 */
-			if (prev)
-				node = prev;
 			top = get_parent(node);
 			cmm_smp_wmb();	/* write into node before publish */
 			/* make new branch visible to readers */
@@ -484,6 +553,8 @@ void left_rotate(struct rcu_rbtree *rbtree,
 {
 	struct rcu_rbtree_node *y, *y_left;
 
+	dbg_printf("left rotate %lx\n", (unsigned long) x->begin);
+
 	y = x->_right;
 	y_left = y->_left;
 
@@ -491,6 +562,10 @@ void left_rotate(struct rcu_rbtree *rbtree,
 	x = dup_decay_node(rbtree, x);
 	y = dup_decay_node(rbtree, y);
 	y_left = dup_decay_node(rbtree, y_left);
+
+	check_max_end(rbtree, get_parent(x));
+	check_max_end(rbtree, x);
+	check_max_end(rbtree, y);
 
 	/* Internal node modifications */
 	set_parent(y, get_parent(x), get_pos(x));
@@ -550,6 +625,9 @@ void left_rotate(struct rcu_rbtree *rbtree,
 	assert(!is_decay(x->_left));
 	assert(!is_decay(y->_right));
 	assert(!is_decay(y->_left));
+	check_max_end(rbtree, get_parent(y));
+	check_max_end(rbtree, x);
+	check_max_end(rbtree, y);
 }
 
 #else
@@ -588,6 +666,8 @@ void right_rotate(struct rcu_rbtree *rbtree,
 {
 	struct rcu_rbtree_node *y, *y_right;
 
+	dbg_printf("right rotate %lx\n", (unsigned long) x->begin);
+
 	y = x->_left;
 	y_right = y->_right;
 
@@ -595,6 +675,10 @@ void right_rotate(struct rcu_rbtree *rbtree,
 	x = dup_decay_node(rbtree, x);
 	y = dup_decay_node(rbtree, y);
 	y_right = dup_decay_node(rbtree, y_right);
+
+	check_max_end(rbtree, get_parent(x));
+	check_max_end(rbtree, x);
+	check_max_end(rbtree, y);
 
 	/* Internal node modifications */
 	set_parent(y, get_parent(x), get_pos(x));
@@ -654,6 +738,9 @@ void right_rotate(struct rcu_rbtree *rbtree,
 	assert(!is_decay(x->_right));
 	assert(!is_decay(y->_left));
 	assert(!is_decay(y->_right));
+	check_max_end(rbtree, x);
+	check_max_end(rbtree, y);
+	check_max_end(rbtree, get_parent(y));
 }
 
 #else
@@ -802,6 +889,8 @@ int rcu_rbtree_insert(struct rcu_rbtree *rbtree,
 	 */
 	cmm_smp_wmc();
 	show_tree(rbtree);
+	check_max_end(rbtree, z);
+	check_max_end(rbtree, y);
 
 	return 0;
 }
@@ -841,6 +930,7 @@ void rcu_rbtree_transplant(struct rcu_rbtree *rbtree,
 		else
 			_CMM_STORE_SHARED(vp->_right, v);
 		populate_node_end(rbtree, vp, copy_parents, stop);
+		check_max_end(rbtree, vp);
 	}
 
 	/* Point children to new copy (parent only used by updates/next/prev) */
@@ -851,6 +941,7 @@ void rcu_rbtree_transplant(struct rcu_rbtree *rbtree,
 			get_pos(v->_left));
 	}
 	assert(!is_decay(rbtree->root));
+	check_max_end(rbtree, v);
 }
 
 #else
@@ -983,8 +1074,9 @@ void rcu_rbtree_remove_nonil(struct rcu_rbtree *rbtree,
 	if (get_parent(y) == z) {
 		y = dup_decay_node(rbtree, y);
 		set_parent(x, y, get_pos(x));	/* parent for nil */
-		/* y is z's right node: set left will just update y */
+		/* y is z's right node */
 		set_left(rbtree, y, z->_left);
+		y->max_end = calculate_node_max_end(rbtree, y);
 		rcu_rbtree_transplant(rbtree, z, y, 1, NULL);
 	} else {
 		struct rcu_rbtree_node *oy_right, *z_right;
@@ -1015,6 +1107,7 @@ void rcu_rbtree_remove_nonil(struct rcu_rbtree *rbtree,
 		 * at z_right.
 		 */
 		rcu_rbtree_transplant(rbtree, y, oy_right, 0, y);
+		y->max_end = calculate_node_max_end(rbtree, y);
 		rcu_rbtree_transplant(rbtree, z, y, 1, NULL);
 		/* Update children */
 		(void) rcu_rbtree_min_update_decay(rbtree, y->_right);
@@ -1065,6 +1158,8 @@ int rcu_rbtree_remove(struct rcu_rbtree *rbtree,
 	if (y_original_color == COLOR_BLACK)
 		rcu_rbtree_remove_fixup(rbtree, x);
 	show_tree(rbtree);
+	check_max_end(rbtree, x);
+	check_max_end(rbtree, get_decay(y));
 	/*
 	 * Commit all _CMM_STORE_SHARED().
 	 */

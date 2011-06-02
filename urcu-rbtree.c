@@ -151,7 +151,9 @@
 
 /*
  * Undefine this to enable the non-RCU rotate and transplant functions
- * (for debugging).
+ * (for debugging). Note that these versions don't support the tree
+ * max_end updates, so lookups must be performed with
+ * rcu_rbtree_search_begin_key when using this debug facility.
  */
 #define RBTREE_RCU_SUPPORT_ROTATE_LEFT
 #define RBTREE_RCU_SUPPORT_ROTATE_RIGHT

@@ -662,6 +662,7 @@ int rcu_rbtree_insert(struct rcu_rbtree *rbtree,
 	z->_right = make_nil(rbtree);
 	z->color = COLOR_RED;
 	z->decay_next = NULL;
+	z->max_end = z->end;
 
 	if (rcu_rbtree_is_nil(rbtree, y))
 		set_parent(z, y, IS_RIGHT); /* pos arbitrary for root node */
@@ -678,7 +679,6 @@ int rcu_rbtree_insert(struct rcu_rbtree *rbtree,
 		cmm_smp_wmb();
 		_CMM_STORE_SHARED(rbtree->root, z);
 	} else if (rbtree->comp(z->begin, y->begin) < 0) {
-		set_left(rbtree, y, z);
 		/*
 		 * Order stores to z (children/parents) before stores
 		 * that will make it visible to the rest of the tree.
@@ -691,7 +691,6 @@ int rcu_rbtree_insert(struct rcu_rbtree *rbtree,
 		else
 			_CMM_STORE_SHARED(y->_right, z);
 	} else {
-		set_right(rbtree, y, z);
 		/*
 		 * Order stores to z (children/parents) before stores
 		 * that will make it visible to the rest of the tree.
@@ -738,12 +737,6 @@ void rcu_rbtree_transplant(struct rcu_rbtree *rbtree,
 		_CMM_STORE_SHARED(rbtree->root, v);
 	} else {
 		set_parent(v, get_parent(u), get_pos(u));
-
-		if (get_pos(u) == IS_LEFT)
-			set_left(rbtree, get_parent(u), v);
-		else
-			set_right(rbtree, get_parent(u), v);
-
 		cmm_smp_wmb();	/* write into node before publish */
 
 		if (rcu_rbtree_is_nil(rbtree, get_parent(u)))

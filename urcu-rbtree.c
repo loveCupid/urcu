@@ -41,6 +41,106 @@
 #include <urcu-call-rcu.h>
 #include <urcu/compiler.h>
 
+/*
+ * Explanation of next/prev walk coherency and search coherency when
+ * performed concurrently with updates.
+ *
+ * next/prev walk coherency with respect to concurrent updates:
+ *
+ * There are 3 scenarios for which we need to model and validate this:
+ * rotation, transplant and "teleportation" (the latter being a remote
+ * transplant in a remove non-nil case).
+ *
+ * - rotation left (right is symmetric)
+ *   xl and yr point to the same parent nodes before/after left
+ *   rotation. yll and ylr also point to the same parent node
+ *   before/after left rotation.
+ *   As we are copying x, y and yl (the 3 nodes which parent/child
+ *   relationship are changed) to "new" version of this node cluster,
+ *   all external references to the cluster either point to the old
+ *   cluster or the new one. If we take this cluster as a "black box"
+ *   from the point of view of next/prev traversal, all we have to
+ *   ensure is that the old and the new cluster behave in the exact same
+ *   way with respect to traversal order.
+ *
+ * - transplant
+ *   In this operation, we transplant a copy of "v" into its parent
+ *   location (u), thus replacing it. The children of "v", vl and vr,
+ *   still point to v (new version) after the transplant, so it does not
+ *   change the behavior when considering the next/prev traversal. "v"
+ *   being copied to a new version ensures that the parent pointers of v
+ *   are pointing to its new parent (parent of u) before it is published
+ *   to readers (by setting the child pointer of u's parent to the new
+ *   copy of v).
+ *
+ * - teleportation
+ *   This one is probably the most tricky and will require some ascii
+ *   art to explain.
+ *
+ *   We want to remove z from this tree:
+ *
+ *                zp
+ *                 \
+ *                  z
+ *                 /  \
+ *                zl   zr
+ *                    /
+ *                   a
+ *                  / \
+ *                 b   ar
+ *                / \
+ *               y   br
+ *                \
+ *                 yr
+ *                /  \
+ *               yrl yrr
+ *
+ *   What we are going to do is to "teleport" y into z's location,
+ *   reparenting yr to b. We are taking care to create a new cluster
+ *   copy that is isolated from any reader. We will represent the new
+ *   members of the cluster with capital letters.
+ *
+ *                zp
+ *                 \
+ *                  Y
+ *                 /  \
+ *                zl   ZR
+ *                    /
+ *                   A
+ *                  / \
+ *                 B   ar
+ *                / \
+ *               YR  br
+ *              /  \
+ *             yrl yrr
+ *
+ *   In this transient state, we notice that the pointers within the
+ *   cluster all point to the new cluster nodes, and they point to the
+ *   correct external nodes. However, no external pointer point to the
+ *   cluster (yet). The first pointer to point to this cluster will be
+ *   "zp->right". It will therefore make the cluster visible for search.
+ *
+ *   In this intermediate state, we can walk through the new cluster
+ *   when coming from the top (in a next/prev traversal), but can come
+ *   back to the old cluster when going back up from the children nodes.
+ *   All we have to ensure is that the two clusters, taken as a black
+ *   box from a next/prev traversal perspective, yield to the exact same
+ *   result.
+ *
+ *   Search coherency with concurrent updates:
+ *
+ *   Simple "search" (only going down the tree) is also handled by this
+ *   cluster scheme. The explanation is a subset of the prev/next
+ *   explanation, where we don't have to care about the intermediate
+ *   stages where the children point to the old cluster, because we only
+ *   ever use the top level pointers to go down into the children nodes,
+ *   we never go back up. So by simply making sure that all the cluster
+ *   internal nodes pointers are setup correctly before making the
+ *   cluster visible to the readers (by setting the parent pointer to
+ *   the topmost new node in the cluster), we are sure that readers will
+ *   see a coherent view of the cluster at all times.
+ */
+
 #ifdef DEBUG
 #define dbg_printf(args...)	printf(args)
 #define dbg_usleep(usecs)	usleep(usecs)
@@ -405,13 +505,6 @@ struct rcu_rbtree_node *rcu_rbtree_max(struct rcu_rbtree *rbtree,
 		x = xr;
 	return x;
 }
-
-/*
- * FIXME:
- * Updates should wait for a grace period between update of the
- * redirect pointer and update of the parent child pointer. This is to make sure
- * that no reference to the old entry exist.
- */
 
 /*
  * RCU read lock must be held across the next/prev calls to ensure validity of

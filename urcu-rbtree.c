@@ -381,12 +381,16 @@ void populate_node_end(struct rcu_rbtree *rbtree, struct rcu_rbtree_node *node,
 		assert(node);
 		assert(!rcu_rbtree_is_nil(rbtree, node));
 		max_end = node->end;
-		if (!rcu_rbtree_is_nil(rbtree, node->_right))
-			max_end = max(max_end, node->_right->max_end);
-		if (!rcu_rbtree_is_nil(rbtree, node->_left))
-			max_end = max(max_end, node->_left->max_end);
+		if (!rcu_rbtree_is_nil(rbtree, node->_right)) {
+			if (rbtree->comp(max_end, node->_right->max_end) < 0)
+				max_end = node->_right->max_end;
+		}
+		if (!rcu_rbtree_is_nil(rbtree, node->_left)) {
+			if (rbtree->comp(max_end, node->_left->max_end) < 0)
+				max_end = node->_left->max_end;
+		}
 
-		if (max_end != node->max_end) {
+		if (rbtree->comp(max_end, node->max_end) != 0) {
 			if (prev && copy_parents) {
 				node = dup_decay_node(rbtree, node);
 				if (get_pos(prev) == IS_RIGHT)

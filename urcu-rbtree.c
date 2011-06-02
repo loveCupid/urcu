@@ -193,13 +193,12 @@ void show_tree(struct rcu_rbtree *rbtree)
 	node = rcu_rbtree_min(rbtree, rbtree->root);
 	while (!rcu_rbtree_is_nil(rbtree, node)) {
 		assert(!is_decay(node));
-		printf("{ b:%lX e:%lX pb: %lX pe: %lX r:%lX l:%lX %s %s %s} ",
+		printf("{ b:%lX e:%lX pb: %lX r:%lX l:%lX %s %s %s} ",
 			(unsigned long) node->begin,
 			(unsigned long) node->end,
 			(unsigned long) get_parent(node)->begin,
-			(unsigned long) get_parent(node)->end,
-			(unsigned long) node->_right->key,
-			(unsigned long) node->_left->key,
+			(unsigned long) node->_right->begin,
+			(unsigned long) node->_left->begin,
 			node->color ? "red" : "black",
 			get_pos(node) ? "right" : "left",
 			rcu_rbtree_is_nil(rbtree, node) ? "nil" : "");
@@ -372,13 +371,14 @@ struct rcu_rbtree_node *rcu_rbtree_prev(struct rcu_rbtree *rbtree,
  */
 static
 void populate_node_end(struct rcu_rbtree *rbtree, struct rcu_rbtree_node *node,
-		unsigned int copy)
+		unsigned int copy_parents, struct rcu_rbtree_node *stop)
 {
 	struct rcu_rbtree_node *prev = NULL, *orig_node = node, *top;
 
 	do {
 		void *max_end;
 
+		assert(node);
 		assert(!rcu_rbtree_is_nil(rbtree, node));
 		max_end = node->end;
 		if (!rcu_rbtree_is_nil(rbtree, node->_right))
@@ -387,7 +387,7 @@ void populate_node_end(struct rcu_rbtree *rbtree, struct rcu_rbtree_node *node,
 			max_end = max(max_end, node->_left->max_end);
 
 		if (max_end != node->max_end) {
-			if (prev && copy) {
+			if (prev && copy_parents) {
 				node = dup_decay_node(rbtree, node);
 				if (get_pos(prev) == IS_RIGHT)
 					node->_right = prev;
@@ -417,8 +417,14 @@ void populate_node_end(struct rcu_rbtree *rbtree, struct rcu_rbtree_node *node,
 				_CMM_STORE_SHARED(top->_right, node);
 			goto end;
 		}
+
+		/* Check for propagation stop */
+		if (node == stop)
+			return;
+
 		prev = node;
-	} while (!rcu_rbtree_is_nil(rbtree, node = get_parent(node)));
+		node = get_parent(node);
+	} while (!rcu_rbtree_is_nil(rbtree, node));
 
 	top = node;	/* nil */
 	cmm_smp_wmb();	/* write into node before publish */
@@ -426,6 +432,8 @@ void populate_node_end(struct rcu_rbtree *rbtree, struct rcu_rbtree_node *node,
 	_CMM_STORE_SHARED(rbtree->root, prev);
 
 end:
+	if (!copy_parents)
+		return;
 	/* update children */
 	node = orig_node;
 	do {
@@ -747,7 +755,7 @@ int rcu_rbtree_insert(struct rcu_rbtree *rbtree,
 			_CMM_STORE_SHARED(y->_left, z);
 		else
 			_CMM_STORE_SHARED(y->_right, z);
-		populate_node_end(rbtree, y, 1);
+		populate_node_end(rbtree, y, 1, NULL);
 	} else {
 		y = dup_decay_node(rbtree, y);
 		set_parent(z, y, IS_RIGHT);
@@ -755,7 +763,7 @@ int rcu_rbtree_insert(struct rcu_rbtree *rbtree,
 			_CMM_STORE_SHARED(y->_left, z);
 		else
 			_CMM_STORE_SHARED(y->_right, z);
-		populate_node_end(rbtree, y, 1);
+		populate_node_end(rbtree, y, 1, NULL);
 	}
 	rcu_rbtree_insert_fixup(rbtree, z);
 	/*
@@ -777,7 +785,8 @@ static
 void rcu_rbtree_transplant(struct rcu_rbtree *rbtree,
 			struct rcu_rbtree_node *u,
 			struct rcu_rbtree_node *v,
-			unsigned int copy_parents)
+			unsigned int copy_parents,
+			struct rcu_rbtree_node *stop)
 {
 	dbg_printf("transplant %p\n", v->begin);
 
@@ -790,15 +799,17 @@ void rcu_rbtree_transplant(struct rcu_rbtree *rbtree,
 		cmm_smp_wmb();	/* write into node before publish */
 		_CMM_STORE_SHARED(rbtree->root, v);
 	} else {
-		set_parent(v, get_parent(u), get_pos(u));
-		cmm_smp_wmb();	/* write into node before publish */
+		struct rcu_rbtree_node *vp;
 
-		if (rcu_rbtree_is_nil(rbtree, get_parent(u)))
-			_CMM_STORE_SHARED(rbtree->root, v);
-		else if (get_pos(u) == IS_LEFT)
-			_CMM_STORE_SHARED(get_parent(u)->_left, v);
+		vp = get_parent(u);
+		if (copy_parents)
+			vp = dup_decay_node(rbtree, vp);
+		set_parent(v, vp, get_pos(u));
+		if (get_pos(v) == IS_LEFT)
+			_CMM_STORE_SHARED(vp->_left, v);
 		else
-			_CMM_STORE_SHARED(get_parent(u)->_right, v);
+			_CMM_STORE_SHARED(vp->_right, v);
+		populate_node_end(rbtree, vp, copy_parents, stop);
 	}
 
 	/* Point children to new copy (parent only used by updates/next/prev) */
@@ -818,7 +829,8 @@ static
 void rcu_rbtree_transplant(struct rcu_rbtree *rbtree,
 			   struct rcu_rbtree_node *u,
 			   struct rcu_rbtree_node *v,
-			   unsigned int copy_parents)
+			   unsigned int copy_parents,
+			   struct rcu_rbtree_node *stop)
 {
 	dbg_printf("transplant %p\n", v->begin);
 
@@ -942,7 +954,7 @@ void rcu_rbtree_remove_nonil(struct rcu_rbtree *rbtree,
 		set_parent(x, y, get_pos(x));	/* parent for nil */
 		/* y is z's right node: set left will just update y */
 		set_left(rbtree, y, z->_left);
-		rcu_rbtree_transplant(rbtree, z, y, 1);
+		rcu_rbtree_transplant(rbtree, z, y, 1, NULL);
 	} else {
 		struct rcu_rbtree_node *oy_right, *z_right;
 
@@ -965,14 +977,14 @@ void rcu_rbtree_remove_nonil(struct rcu_rbtree *rbtree,
 		assert(!is_decay(oy_right));
 		/*
 		 * Transplant of oy_right to old y's location will only
-		 * trigger a min/max update of the already copied branch
+		 * trigger a "end" value update of the already copied branch
 		 * (which is not visible yet). We are transplanting
 		 * oy_right as a left child of old y's parent, so the
 		 * min values update propagated upward necessarily stops
 		 * at z_right.
 		 */
-		rcu_rbtree_transplant(rbtree, y, oy_right, 0);
-		rcu_rbtree_transplant(rbtree, z, y, 1);
+		rcu_rbtree_transplant(rbtree, y, oy_right, 0, y);
+		rcu_rbtree_transplant(rbtree, z, y, 1, NULL);
 		/* Update children */
 		(void) rcu_rbtree_min_update_decay(rbtree, y->_right);
 	}
@@ -1001,12 +1013,12 @@ int rcu_rbtree_remove(struct rcu_rbtree *rbtree,
 	y_original_color = y->color;
 
 	if (rcu_rbtree_is_nil(rbtree, z->_left)) {
-		rcu_rbtree_transplant(rbtree, z, z->_right, 1);
+		rcu_rbtree_transplant(rbtree, z, z->_right, 1, NULL);
 		assert(!is_decay(z));
 		x = get_decay(z->_right);
 		show_tree(rbtree);
 	} else if (rcu_rbtree_is_nil(rbtree, z->_right)) {
-		rcu_rbtree_transplant(rbtree, z, z->_left, 1);
+		rcu_rbtree_transplant(rbtree, z, z->_left, 1, NULL);
 		assert(!is_decay(z));
 		x = get_decay(z->_left);
 		show_tree(rbtree);

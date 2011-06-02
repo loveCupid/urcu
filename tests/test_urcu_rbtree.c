@@ -358,8 +358,9 @@ void *thr_writer(void *_count)
 
 		for (i = 0; i < NR_RAND; i++) {
 			node = rbtree_alloc();
-			//key[i] = (void *)(unsigned long)(rand() % 2048);
-			key[i] = (void *)(unsigned long)(rand() % 6);
+			key[i] = (void *)(unsigned long)(rand() % 2048);
+			//For more collisions
+			//key[i] = (void *)(unsigned long)(rand() % 6);
 			node->begin = key[i];
 			node->end = (void *)((unsigned long) key[i] + 1);
 			rcu_read_lock();
@@ -550,6 +551,8 @@ int main(int argc, char **argv)
 	/* Insert items looked up by readers */
 	for (i = 0; i < global_items; i++) {
 		node = rbtree_alloc();
+		global_key[i] = (void *)(unsigned long)(rand() % 2048);
+		//For more collisions
 		global_key[i] = (void *)(unsigned long)(rand() % 6);
 		node->begin = global_key[i];
 		node->end = (void *)((unsigned long) global_key[i] + 1);

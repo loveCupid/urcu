@@ -263,7 +263,7 @@ void *thr_reader(void *_count)
 			rcu_read_lock();
 			node = rcu_rbtree_search(&rbtree,
 						 rcu_dereference(rbtree.root),
-						 (void*) ((unsigned long) global_key[i] + 3));
+						 (void*) ((unsigned long) global_key[i] + 2));
 			assert(!rcu_rbtree_is_nil(&rbtree, node));
 			rcu_read_unlock();
 		}

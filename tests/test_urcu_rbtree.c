@@ -257,13 +257,13 @@ void *thr_reader(void *_count)
 			assert(!rcu_rbtree_is_nil(&rbtree, node));
 			rcu_read_unlock();
 		}
-#if 0
+
 		/* search end of range */
 		for (i = 0; i < global_items; i++) {
 			rcu_read_lock();
 			node = rcu_rbtree_search(&rbtree,
 						 rcu_dereference(rbtree.root),
-						 (void*) ((unsigned long) global_key[i] + 2));
+						 (void*) ((unsigned long) global_key[i] + 3));
 			assert(!rcu_rbtree_is_nil(&rbtree, node));
 			rcu_read_unlock();
 		}
@@ -278,7 +278,6 @@ void *thr_reader(void *_count)
 			assert(!rcu_rbtree_is_nil(&rbtree, node));
 			rcu_read_unlock();
 		}
-#endif //0
 
 		/* search begin key */
 		for (i = 0; i < global_items; i++) {
@@ -369,13 +368,13 @@ void *thr_writer(void *_count)
 
 		for (i = 0; i < NR_RAND; i++) {
 			node = rbtree_alloc();
-			key[i] = (void *)(unsigned long)(rand() % 2048);
-			//key[i] = (void *)(unsigned long)((rand() * 4) % 2048);
+			//key[i] = (void *)(unsigned long)(rand() % 2048);
+			key[i] = (void *)(unsigned long)(((unsigned long) rand() * 4) % 2048);
 			//For more collisions
 			//key[i] = (void *)(unsigned long)(rand() % 6);
 			node->begin = key[i];
-			node->end = (void *)((unsigned long) key[i] + 1);
-			//node->end = (void *)((unsigned long) key[i] + 4);
+			//node->end = (void *)((unsigned long) key[i] + 1);
+			node->end = (void *)((unsigned long) key[i] + 4);
 			rcu_read_lock();
 			rcu_rbtree_insert(&rbtree, node);
 			rcu_read_unlock();
@@ -564,13 +563,13 @@ int main(int argc, char **argv)
 	/* Insert items looked up by readers */
 	for (i = 0; i < global_items; i++) {
 		node = rbtree_alloc();
-		//global_key[i] = (void *)(unsigned long)((rand() * 4) % 2048);
-		global_key[i] = (void *)(unsigned long)(rand() % 2048);
+		global_key[i] = (void *)(unsigned long)(((unsigned long) rand() * 4) % 2048);
+		//global_key[i] = (void *)(unsigned long)(rand() % 2048);
 		//For more collisions
 		//global_key[i] = (void *)(unsigned long)(rand() % 6);
 		node->begin = global_key[i];
-		node->end = (void *)((unsigned long) global_key[i] + 1);
-		//node->end = (void *)((unsigned long) global_key[i] + 4);
+		//node->end = (void *)((unsigned long) global_key[i] + 1);
+		node->end = (void *)((unsigned long) global_key[i] + 4);
 		rcu_rbtree_insert(&rbtree, node);
 	}
 	rcu_read_unlock();

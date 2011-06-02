@@ -193,9 +193,11 @@ void show_tree(struct rcu_rbtree *rbtree)
 	node = rcu_rbtree_min(rbtree, rbtree->root);
 	while (!rcu_rbtree_is_nil(rbtree, node)) {
 		assert(!is_decay(node));
-		printf("{ 0x%lX p:%lX r:%lX l:%lX %s %s %s} ",
-			(unsigned long)node->key,
-			(unsigned long) get_parent(node)->key,
+		printf("{ b:%lX e:%lX pb: %lX pe: %lX r:%lX l:%lX %s %s %s} ",
+			(unsigned long) node->begin,
+			(unsigned long) node->end,
+			(unsigned long) get_parent(node)->begin,
+			(unsigned long) get_parent(node)->end,
 			(unsigned long) node->_right->key,
 			(unsigned long) node->_left->key,
 			node->color ? "red" : "black",
@@ -228,7 +230,7 @@ struct rcu_rbtree_node *rcu_rbtree_search(struct rcu_rbtree *rbtree,
 	x = rcu_dereference(x);
 	int comp;
 
-	while (!rcu_rbtree_is_nil(rbtree, x) && (comp = rbtree->comp(k, x->key)) != 0) {
+	while (!rcu_rbtree_is_nil(rbtree, x) && (comp = rbtree->comp(k, x->begin)) != 0) {
 		dbg_usleep(10);
 		if (comp < 0)
 			x = rcu_dereference(x->_left);
@@ -581,7 +583,7 @@ static void rcu_rbtree_insert_fixup(struct rcu_rbtree *rbtree,
 {
 	struct rcu_rbtree_node *y;
 
-	dbg_printf("insert fixup %p\n", z->key);
+	dbg_printf("insert fixup %p\n", z->begin);
 	assert(!is_decay(rbtree->root));
 
 	while (get_parent(z)->color == COLOR_RED) {
@@ -643,14 +645,14 @@ int rcu_rbtree_insert(struct rcu_rbtree *rbtree,
 {
 	struct rcu_rbtree_node *x, *y;
 
-	dbg_printf("insert %p\n", z->key);
+	dbg_printf("insert %p\n", z->begin);
 	assert(!is_decay(rbtree->root));
 
 	y = make_nil(rbtree);
 	x = rbtree->root;
 	while (!rcu_rbtree_is_nil(rbtree, x)) {
 		y = x;
-		if (rbtree->comp(z->key, x->key) < 0)
+		if (rbtree->comp(z->begin, x->begin) < 0)
 			x = x->_left;
 		else
 			x = x->_right;
@@ -663,7 +665,7 @@ int rcu_rbtree_insert(struct rcu_rbtree *rbtree,
 
 	if (rcu_rbtree_is_nil(rbtree, y))
 		set_parent(z, y, IS_RIGHT); /* pos arbitrary for root node */
-	else if (rbtree->comp(z->key, y->key) < 0)
+	else if (rbtree->comp(z->begin, y->begin) < 0)
 		set_parent(z, y, IS_LEFT);
 	else
 		set_parent(z, y, IS_RIGHT);
@@ -675,7 +677,7 @@ int rcu_rbtree_insert(struct rcu_rbtree *rbtree,
 		 */
 		cmm_smp_wmb();
 		_CMM_STORE_SHARED(rbtree->root, z);
-	} else if (rbtree->comp(z->key, y->key) < 0) {
+	} else if (rbtree->comp(z->begin, y->begin) < 0) {
 		set_left(rbtree, y, z);
 		/*
 		 * Order stores to z (children/parents) before stores
@@ -724,7 +726,7 @@ void rcu_rbtree_transplant(struct rcu_rbtree *rbtree,
 			struct rcu_rbtree_node *v,
 			unsigned int copy_parents)
 {
-	dbg_printf("transplant %p\n", v->key);
+	dbg_printf("transplant %p\n", v->begin);
 
 	if (!rcu_rbtree_is_nil(rbtree, v))
 		v = dup_decay_node(rbtree, v);
@@ -771,7 +773,7 @@ void rcu_rbtree_transplant(struct rcu_rbtree *rbtree,
 			   struct rcu_rbtree_node *v,
 			   unsigned int copy_parents)
 {
-	dbg_printf("transplant %p\n", v->key);
+	dbg_printf("transplant %p\n", v->begin);
 
 	lock_test_mutex();
 	if (rcu_rbtree_is_nil(rbtree, get_parent(u)))
@@ -789,7 +791,7 @@ void rcu_rbtree_transplant(struct rcu_rbtree *rbtree,
 static void rcu_rbtree_remove_fixup(struct rcu_rbtree *rbtree,
 				    struct rcu_rbtree_node *x)
 {
-	dbg_printf("remove fixup %p\n", x->key);
+	dbg_printf("remove fixup %p\n", x->begin);
 
 	while (x != rbtree->root && x->color == COLOR_BLACK) {
 		assert(!is_decay(get_parent(x)));
@@ -879,7 +881,7 @@ void rcu_rbtree_remove_nonil(struct rcu_rbtree *rbtree,
 {
 	struct rcu_rbtree_node *x;
 
-	dbg_printf("remove nonil %p\n", z->key);
+	dbg_printf("remove nonil %p\n", z->begin);
 	show_tree(rbtree);
 
 	assert(!is_decay(z));
@@ -906,7 +908,7 @@ void rcu_rbtree_remove_nonil(struct rcu_rbtree *rbtree,
 		oy_right = y->_right;
 
 		/*
-		 * The max child key of z_right does not change, because
+		 * The max child begin of z_right does not change, because
 		 * we're only changing its left children.
 		 */
 		y->_right = z_right;
@@ -944,7 +946,7 @@ int rcu_rbtree_remove(struct rcu_rbtree *rbtree,
 	unsigned int y_original_color;
 
 	assert(!is_decay(rbtree->root));
-	dbg_printf("remove %p\n", z->key);
+	dbg_printf("remove %p\n", z->begin);
 	show_tree(rbtree);
 
 	assert(!is_decay(z));

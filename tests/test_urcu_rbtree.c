@@ -218,7 +218,7 @@ void set_lookup_index(struct rcu_rbtree_node *node,
 	int i;
 
 	for (i = 0; i < global_items; i++) {
-		if (node->key == global_key[i]
+		if (node->begin == global_key[i]
 		    && !lookup_hit[i]) {
 			lookup_hit[i] = 1;
 			break;
@@ -350,8 +350,8 @@ void *thr_writer(void *_count)
 			node = rbtree_alloc();
 			//key[i] = (void *)(unsigned long)(rand() % 2048);
 			key[i] = (void *)(unsigned long)(rand() % 6);
-			node->key = key[i];
-			node->high = (void *)((unsigned long) key[i] + 1);
+			node->begin = key[i];
+			node->end = (void *)((unsigned long) key[i] + 1);
 			rcu_read_lock();
 			rcu_rbtree_insert(&rbtree, node);
 			rcu_read_unlock();
@@ -541,8 +541,8 @@ int main(int argc, char **argv)
 	for (i = 0; i < global_items; i++) {
 		node = rbtree_alloc();
 		global_key[i] = (void *)(unsigned long)(rand() % 6);
-		node->key = global_key[i];
-		node->high = (void *)((unsigned long) global_key[i] + 1);
+		node->begin = global_key[i];
+		node->end = (void *)((unsigned long) global_key[i] + 1);
 		rcu_rbtree_insert(&rbtree, node);
 	}
 	rcu_read_unlock();

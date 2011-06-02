@@ -61,12 +61,11 @@ typedef void (*rcu_rbtree_free)(struct rcu_head *head);
  */
 struct rcu_rbtree_node {
 	/* must be set upon insertion */
-	void *key;	/* "key" is range low */
-	void *high;	/* high is range end (exclusive) */
-	/* augmented tree */
-	void *max_high;	/* max high of node and children */
+	void *begin;		/* Start of range (inclusive) */
+	void *end;		/* range end (exclusive) */
 
 	/* internally reserved */
+	void *max_end;		/* max range end of node and children */
 	/* parent uses low bit for "0 -> is left, 1 -> is right" */
 	unsigned long parent;
 	/* _left and _right must be updated with set_left(), set_right() */

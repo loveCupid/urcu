@@ -257,7 +257,7 @@ void *thr_reader(void *_count)
 			assert(!rcu_rbtree_is_nil(&rbtree, node));
 			rcu_read_unlock();
 		}
-#if 0
+
 		/* search range */
 		for (i = 0; i < global_items; i++) {
 			rcu_read_lock();
@@ -268,7 +268,17 @@ void *thr_reader(void *_count)
 			assert(!rcu_rbtree_is_nil(&rbtree, node));
 			rcu_read_unlock();
 		}
-#endif //0
+
+		/* search begin key */
+		for (i = 0; i < global_items; i++) {
+			rcu_read_lock();
+			node = rcu_rbtree_search_begin_key(&rbtree,
+						 rcu_dereference(rbtree.root),
+						 global_key[i]);
+			assert(!rcu_rbtree_is_nil(&rbtree, node));
+			rcu_read_unlock();
+		}
+
 		/* min + next */
 		memset(lookup_hit, 0, sizeof(*lookup_hit) * global_items);
 

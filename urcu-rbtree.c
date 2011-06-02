@@ -198,7 +198,8 @@ void *calculate_node_max_end(struct rcu_rbtree *rbtree, struct rcu_rbtree_node *
  * Deal with memory allocation errors.
  * Can be ensured by reserving a pool of memory entries before doing the
  * insertion, which will have to be function of number of
- * transplantations/rotations required for the operation.
+ * transplantations/rotations required for the operation (which is a
+ * multiple of the tree height).
  */
 
 #ifdef DEBUG

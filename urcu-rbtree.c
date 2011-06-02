@@ -376,7 +376,7 @@ struct rcu_rbtree_node *rcu_rbtree_search(struct rcu_rbtree *rbtree,
 		    && (rbtree->comp(xl->max_end, point) > 0)) {
 			dbg_printf("go left\n");
 			x = xl;
-		} else if (rbtree->comp(x->begin, point) >= 0
+		} else if (rbtree->comp(x->begin, point) <= 0
 			   && rbtree->comp(point, x->end) < 0) {
 			dbg_printf("got it!\n");
 			break;

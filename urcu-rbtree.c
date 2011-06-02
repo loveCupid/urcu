@@ -366,6 +366,23 @@ struct rcu_rbtree_node *rcu_rbtree_prev(struct rcu_rbtree *rbtree,
 	return y;
 }
 
+static
+void *calculate_node_max_end(struct rcu_rbtree *rbtree, struct rcu_rbtree_node *node)
+{
+	void *max_end;
+
+	max_end = node->end;
+	if (!rcu_rbtree_is_nil(rbtree, node->_right)) {
+		if (rbtree->comp(max_end, node->_right->max_end) < 0)
+			max_end = node->_right->max_end;
+	}
+	if (!rcu_rbtree_is_nil(rbtree, node->_left)) {
+		if (rbtree->comp(max_end, node->_left->max_end) < 0)
+			max_end = node->_left->max_end;
+	}
+	return max_end;
+}
+
 /*
  * "node" needs to be non-visible by readers.
  */
@@ -380,16 +397,8 @@ void populate_node_end(struct rcu_rbtree *rbtree, struct rcu_rbtree_node *node,
 
 		assert(node);
 		assert(!rcu_rbtree_is_nil(rbtree, node));
-		max_end = node->end;
-		if (!rcu_rbtree_is_nil(rbtree, node->_right)) {
-			if (rbtree->comp(max_end, node->_right->max_end) < 0)
-				max_end = node->_right->max_end;
-		}
-		if (!rcu_rbtree_is_nil(rbtree, node->_left)) {
-			if (rbtree->comp(max_end, node->_left->max_end) < 0)
-				max_end = node->_left->max_end;
-		}
 
+		max_end = calculate_node_max_end(rbtree, node);
 		if (rbtree->comp(max_end, node->max_end) != 0) {
 			if (prev && copy_parents) {
 				node = dup_decay_node(rbtree, node);
@@ -492,6 +501,15 @@ void left_rotate(struct rcu_rbtree *rbtree,
 	if (!rcu_rbtree_is_nil(rbtree, y_left))
 		set_parent(y_left, x, IS_RIGHT);
 
+	/*
+	 * We only changed the relative position of x and y wrt their
+	 * children, and reparented y (but are keeping the same nodes in
+	 * place, so its parent does not need to have end value
+	 * recalculated).
+	 */
+	x->max_end = calculate_node_max_end(rbtree, x);
+	y->max_end = calculate_node_max_end(rbtree, y);
+
 	cmm_smp_wmb();	/* write into node before publish */
 
 	/* External references update (visible by readers) */
@@ -586,6 +604,15 @@ void right_rotate(struct rcu_rbtree *rbtree,
 
 	if (!rcu_rbtree_is_nil(rbtree, y_right))
 		set_parent(y_right, x, IS_LEFT);
+
+	/*
+	 * We only changed the relative position of x and y wrt their
+	 * children, and reparented y (but are keeping the same nodes in
+	 * place, so its parent does not need to have end value
+	 * recalculated).
+	 */
+	x->max_end = calculate_node_max_end(rbtree, x);
+	y->max_end = calculate_node_max_end(rbtree, y);
 
 	cmm_smp_wmb();	/* write into node before publish */
 

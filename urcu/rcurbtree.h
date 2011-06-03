@@ -60,9 +60,10 @@ typedef void (*rcu_rbtree_free)(void *ptr);
  * Set "high" to key + 1 to insert single-value nodes.
  */
 struct rcu_rbtree_node {
-	/* internally reserved */
+	/* useful node information returned by search */
 	void *begin;		/* Start of range (inclusive) */
 	void *end;		/* range end (exclusive) */
+	/* internally reserved */
 	void *max_end;		/* max range end of node and children */
 	/* parent uses low bit for "0 -> is left, 1 -> is right" */
 	unsigned long parent;

@@ -71,17 +71,6 @@ static inline pid_t gettid(void)
 #include <urcu/rcurbtree.h>
 #include <urcu-defer.h>
 
-/* TODO: error handling testing for -ENOMEM */
-void *rbtree_alloc(size_t size)
-{
-	return malloc(size);
-}
-
-void rbtree_free(void *ptr)
-{
-	free(ptr);
-}
-
 int tree_comp(void *a, void *b)
 {
 	if ((unsigned long)a < (unsigned long)b)
@@ -92,7 +81,7 @@ int tree_comp(void *a, void *b)
 		return 0;
 }
 
-static DEFINE_RCU_RBTREE(rbtree, tree_comp, rbtree_alloc, rbtree_free);
+static DEFINE_RCU_RBTREE(rbtree, tree_comp, malloc, free);
 
 static volatile int test_go, test_stop;
 

@@ -48,10 +48,10 @@
 typedef int (*rcu_rbtree_comp)(void *a, void *b);
 
 /*
- * Node allocation and deletion functions.
+ * Allocation and deletion functions.
  */
-typedef struct rcu_rbtree_node *(*rcu_rbtree_alloc)(void);
-typedef void (*rcu_rbtree_free)(struct rcu_head *head);
+typedef void *(*rcu_rbtree_alloc)(size_t size);
+typedef void (*rcu_rbtree_free)(void *ptr);
 
 /*
  * struct rcu_rbtree_node must be aligned at least on 2 bytes.
@@ -60,17 +60,16 @@ typedef void (*rcu_rbtree_free)(struct rcu_head *head);
  * Set "high" to key + 1 to insert single-value nodes.
  */
 struct rcu_rbtree_node {
-	/* must be set upon insertion */
+	/* internally reserved */
 	void *begin;		/* Start of range (inclusive) */
 	void *end;		/* range end (exclusive) */
-
-	/* internally reserved */
 	void *max_end;		/* max range end of node and children */
 	/* parent uses low bit for "0 -> is left, 1 -> is right" */
 	unsigned long parent;
 	/* _left and _right must be updated with set_left(), set_right() */
 	struct rcu_rbtree_node *_left, *_right;
 	struct rcu_rbtree_node *decay_next;
+	struct rcu_rbtree *rbtree;
 	struct rcu_head head;		/* For delayed free */
 	unsigned int color:1;
 };
@@ -109,7 +108,7 @@ struct rcu_rbtree {
  * Caller must have exclusive write access and hold RCU read-side lock.
  */
 int rcu_rbtree_insert(struct rcu_rbtree *rbtree,
-		      struct rcu_rbtree_node *node);
+		      void *begin, void *end);
 
 /*
  * Remove node from tree.
@@ -120,7 +119,6 @@ int rcu_rbtree_insert(struct rcu_rbtree *rbtree,
  * "node".
  * Returns 0 on success. May fail with -ENOMEM.
  *
- * The caller is responsible for freeing the node after a grace period.
  * Caller must have exclusive write access and hold RCU read-side lock
  * across "search" and "remove".
  */

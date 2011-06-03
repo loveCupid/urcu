@@ -72,16 +72,14 @@ static inline pid_t gettid(void)
 #include <urcu-defer.h>
 
 /* TODO: error handling testing for -ENOMEM */
-struct rcu_rbtree_node *rbtree_alloc(void)
+void *rbtree_alloc(size_t size)
 {
-	return calloc(1, sizeof(struct rcu_rbtree_node));
+	return malloc(size);
 }
 
-void rbtree_free(struct rcu_head *head)
+void rbtree_free(void *ptr)
 {
-	struct rcu_rbtree_node *node =
-		caa_container_of(head, struct rcu_rbtree_node, head);
-	free(node);
+	free(ptr);
 }
 
 int tree_comp(void *a, void *b)
@@ -367,16 +365,16 @@ void *thr_writer(void *_count)
 		rcu_copy_mutex_lock();
 
 		for (i = 0; i < NR_RAND; i++) {
-			node = rbtree_alloc();
 			//key[i] = (void *)(unsigned long)(rand() % 2048);
 			key[i] = (void *)(unsigned long)(((unsigned long) rand() * 4) % 2048);
 			//For more collisions
 			//key[i] = (void *)(unsigned long)(rand() % 6);
-			node->begin = key[i];
+			//node->begin = key[i];
 			//node->end = (void *)((unsigned long) key[i] + 1);
-			node->end = (void *)((unsigned long) key[i] + 4);
+			//node->end = (void *)((unsigned long) key[i] + 4);
 			rcu_read_lock();
-			rcu_rbtree_insert(&rbtree, node);
+			rcu_rbtree_insert(&rbtree, key[i],
+					  (void *)((unsigned long) key[i] + 4));
 			rcu_read_unlock();
 		}
 		rcu_copy_mutex_unlock();
@@ -406,7 +404,6 @@ void *thr_writer(void *_count)
 			assert(!rcu_rbtree_is_nil(&rbtree, node));
 			rcu_rbtree_remove(&rbtree, node);
 			rcu_read_unlock();
-			call_rcu(&node->head, rbtree_free);
 		}
 
 		rcu_copy_mutex_unlock();
@@ -562,15 +559,15 @@ int main(int argc, char **argv)
 	rcu_read_lock();
 	/* Insert items looked up by readers */
 	for (i = 0; i < global_items; i++) {
-		node = rbtree_alloc();
 		global_key[i] = (void *)(unsigned long)(((unsigned long) rand() * 4) % 2048);
 		//global_key[i] = (void *)(unsigned long)(rand() % 2048);
 		//For more collisions
 		//global_key[i] = (void *)(unsigned long)(rand() % 6);
-		node->begin = global_key[i];
+		//node->begin = global_key[i];
 		//node->end = (void *)((unsigned long) global_key[i] + 1);
-		node->end = (void *)((unsigned long) global_key[i] + 4);
-		rcu_rbtree_insert(&rbtree, node);
+		//node->end = (void *)((unsigned long) global_key[i] + 4);
+		rcu_rbtree_insert(&rbtree, global_key[i],
+				  (void *)((unsigned long) global_key[i] + 4));
 	}
 	rcu_read_unlock();
 
@@ -600,7 +597,6 @@ int main(int argc, char **argv)
 		node = rcu_rbtree_search(&rbtree, rbtree.root, global_key[i]);
 		assert(!rcu_rbtree_is_nil(&rbtree, node));
 		rcu_rbtree_remove(&rbtree, node);
-		call_rcu(&node->head, rbtree_free);
 	}
 	rcu_read_unlock();
 	rcu_unregister_thread();

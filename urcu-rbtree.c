@@ -241,6 +241,14 @@ struct rcu_rbtree_node *is_decay(struct rcu_rbtree_node *x)
 }
 
 static
+void _rcu_rbtree_free(struct rcu_head *head)
+{
+	struct rcu_rbtree_node *node =
+		caa_container_of(head, struct rcu_rbtree_node, head);
+	node->rbtree->rbfree(node);
+}
+
+static
 struct rcu_rbtree_node *dup_decay_node(struct rcu_rbtree *rbtree,
 				struct rcu_rbtree_node *x)
 {
@@ -249,11 +257,11 @@ struct rcu_rbtree_node *dup_decay_node(struct rcu_rbtree *rbtree,
 	if (rcu_rbtree_is_nil(rbtree, x))
 		return x;
 
-	xc = rbtree->rballoc();
-	memcpy(xc, x, sizeof(struct rcu_rbtree_node));
+	xc = rbtree->rballoc(sizeof(*xc));
+	memcpy(xc, x, sizeof(*xc));
 	xc->decay_next = NULL;
 	set_decay(x, xc);
-	call_rcu(&x->head, rbtree->rbfree);
+	call_rcu(&x->head, _rcu_rbtree_free);
 	return xc;
 }
 
@@ -931,9 +939,13 @@ static void rcu_rbtree_insert_fixup(struct rcu_rbtree *rbtree,
  * Returns 0 on success, or < 0 on error.
  */
 int rcu_rbtree_insert(struct rcu_rbtree *rbtree,
-		      struct rcu_rbtree_node *z)
+		      void *begin, void *end)
 {
-	struct rcu_rbtree_node *x, *y;
+	struct rcu_rbtree_node *x, *y, *z;
+
+	z = rbtree->rballoc(sizeof(*z));
+	z->begin = begin;
+	z->end = end;
 
 	dbg_printf("insert %p\n", z->begin);
 	assert(!is_decay(rbtree->root));
@@ -953,6 +965,7 @@ int rcu_rbtree_insert(struct rcu_rbtree *rbtree,
 	z->color = COLOR_RED;
 	z->decay_next = NULL;
 	z->max_end = z->end;
+	z->rbtree = rbtree;
 
 	if (rcu_rbtree_is_nil(rbtree, y)) {
 		set_parent(z, y, IS_RIGHT); /* pos arbitrary for root node */
@@ -1260,6 +1273,7 @@ int rcu_rbtree_remove(struct rcu_rbtree *rbtree,
 	 * Commit all _CMM_STORE_SHARED().
 	 */
 	cmm_smp_wmc();
+	call_rcu(&z->head, _rcu_rbtree_free);
 
 	return 0;
 }

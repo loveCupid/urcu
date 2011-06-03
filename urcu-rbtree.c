@@ -35,6 +35,7 @@
 #include <assert.h>
 #include <string.h>
 #include <unistd.h>
+#include <errno.h>
 
 #include <urcu/rcurbtree.h>
 #include <urcu-pointer.h>
@@ -241,7 +242,13 @@ struct rcu_rbtree_node *is_decay(struct rcu_rbtree_node *x)
 }
 
 static
-void _rcu_rbtree_free(struct rcu_head *head)
+struct rcu_rbtree_node *_rcu_rbtree_alloc_node(struct rcu_rbtree *rbtree)
+{
+	return rbtree->rballoc(sizeof(struct rcu_rbtree_node));
+}
+
+static
+void _rcu_rbtree_free_node(struct rcu_head *head)
 {
 	struct rcu_rbtree_node *node =
 		caa_container_of(head, struct rcu_rbtree_node, head);
@@ -257,11 +264,11 @@ struct rcu_rbtree_node *dup_decay_node(struct rcu_rbtree *rbtree,
 	if (rcu_rbtree_is_nil(rbtree, x))
 		return x;
 
-	xc = rbtree->rballoc(sizeof(*xc));
+	xc = _rcu_rbtree_alloc_node(rbtree);
 	memcpy(xc, x, sizeof(*xc));
 	xc->decay_next = NULL;
 	set_decay(x, xc);
-	call_rcu(&x->head, _rcu_rbtree_free);
+	call_rcu(&x->head, _rcu_rbtree_free_node);
 	return xc;
 }
 
@@ -943,7 +950,9 @@ int rcu_rbtree_insert(struct rcu_rbtree *rbtree,
 {
 	struct rcu_rbtree_node *x, *y, *z;
 
-	z = rbtree->rballoc(sizeof(*z));
+	z = _rcu_rbtree_alloc_node(rbtree);
+	if (!z)
+		return -ENOMEM;
 	z->begin = begin;
 	z->end = end;
 
@@ -1273,7 +1282,7 @@ int rcu_rbtree_remove(struct rcu_rbtree *rbtree,
 	 * Commit all _CMM_STORE_SHARED().
 	 */
 	cmm_smp_wmc();
-	call_rcu(&z->head, _rcu_rbtree_free);
+	call_rcu(&z->head, _rcu_rbtree_free_node);
 
 	return 0;
 }

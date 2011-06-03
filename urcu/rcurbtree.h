@@ -81,14 +81,17 @@ struct rcu_rbtree {
 	rcu_rbtree_comp comp;
 	rcu_rbtree_alloc rballoc;
 	rcu_rbtree_free rbfree;
+	void (*call_rcu)(struct rcu_head *head,
+			 void (*func)(struct rcu_head *head));
 };
 
-#define DEFINE_RCU_RBTREE(x, _comp, _rballoc, _rbfree)	\
+#define DEFINE_RCU_RBTREE(x, _comp, _rballoc, _rbfree, _call_rcu) \
 	struct rcu_rbtree x =				\
 		{					\
 			.comp = _comp,			\
 			.rballoc = _rballoc,		\
 			.rbfree = _rbfree,		\
+			.call_rcu = _call_rcu,		\
 			.nil_node = {			\
 				.color = COLOR_BLACK,	\
 			},				\

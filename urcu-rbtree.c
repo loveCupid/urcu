@@ -268,7 +268,7 @@ struct rcu_rbtree_node *dup_decay_node(struct rcu_rbtree *rbtree,
 	memcpy(xc, x, sizeof(*xc));
 	xc->decay_next = NULL;
 	set_decay(x, xc);
-	call_rcu(&x->head, _rcu_rbtree_free_node);
+	rbtree->call_rcu(&x->head, _rcu_rbtree_free_node);
 	return xc;
 }
 
@@ -1282,7 +1282,7 @@ int rcu_rbtree_remove(struct rcu_rbtree *rbtree,
 	 * Commit all _CMM_STORE_SHARED().
 	 */
 	cmm_smp_wmc();
-	call_rcu(&z->head, _rcu_rbtree_free_node);
+	rbtree->call_rcu(&z->head, _rcu_rbtree_free_node);
 
 	return 0;
 }

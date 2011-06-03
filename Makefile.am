@@ -30,9 +30,8 @@ COMPAT+=compat_futex.c
 endif
 
 lib_LTLIBRARIES = liburcu.la liburcu-qsbr.la liburcu-mb.la liburcu-signal.la \
-		  liburcu-bp.la liburcu-defer.la liburcu-call.la \
-		  libwfqueue.la libwfstack.la librculfqueue.la \
-		  liburcu-rbtree.la librculfstack.la
+		  liburcu-bp.la liburcu-rbtree.la \
+		  libwfqueue.la libwfstack.la librculfqueue.la librculfstack.la
 
 liburcu_la_SOURCES = urcu.c urcu-pointer.c $(COMPAT)
 
@@ -46,11 +45,11 @@ liburcu_signal_la_CFLAGS = -DRCU_SIGNAL
 
 liburcu_bp_la_SOURCES = urcu-bp.c urcu-pointer.c $(COMPAT)
 
-liburcu_call_la_SOURCES = urcu-call-rcu.c $(COMPAT)
-liburcu_defer_la_SOURCES = urcu-defer.c $(COMPAT)
-
 libwfqueue_la_SOURCES = wfqueue.c $(COMPAT)
 libwfstack_la_SOURCES = wfstack.c $(COMPAT)
 librculfqueue_la_SOURCES = rculfqueue.c $(COMPAT)
 librculfstack_la_SOURCES = rculfstack.c $(COMPAT)
 liburcu_rbtree_la_SOURCES = urcu-rbtree.c $(COMPAT)
+
+pkgconfigdir = $(libdir)/pkgconfig
+pkgconfig_DATA = liburcu.pc liburcu-bp.pc

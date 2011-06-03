@@ -81,7 +81,7 @@ int tree_comp(void *a, void *b)
 		return 0;
 }
 
-static DEFINE_RCU_RBTREE(rbtree, tree_comp, malloc, free);
+static DEFINE_RCU_RBTREE(rbtree, tree_comp, malloc, free, call_rcu);
 
 static volatile int test_go, test_stop;
 

@@ -529,6 +529,9 @@ int main(int argc, char **argv)
 
 	srand(time(NULL));
 
+	err = create_all_cpu_call_rcu_data(0);
+	assert(!err);
+
 	next_aff = 0;
 
 	for (i = 0; i < nr_readers; i++) {

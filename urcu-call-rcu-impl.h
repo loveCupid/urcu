@@ -46,9 +46,8 @@
 struct call_rcu_data {
 	struct cds_wfq_queue cbs;
 	unsigned long flags;
-	pthread_mutex_t mtx;
 	int futex;
-	unsigned long qlen;
+	unsigned long qlen; /* maintained for debugging. */
 	pthread_t tid;
 	int cpu_affinity;
 	struct cds_list_head list;
@@ -204,6 +203,7 @@ static void *call_rcu_thread(void *arg)
 	struct cds_wfq_node **cbs_tail;
 	struct call_rcu_data *crdp = (struct call_rcu_data *)arg;
 	struct rcu_head *rhp;
+	int rt = !!(uatomic_read(&crdp->flags) & URCU_CALL_RCU_RT);
 
 	if (set_thread_cpu_affinity(crdp) != 0) {
 		perror("pthread_setaffinity_np");
@@ -211,12 +211,12 @@ static void *call_rcu_thread(void *arg)
 	}
 
 	thread_call_rcu_data = crdp;
+	if (!rt) {
+		uatomic_dec(&crdp->futex);
+		/* Decrement futex before reading call_rcu list */
+		cmm_smp_mb();
+	}
 	for (;;) {
-		if (!(crdp->flags & URCU_CALL_RCU_RT)) {
-			uatomic_dec(&crdp->futex);
-			/* Decrement futex before reading call_rcu list */
-			cmm_smp_mb();
-		}
 		if (&crdp->cbs.head != _CMM_LOAD_SHARED(crdp->cbs.tail)) {
 			while ((cbs = _CMM_LOAD_SHARED(crdp->cbs.head)) == NULL)
 				poll(NULL, 0, 1);
@@ -240,25 +240,32 @@ static void *call_rcu_thread(void *arg)
 			} while (cbs != NULL);
 			uatomic_sub(&crdp->qlen, cbcount);
 		}
-		if (crdp->flags & URCU_CALL_RCU_STOP) {
-			if (!(crdp->flags & URCU_CALL_RCU_RT)) {
+		if (uatomic_read(&crdp->flags) & URCU_CALL_RCU_STOP)
+			break;
+		if (!rt) {
+			if (&crdp->cbs.head
+			    == _CMM_LOAD_SHARED(crdp->cbs.tail)) {
+				call_rcu_wait(crdp);
+				poll(NULL, 0, 10);
+				uatomic_dec(&crdp->futex);
 				/*
-				 * Read call_rcu list before write futex.
+				 * Decrement futex before reading
+				 * call_rcu list.
 				 */
 				cmm_smp_mb();
-				uatomic_set(&crdp->futex, 0);
 			}
-			break;
+		} else {
+			poll(NULL, 0, 10);
 		}
-		if (!(crdp->flags & URCU_CALL_RCU_RT)) {
-			if (&crdp->cbs.head == _CMM_LOAD_SHARED(crdp->cbs.tail))
-				call_rcu_wait(crdp);
-		}
-		poll(NULL, 0, 10);
 	}
-	call_rcu_lock(&crdp->mtx);
-	crdp->flags |= URCU_CALL_RCU_STOPPED;
-	call_rcu_unlock(&crdp->mtx);
+	if (!rt) {
+		/*
+		 * Read call_rcu list before write futex.
+		 */
+		cmm_smp_mb();
+		uatomic_set(&crdp->futex, 0);
+	}
+	uatomic_or(&crdp->flags, URCU_CALL_RCU_STOPPED);
 	return NULL;
 }
 
@@ -282,10 +289,6 @@ static void call_rcu_data_init(struct call_rcu_data **crdpp,
 	memset(crdp, '\0', sizeof(*crdp));
 	cds_wfq_init(&crdp->cbs);
 	crdp->qlen = 0;
-	if (pthread_mutex_init(&crdp->mtx, NULL) != 0) {
-		perror("pthread_mutex_init");
-		exit(-1);
-	}
 	crdp->futex = 0;
 	crdp->flags = flags;
 	cds_list_add(&crdp->list, &call_rcu_data_list);
@@ -568,12 +571,10 @@ void call_rcu_data_free(struct call_rcu_data *crdp)
 	if (crdp == NULL || crdp == default_call_rcu_data) {
 		return;
 	}
-	if ((crdp->flags & URCU_CALL_RCU_STOPPED) == 0) {
-		call_rcu_lock(&crdp->mtx);
-		crdp->flags |= URCU_CALL_RCU_STOP;
-		call_rcu_unlock(&crdp->mtx);
+	if ((uatomic_read(&crdp->flags) & URCU_CALL_RCU_STOPPED) == 0) {
+		uatomic_or(&crdp->flags, URCU_CALL_RCU_STOP);
 		wake_call_rcu_thread(crdp);
-		while ((crdp->flags & URCU_CALL_RCU_STOPPED) == 0)
+		while ((uatomic_read(&crdp->flags) & URCU_CALL_RCU_STOPPED) == 0)
 			poll(NULL, 0, 1);
 	}
 	if (&crdp->cbs.head != _CMM_LOAD_SHARED(crdp->cbs.tail)) {
@@ -657,7 +658,7 @@ void call_rcu_after_fork_child(void)
 		if (crdp == default_call_rcu_data)
 			crdp = cds_list_entry(crdp->list.prev,
 					      struct call_rcu_data, list);
-		crdp->flags = URCU_CALL_RCU_STOPPED;
+		uatomic_set(&crdp->flags, URCU_CALL_RCU_STOPPED);
 		call_rcu_data_free(crdp);
 	}
 }

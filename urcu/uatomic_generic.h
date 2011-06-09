@@ -87,6 +87,72 @@ unsigned long _uatomic_cmpxchg(void *addr, unsigned long old,
 						sizeof(*(addr))))
 
 
+/* uatomic_and */
+
+#ifndef uatomic_and
+static inline __attribute__((always_inline))
+void _uatomic_and(void *addr, unsigned long val,
+		  int len)
+{
+	switch (len) {
+#ifdef UATOMIC_HAS_ATOMIC_BYTE
+	case 1:
+		__sync_and_and_fetch_1(addr, val);
+#endif
+#ifdef UATOMIC_HAS_ATOMIC_SHORT
+	case 2:
+		__sync_and_and_fetch_2(addr, val);
+#endif
+	case 4:
+		__sync_and_and_fetch_4(addr, val);
+#if (CAA_BITS_PER_LONG == 64)
+	case 8:
+		__sync_and_and_fetch_8(addr, val);
+#endif
+	}
+	_uatomic_link_error();
+	return 0;
+}
+
+#define uatomic_and(addr, v)			\
+	(_uatomic_and((addr),			\
+		      (unsigned long)(v),	\
+		      sizeof(*(addr))))
+#endif
+
+/* uatomic_or */
+
+#ifndef uatomic_or
+static inline __attribute__((always_inline))
+void _uatomic_or(void *addr, unsigned long val,
+		 int len)
+{
+	switch (len) {
+#ifdef UATOMIC_HAS_ATOMIC_BYTE
+	case 1:
+		__sync_or_and_fetch_1(addr, val);
+#endif
+#ifdef UATOMIC_HAS_ATOMIC_SHORT
+	case 2:
+		__sync_or_and_fetch_2(addr, val);
+#endif
+	case 4:
+		__sync_or_and_fetch_4(addr, val);
+#if (CAA_BITS_PER_LONG == 64)
+	case 8:
+		__sync_or_and_fetch_8(addr, val);
+#endif
+	}
+	_uatomic_link_error();
+	return 0;
+}
+
+#define uatomic_or(addr, v)			\
+	(_uatomic_or((addr),			\
+		     (unsigned long)(v),	\
+		     sizeof(*(addr))))
+#endif
+
 /* uatomic_add_return */
 
 #ifndef uatomic_add_return
@@ -186,6 +252,134 @@ unsigned long _uatomic_exchange(void *addr, unsigned long val, int len)
 
 #else /* #ifndef uatomic_cmpxchg */
 
+#ifndef uatomic_and
+/* uatomic_and */
+
+static inline __attribute__((always_inline))
+void _uatomic_and(void *addr, unsigned long val, int len)
+{
+	switch (len) {
+#ifdef UATOMIC_HAS_ATOMIC_BYTE
+	case 1:
+	{
+		unsigned char old, oldt;
+
+		oldt = uatomic_read((unsigned char *)addr);
+		do {
+			old = oldt;
+			oldt = _uatomic_cmpxchg(addr, old, old & val, 1);
+		} while (oldt != old);
+	}
+#endif
+#ifdef UATOMIC_HAS_ATOMIC_SHORT
+	case 2:
+	{
+		unsigned short old, oldt;
+
+		oldt = uatomic_read((unsigned short *)addr);
+		do {
+			old = oldt;
+			oldt = _uatomic_cmpxchg(addr, old, old & val, 2);
+		} while (oldt != old);
+	}
+#endif
+	case 4:
+	{
+		unsigned int old, oldt;
+
+		oldt = uatomic_read((unsigned int *)addr);
+		do {
+			old = oldt;
+			oldt = _uatomic_cmpxchg(addr, old, old & val, 4);
+		} while (oldt != old);
+	}
+#if (CAA_BITS_PER_LONG == 64)
+	case 8:
+	{
+		unsigned long old, oldt;
+
+		oldt = uatomic_read((unsigned long *)addr);
+		do {
+			old = oldt;
+			oldt = _uatomic_cmpxchg(addr, old, old & val, 8);
+		} while (oldt != old);
+	}
+#endif
+	}
+	_uatomic_link_error();
+	return 0;
+}
+
+#define uatomic_and(addr, v)		\
+	(uatomic_and((addr),		\
+		    (unsigned long)(v),	\
+		    sizeof(*(addr))))
+#endif /* #ifndef uatomic_and */
+
+#ifndef uatomic_or
+/* uatomic_or */
+
+static inline __attribute__((always_inline))
+void _uatomic_or(void *addr, unsigned long val, int len)
+{
+	switch (len) {
+#ifdef UATOMIC_HAS_ATOMIC_BYTE
+	case 1:
+	{
+		unsigned char old, oldt;
+
+		oldt = uatomic_read((unsigned char *)addr);
+		do {
+			old = oldt;
+			oldt = _uatomic_cmpxchg(addr, old, old | val, 1);
+		} while (oldt != old);
+	}
+#endif
+#ifdef UATOMIC_HAS_ATOMIC_SHORT
+	case 2:
+	{
+		unsigned short old, oldt;
+
+		oldt = uatomic_read((unsigned short *)addr);
+		do {
+			old = oldt;
+			oldt = _uatomic_cmpxchg(addr, old, old | val, 2);
+		} while (oldt != old);
+	}
+#endif
+	case 4:
+	{
+		unsigned int old, oldt;
+
+		oldt = uatomic_read((unsigned int *)addr);
+		do {
+			old = oldt;
+			oldt = _uatomic_cmpxchg(addr, old, old | val, 4);
+		} while (oldt != old);
+	}
+#if (CAA_BITS_PER_LONG == 64)
+	case 8:
+	{
+		unsigned long old, oldt;
+
+		oldt = uatomic_read((unsigned long *)addr);
+		do {
+			old = oldt;
+			oldt = _uatomic_cmpxchg(addr, old, old | val, 8);
+		} while (oldt != old);
+	}
+#endif
+	}
+	_uatomic_link_error();
+	return 0;
+}
+
+#define uatomic_or(addr, v)		\
+	(uatomic_or((addr),		\
+		    (unsigned long)(v),	\
+		    sizeof(*(addr))))
+#endif /* #ifndef uatomic_or */
+
 #ifndef uatomic_add_return
 /* uatomic_add_return */
 
@@ -201,7 +395,8 @@ unsigned long _uatomic_add_return(void *addr, unsigned long val, int len)
 		oldt = uatomic_read((unsigned char *)addr);
 		do {
 			old = oldt;
-			oldt = _uatomic_cmpxchg(addr, old, old + val, 1);
+			oldt = uatomic_cmpxchg((unsigned char *)addr,
+                                               old, old + val);
 		} while (oldt != old);
 
 		return old + val;
@@ -215,7 +410,8 @@ unsigned long _uatomic_add_return(void *addr, unsigned long val, int len)
 		oldt = uatomic_read((unsigned short *)addr);
 		do {
 			old = oldt;
-			oldt = _uatomic_cmpxchg(addr, old, old + val, 2);
+			oldt = uatomic_cmpxchg((unsigned short *)addr,
+                                               old, old + val);
 		} while (oldt != old);
 
 		return old + val;
@@ -228,7 +424,8 @@ unsigned long _uatomic_add_return(void *addr, unsigned long val, int len)
 		oldt = uatomic_read((unsigned int *)addr);
 		do {
 			old = oldt;
-			oldt = _uatomic_cmpxchg(addr, old, old + val, 4);
+			oldt = uatomic_cmpxchg((unsigned int *)addr,
+                                               old, old + val);
 		} while (oldt != old);
 
 		return old + val;
@@ -241,7 +438,8 @@ unsigned long _uatomic_add_return(void *addr, unsigned long val, int len)
 		oldt = uatomic_read((unsigned long *)addr);
 		do {
 			old = oldt;
-			oldt = _uatomic_cmpxchg(addr, old, old + val, 8);
+			oldt = uatomic_cmpxchg((unsigned long *)addr,
+                                               old, old + val);
 		} while (oldt != old);
 
 		return old + val;
@@ -273,7 +471,8 @@ unsigned long _uatomic_exchange(void *addr, unsigned long val, int len)
 		oldt = uatomic_read((unsigned char *)addr);
 		do {
 			old = oldt;
-			oldt = _uatomic_cmpxchg(addr, old, val, 1);
+			oldt = uatomic_cmpxchg((unsigned char *)addr,
+                                               old, val);
 		} while (oldt != old);
 
 		return old;
@@ -287,7 +486,8 @@ unsigned long _uatomic_exchange(void *addr, unsigned long val, int len)
 		oldt = uatomic_read((unsigned short *)addr);
 		do {
 			old = oldt;
-			oldt = _uatomic_cmpxchg(addr, old, val, 2);
+			oldt = uatomic_cmpxchg((unsigned short *)addr,
+                                               old, val);
 		} while (oldt != old);
 
 		return old;
@@ -300,7 +500,8 @@ unsigned long _uatomic_exchange(void *addr, unsigned long val, int len)
 		oldt = uatomic_read((unsigned int *)addr);
 		do {
 			old = oldt;
-			oldt = _uatomic_cmpxchg(addr, old, val, 4);
+			oldt = uatomic_cmpxchg((unsigned int *)addr,
+                                               old, val);
 		} while (oldt != old);
 
 		return old;
@@ -313,7 +514,8 @@ unsigned long _uatomic_exchange(void *addr, unsigned long val, int len)
 		oldt = uatomic_read((unsigned long *)addr);
 		do {
 			old = oldt;
-			oldt = _uatomic_cmpxchg(addr, old, val, 8);
+			oldt = uatomic_cmpxchg((unsigned long *)addr,
+                                               old, val);
 		} while (oldt != old);
 
 		return old;

@@ -19,6 +19,9 @@ AM_PROG_MKDIR_P
 
 AC_CONFIG_HEADERS([config.h urcu/config.h])
 
+#for tests
+AM_PATH_GLIB_2_0(2.22.0, ,AC_MSG_ERROR([glib is required in order to compile BabelTrace - download it from ftp://ftp.gtk.org/pub/gtk]) , gmodule)
+
 # Keep at the end to do not pollute installed header.
 AH_TEMPLATE([CONFIG_RCU_SMP], [Enable SMP support. With SMP support enabled, uniprocessors are also supported. With SMP support disabled, UP systems work fine, but the behavior of SMP systems is undefined.])
 AH_TEMPLATE([CONFIG_RCU_HAVE_FENCE], [Defined when on a system that has memory fence instructions.])

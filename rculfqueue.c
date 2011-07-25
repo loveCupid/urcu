@@ -38,11 +38,14 @@ void cds_lfq_node_init_rcu(struct cds_lfq_node_rcu *node)
 	_cds_lfq_node_init_rcu(node);
 }
 
-void cds_lfq_init_rcu(struct cds_lfq_queue_rcu *q,
-		      void queue_call_rcu(struct rcu_head *head,
-				void (*func)(struct rcu_head *head)))
+void cds_lfq_init_rcu(struct cds_lfq_queue_rcu *q)
 {
-	_cds_lfq_init_rcu(q, queue_call_rcu);
+	_cds_lfq_init_rcu(q);
+}
+
+int cds_lfq_is_empty(struct cds_lfq_queue_rcu *q)
+{
+	return _cds_lfq_is_empty(q);
 }
 
 int cds_lfq_destroy_rcu(struct cds_lfq_queue_rcu *q)

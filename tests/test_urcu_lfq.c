@@ -363,7 +363,7 @@ int main(int argc, char **argv)
 	tid_dequeuer = malloc(sizeof(*tid_dequeuer) * nr_dequeuers);
 	count_enqueuer = malloc(2 * sizeof(*count_enqueuer) * nr_enqueuers);
 	count_dequeuer = malloc(2 * sizeof(*count_dequeuer) * nr_dequeuers);
-	cds_lfq_init_rcu(&q, call_rcu);
+	cds_lfq_init_rcu(&q);
 
 	next_aff = 0;
 

@@ -6,7 +6,8 @@
  *
  * Userspace RCU library - Lock-Free RCU Queue
  *
- * Copyright 2010 - Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+ * Copyright 2010-2011 - Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+ * Copyright 2011 - Lai Jiangshan <laijs@cn.fujitsu.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -33,14 +34,12 @@ extern "C" {
 struct cds_lfq_queue_rcu;
 
 struct cds_lfq_node_rcu {
-	struct cds_lfq_node_rcu *next;
-	int dummy;
+	unsigned long next;
 };
 
 struct cds_lfq_queue_rcu {
-	struct cds_lfq_node_rcu *head, *tail;
-	void (*queue_call_rcu)(struct rcu_head *head,
-		void (*func)(struct rcu_head *head));
+	unsigned long tail;
+	struct cds_lfq_node_rcu head;
 };
 
 #ifdef _LGPL_SOURCE
@@ -49,6 +48,7 @@ struct cds_lfq_queue_rcu {
 
 #define cds_lfq_node_init_rcu		_cds_lfq_node_init_rcu
 #define cds_lfq_init_rcu		_cds_lfq_init_rcu
+#define cds_lfq_is_empty		_cds_lfq_is_empty
 #define cds_lfq_destroy_rcu		_cds_lfq_destroy_rcu
 #define cds_lfq_enqueue_rcu		_cds_lfq_enqueue_rcu
 #define cds_lfq_dequeue_rcu		_cds_lfq_dequeue_rcu
@@ -56,9 +56,10 @@ struct cds_lfq_queue_rcu {
 #else /* !_LGPL_SOURCE */
 
 extern void cds_lfq_node_init_rcu(struct cds_lfq_node_rcu *node);
-extern void cds_lfq_init_rcu(struct cds_lfq_queue_rcu *q,
-			     void queue_call_rcu(struct rcu_head *head,
-					void (*func)(struct rcu_head *head)));
+extern void cds_lfq_init_rcu(struct cds_lfq_queue_rcu *q);
+
+extern int cds_lfq_is_empty(struct cds_lfq_queue_rcu *q);
+
 /*
  * The queue should be emptied before calling destroy.
  *

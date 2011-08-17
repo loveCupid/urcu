@@ -11,9 +11,12 @@
  *                          Waker
  *                          while (1) {
  *                            this.queue = gp;
- *                            if (gp_futex == -1) {
- *                              gp_futex = 0;
- *                              futex_wake = 1;
+ *                            if (this.waiting == 1) {
+ *                              this.waiting = 0;
+ *                              if (gp_futex == -1) {
+ *                                gp_futex = 0;
+ *                                futex_wake = 1;
+ *                              }
  *                            }
  *                          }
  *
@@ -21,6 +24,7 @@
  * in_registry = 1;
  * while (1) {
  *   gp_futex = -1;
+ *   waiting |= (queue != gp);
  *   in_registry &= (queue != gp);
  *   if (all in_registry == 0) {
  * progress:
@@ -58,6 +62,7 @@
 #define get_pid()       (_pid)
 
 int queue[2] = 0;
+int waiting[2] = 0;
 int futex_wake = 0;
 int gp_futex = 0;
 int gp = 1;
@@ -72,13 +77,17 @@ active [2] proctype waker()
 		queue[get_pid()] = gp;
 	
 		if
-		:: (gp_futex == -1) ->
-			gp_futex = 0;
+		:: (waiting[get_pid()] == 1) ->
+			waiting[get_pid()] = 0;
+			if
+			:: (gp_futex == -1) ->
+				gp_futex = 0;
 #ifndef INJ_QUEUE_NO_WAKE
-			futex_wake = 1;
+				futex_wake = 1;
 #endif
-		:: else ->
-			skip;
+			:: else ->
+				skip;
+			fi;
 		fi;
 	od;
 }
@@ -94,6 +103,18 @@ restart:
 #ifndef INJ_LATE_DEC
 		gp_futex = -1;
 #endif
+		if
+		:: (in_registry[0] == 1 && queue[0] != gp) ->
+			waiting[0] = 1;
+                :: else ->
+		        skip;
+		fi;
+		if
+		:: (in_registry[1] == 1 && queue[1] != gp) ->
+			waiting[1] = 1;
+                :: else ->
+		        skip;
+		fi;
 
 		if
 		:: (in_registry[0] == 1 && queue[0] == gp) ->
@@ -107,6 +128,7 @@ restart:
 		:: else ->
 			skip;
 		fi;
+
 		if
 		:: (in_registry[0] == 0 && in_registry[1] == 0) ->
 progress:

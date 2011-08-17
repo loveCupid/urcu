@@ -100,7 +100,7 @@ restart:
 	in_registry[1] = 1;
 	do
 	:: 1 ->
-#ifndef INJ_LATE_DEC
+#if (!defined(INJ_LATE_DEC) && !defined(INJ_INVERT_WAITING_VS_GP_FUTEX))
 		gp_futex = -1;
 #endif
 		if
@@ -128,6 +128,9 @@ restart:
 		:: else ->
 			skip;
 		fi;
+#ifdef INJ_INVERT_WAITING_VS_GP_FUTEX
+		gp_futex = -1;
+#endif
 
 		if
 		:: (in_registry[0] == 0 && in_registry[1] == 0) ->

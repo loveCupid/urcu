@@ -44,7 +44,7 @@ URCU_SIGNAL_LIB=$(top_builddir)/liburcu-signal.la
 URCU_BP_LIB=$(top_builddir)/liburcu-bp.la
 URCU_CDS_LIB=$(top_builddir)/liburcu-cds.la
 
-EXTRA_DIST = $(top_srcdir)/tests/api_*.h
+EXTRA_DIST = $(top_srcdir)/tests/api.h
 
 
 test_urcu_SOURCES = test_urcu.c $(URCU)
@@ -99,7 +99,7 @@ rcutorture_urcu_mb_CFLAGS = -DRCU_MB $(AM_CFLAGS)
 rcutorture_urcu_mb_LDADD = $(URCU_MB_LIB) $(URCU_CDS_LIB)
 
 rcutorture_qsbr_SOURCES = urcutorture.c
-rcutorture_qsbr_CFLAGS = -DRCU_QSBR $(AM_CFLAGS)
+rcutorture_qsbr_CFLAGS = -DTORTURE_QSBR -DRCU_QSBR $(AM_CFLAGS)
 rcutorture_qsbr_LDADD = $(URCU_QSBR_LIB) $(URCU_CDS_LIB)
 
 rcutorture_urcu_signal_SOURCES = urcutorture.c

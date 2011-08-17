@@ -78,6 +78,11 @@ void *mremap(void *old_address, size_t old_size, size_t new_size, int flags)
 #define RCU_SLEEP_DELAY		1000
 #define ARENA_INIT_ALLOC	16
 
+/*
+ * Active attempts to check for reader Q.S. before calling sleep().
+ */
+#define RCU_QS_ACTIVE_ATTEMPTS 100
+
 void __attribute__((destructor)) rcu_bp_exit(void);
 
 static pthread_mutex_t rcu_gp_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -295,7 +300,7 @@ static void add_thread(void)
 	if (registry_arena.len
 	    < registry_arena.used + sizeof(struct rcu_reader))
 		resize_arena(&registry_arena,
-		max(registry_arena.len << 1, ARENA_INIT_ALLOC));
+		caa_max(registry_arena.len << 1, ARENA_INIT_ALLOC));
 	/*
 	 * Find a free spot.
 	 */

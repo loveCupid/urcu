@@ -34,11 +34,14 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <assert.h>
-#include <sys/syscall.h>
 #include <sched.h>
 #include <errno.h>
 
 #include <urcu/arch.h>
+
+#ifdef __linux__
+#include <syscall.h>
+#endif
 
 /* hardcoded number of CPUs */
 #define NR_CPUS 16384
@@ -62,7 +65,7 @@ static inline pid_t gettid(void)
 #define _LGPL_SOURCE
 #endif
 #include <urcu.h>
-#include <urcu/rculfqueue.h>
+#include <urcu/cds.h>
 #include <urcu-defer.h>
 
 static volatile int test_go, test_stop;
@@ -200,14 +203,6 @@ fail:
 
 }
 
-static void rcu_release_node(struct urcu_ref *ref)
-{
-	struct cds_lfq_node_rcu *node = caa_container_of(ref, struct cds_lfq_node_rcu, ref);
-	defer_rcu(free, node);
-	//synchronize_rcu();
-	//free(node);
-}
-
 void *thr_dequeuer(void *_count)
 {
 	unsigned long long *count = _count;
@@ -231,11 +226,11 @@ void *thr_dequeuer(void *_count)
 	cmm_smp_mb();
 
 	for (;;) {
-		struct cds_lfq_node_rcu *node = cds_lfq_dequeue_rcu(&q,
-							    rcu_release_node);
+		struct cds_lfq_node_rcu *node;
 
+		node = cds_lfq_dequeue_rcu(&q);
 		if (node) {
-			urcu_ref_put(&node->ref, rcu_release_node);
+			defer_rcu(free, node);
 			nr_successful_dequeues++;
 		}
 
@@ -248,7 +243,6 @@ void *thr_dequeuer(void *_count)
 
 	rcu_unregister_thread();
 	rcu_defer_unregister_thread();
-
 	printf_verbose("dequeuer thread_end, thread id : %lx, tid %lu, "
 		       "dequeues %llu, successful_dequeues %llu\n",
 		       pthread_self(), (unsigned long)gettid(), nr_dequeues,
@@ -258,20 +252,14 @@ void *thr_dequeuer(void *_count)
 	return ((void*)2);
 }
 
-static void release_node(struct urcu_ref *ref)
-{
-	struct cds_lfq_node_rcu *node = caa_container_of(ref, struct cds_lfq_node_rcu, ref);
-	free(node);
-}
-
 void test_end(struct cds_lfq_queue_rcu *q, unsigned long long *nr_dequeues)
 {
 	struct cds_lfq_node_rcu *node;
 
 	do {
-		node = cds_lfq_dequeue_rcu(q, release_node);
+		node = cds_lfq_dequeue_rcu(q);
 		if (node) {
-			urcu_ref_put(&node->ref, release_node);
+			free(node);	/* no more concurrent access */
 			(*nr_dequeues)++;
 		}
 	} while (node);
@@ -413,6 +401,8 @@ int main(int argc, char **argv)
 	}
 	
 	test_end(&q, &end_dequeues);
+	err = cds_lfq_destroy_rcu(&q);
+	assert(!err);
 
 	printf_verbose("total number of enqueues : %llu, dequeues %llu\n",
 		       tot_enqueues, tot_dequeues);

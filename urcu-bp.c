@@ -35,15 +35,53 @@
 #include <unistd.h>
 #include <sys/mman.h>
 
-#include "urcu-bp-map.h"
+#include "urcu/map/urcu-bp.h"
 
-#include "urcu-bp-static.h"
+#include "urcu/static/urcu-bp.h"
 /* Do not #define _LGPL_SOURCE to ensure we can emit the wrapper symbols */
 #include "urcu-bp.h"
+
+#ifndef MAP_ANONYMOUS
+#define MAP_ANONYMOUS MAP_ANON
+#endif
+
+#ifndef __linux__
+
+#define MREMAP_MAYMOVE	1
+#define MREMAP_FIXED	2
+
+/*
+ * mremap wrapper for non-Linux systems. Maps a RW, anonymous private mapping.
+ * This is not generic.
+*/
+void *mremap(void *old_address, size_t old_size, size_t new_size, int flags)
+{
+	void *new_address;
+
+	assert(flags & MREMAP_MAYMOVE);
+	assert(!(flags & MREMAP_FIXED));
+	new_address = mmap(old_address, new_size,
+			   PROT_READ | PROT_WRITE,
+			   MAP_ANONYMOUS | MAP_PRIVATE,
+			   -1, 0);
+	if (new_address == MAP_FAILED)
+		return MAP_FAILED;
+	if (old_address) {
+		memcpy(new_address, old_address, old_size);
+		munmap(old_address, old_size);
+	}
+	return new_address;
+}
+#endif
 
 /* Sleep delay in us */
 #define RCU_SLEEP_DELAY		1000
 #define ARENA_INIT_ALLOC	16
+
+/*
+ * Active attempts to check for reader Q.S. before calling sleep().
+ */
+#define RCU_QS_ACTIVE_ATTEMPTS 100
 
 void __attribute__((destructor)) rcu_bp_exit(void);
 
@@ -250,7 +288,6 @@ static void resize_arena(struct registry_arena *arena, size_t len)
 	if (new_arena == arena->p)
 		return;
 
-	memcpy(new_arena, arena->p, arena->len);
 	bzero(new_arena + arena->len, len - arena->len);
 	arena->p = new_arena;
 }
@@ -263,7 +300,7 @@ static void add_thread(void)
 	if (registry_arena.len
 	    < registry_arena.used + sizeof(struct rcu_reader))
 		resize_arena(&registry_arena,
-		max(registry_arena.len << 1, ARENA_INIT_ALLOC));
+		caa_max(registry_arena.len << 1, ARENA_INIT_ALLOC));
 	/*
 	 * Find a free spot.
 	 */

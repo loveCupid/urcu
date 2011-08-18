@@ -39,12 +39,12 @@
  */
 #define CMM_ACCESS_ONCE(x)	(*(volatile typeof(x) *)&(x))
 
-#ifndef max
-#define max(a,b) ((a)>(b)?(a):(b))
+#ifndef caa_max
+#define caa_max(a,b) ((a)>(b)?(a):(b))
 #endif
 
-#ifndef min
-#define min(a,b) ((a)<(b)?(a):(b))
+#ifndef caa_min
+#define caa_min(a,b) ((a)<(b)?(a):(b))
 #endif
 
 #if defined(__SIZEOF_LONG__)
@@ -60,5 +60,8 @@
 		const typeof(((type *)NULL)->member) * __ptr = (ptr);	\
 		(type *)((char *)__ptr - offsetof(type, member));	\
 	})
+
+#define CAA_BUILD_BUG_ON_ZERO(cond) (sizeof(struct { int:-!!(cond); }))
+#define CAA_BUILD_BUG_ON(cond) ((void)BUILD_BUG_ON_ZERO(cond))
 
 #endif /* _URCU_COMPILER_H */

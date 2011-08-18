@@ -35,7 +35,8 @@
 #include <pthread.h>
 
 /*
- * See urcu-pointer.h and urcu-pointer-static.h for pointer publication headers.
+ * See urcu-pointer.h and urcu/static/urcu-pointer.h for pointer
+ * publication headers.
  */
 #include <urcu-pointer.h>
 
@@ -43,7 +44,7 @@
 extern "C" {
 #endif 
 
-#include "urcu-map.h"
+#include <urcu/map/urcu.h>
 
 /*
  * Important !
@@ -55,7 +56,7 @@ extern "C" {
 
 #ifdef _LGPL_SOURCE
 
-#include <urcu-static.h>
+#include <urcu/static/urcu.h>
 
 /*
  * Mappings for static use of the userspace RCU library.
@@ -85,7 +86,7 @@ extern "C" {
 
 /*
  * library wrappers to be used by non-LGPL compatible source code.
- * See LGPL-only urcu-pointer-static.h for documentation.
+ * See LGPL-only urcu/static/urcu-pointer.h for documentation.
  */
 
 extern void rcu_read_lock(void);
@@ -110,7 +111,7 @@ extern void rcu_init(void);
 }
 #endif
 
-#include "urcu-call-rcu.h"
-#include "urcu-defer.h"
+#include <urcu-call-rcu.h>
+#include <urcu-defer.h>
 
 #endif /* _URCU_H */

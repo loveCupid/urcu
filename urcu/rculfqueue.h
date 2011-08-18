@@ -23,60 +23,84 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include <urcu/urcu_ref.h>
 #include <assert.h>
+#include <urcu-call-rcu.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/*
- * Lock-free RCU queue using reference counting. Enqueue and dequeue operations
- * hold a RCU read lock to deal with cmpxchg ABA problem. This implementation
- * keeps a dummy head node to ensure we can always update the queue locklessly.
- * Given that this is a queue, the dummy head node must always advance as we
- * dequeue entries. Therefore, we keep a reference count on each entry we are
- * dequeueing, so they can be kept as dummy head node until the next dequeue, at
- * which point their reference count will be decremented.
- */
+struct cds_lfq_queue_rcu;
 
 struct cds_lfq_node_rcu {
 	struct cds_lfq_node_rcu *next;
-	struct urcu_ref ref;
+	int dummy;
 };
 
 struct cds_lfq_queue_rcu {
 	struct cds_lfq_node_rcu *head, *tail;
-	struct cds_lfq_node_rcu init;	/* Dummy initialization node */
 };
 
 #ifdef _LGPL_SOURCE
 
-#include <urcu/rculfqueue-static.h>
+#include <urcu/static/rculfqueue.h>
 
-#define cds_lfq_node_init_rcu	_cds_lfq_node_init_rcu
-#define cds_lfq_init_rcu		_cds_lfq_init_rcu
-#define cds_lfq_enqueue_rcu		_cds_lfq_enqueue_rcu
-#define cds_lfq_dequeue_rcu		_cds_lfq_dequeue_rcu
+#define cds_lfq_node_init_rcu_qsbr	_cds_lfq_node_init_rcu
+#define cds_lfq_init_rcu_qsbr		_cds_lfq_init_rcu
+#define cds_lfq_destroy_rcu_qsbr	_cds_lfq_destroy_rcu
+#define cds_lfq_enqueue_rcu_qsbr	_cds_lfq_enqueue_rcu
+#define cds_lfq_dequeue_rcu_qsbr	_cds_lfq_dequeue_rcu
+
+#define cds_lfq_node_init_rcu_bp	_cds_lfq_node_init_rcu
+#define cds_lfq_init_rcu_bp		_cds_lfq_init_rcu
+#define cds_lfq_destroy_rcu_bp		_cds_lfq_destroy_rcu
+#define cds_lfq_enqueue_rcu_bp		_cds_lfq_enqueue_rcu
+#define cds_lfq_dequeue_rcu_bp		_cds_lfq_dequeue_rcu
+
+#define cds_lfq_node_init_rcu_memb	_cds_lfq_node_init_rcu
+#define cds_lfq_init_rcu_memb		_cds_lfq_init_rcu
+#define cds_lfq_destroy_rcu_memb	_cds_lfq_destroy_rcu
+#define cds_lfq_enqueue_rcu_memb	_cds_lfq_enqueue_rcu
+#define cds_lfq_dequeue_rcu_memb	_cds_lfq_dequeue_rcu
+
+#define cds_lfq_node_init_rcu_mb	_cds_lfq_node_init_rcu
+#define cds_lfq_init_rcu_mb		_cds_lfq_init_rcu
+#define cds_lfq_destroy_rcu_mb		_cds_lfq_destroy_rcu
+#define cds_lfq_enqueue_rcu_mb		_cds_lfq_enqueue_rcu
+#define cds_lfq_dequeue_rcu_mb		_cds_lfq_dequeue_rcu
+
+#define cds_lfq_node_init_rcu_sig	_cds_lfq_node_init_rcu
+#define cds_lfq_init_rcu_sig		_cds_lfq_init_rcu
+#define cds_lfq_destroy_rcu_sig		_cds_lfq_destroy_rcu
+#define cds_lfq_enqueue_rcu_sig		_cds_lfq_enqueue_rcu
+#define cds_lfq_dequeue_rcu_sig		_cds_lfq_dequeue_rcu
 
 #else /* !_LGPL_SOURCE */
 
 extern void cds_lfq_node_init_rcu(struct cds_lfq_node_rcu *node);
 extern void cds_lfq_init_rcu(struct cds_lfq_queue_rcu *q);
-extern void cds_lfq_enqueue_rcu(struct cds_lfq_queue_rcu *q, struct cds_lfq_node_rcu *node);
+/*
+ * The queue should be emptied before calling destroy.
+ *
+ * Return 0 on success, -EPERM if queue is not empty.
+ */
+extern int cds_lfq_destroy_rcu(struct cds_lfq_queue_rcu *q);
 
 /*
- * The entry returned by dequeue must be taken care of by doing a urcu_ref_put,
- * which calls the release primitive when the reference count drops to zero. A
- * grace period must be waited after execution of the release callback before
- * performing the actual memory reclamation or modifying the cds_lfq_node_rcu
- * structure.
- * In other words, the entry lfq node returned by dequeue must not be
- * modified/re-used/freed until the reference count reaches zero and a grace
- * period has elapsed (after the refcount reached 0).
+ * Acts as a RCU reader.
  */
-extern struct cds_lfq_node_rcu *
-cds_lfq_dequeue_rcu(struct cds_lfq_queue_rcu *q, void (*release)(struct urcu_ref *));
+extern void cds_lfq_enqueue_rcu(struct cds_lfq_queue_rcu *q,
+				struct cds_lfq_node_rcu *node);
+
+/*
+ * Acts as a RCU reader.
+ *
+ * The caller must wait for a grace period to pass before freeing the returned
+ * node or modifying the cds_lfq_node_rcu structure.
+ * Returns NULL if queue is empty.
+ */
+extern
+struct cds_lfq_node_rcu *cds_lfq_dequeue_rcu(struct cds_lfq_queue_rcu *q);
 
 #endif /* !_LGPL_SOURCE */
 

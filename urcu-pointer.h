@@ -28,7 +28,7 @@
 
 #include <urcu/compiler.h>
 #include <urcu/arch.h>
-#include <urcu/uatomic_arch.h>
+#include <urcu/uatomic.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -36,7 +36,7 @@ extern "C" {
 
 #ifdef _LGPL_SOURCE
 
-#include <urcu-pointer-static.h>
+#include <urcu/static/urcu-pointer.h>
 
 /*
  * rcu_dereference(ptr)

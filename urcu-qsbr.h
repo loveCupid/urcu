@@ -32,7 +32,8 @@
 #include <pthread.h>
 
 /*
- * See urcu-pointer.h and urcu-pointer-static.h for pointer publication headers.
+ * See urcu-pointer.h and urcu/static/urcu-pointer.h for pointer
+ * publication headers.
  */
 #include <urcu-pointer.h>
 
@@ -40,7 +41,7 @@
 extern "C" {
 #endif 
 
-#include "urcu-qsbr-map.h"
+#include <urcu/map/urcu-qsbr.h>
 
 /*
  * Important !
@@ -52,7 +53,7 @@ extern "C" {
 
 #ifdef _LGPL_SOURCE
 
-#include <urcu-qsbr-static.h>
+#include <urcu/static/urcu-qsbr.h>
 
 /*
  * Mappings for static use of the userspace RCU library.
@@ -124,7 +125,7 @@ extern void rcu_unregister_thread(void);
 }
 #endif
 
-#include "urcu-call-rcu.h"
-#include "urcu-defer.h"
+#include <urcu-call-rcu.h>
+#include <urcu-defer.h>
 
 #endif /* _URCU_QSBR_H */

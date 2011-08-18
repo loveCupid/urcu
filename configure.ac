@@ -2,7 +2,12 @@
 # Process this file with autoconf to produce a configure script.
 
 
-AC_INIT([userspace-rcu], [0.5.4], [mathieu dot desnoyers at efficios dot com])
+AC_INIT([userspace-rcu], [0.6.4], [mathieu dot desnoyers at efficios dot com])
+
+# Following the numbering scheme proposed by libtool for the library version
+# http://www.gnu.org/software/libtool/manual/html_node/Updating-version-info.html
+AC_SUBST([URCU_LIBRARY_VERSION], [1:0:0])
+
 AC_CONFIG_AUX_DIR([config])
 AC_CANONICAL_TARGET
 AC_CANONICAL_HOST
@@ -76,13 +81,8 @@ asm volatile("dmb":::"memory");
 )
 fi
 
-UATOMICSRC=urcu/uatomic_arch_$ARCHTYPE.h
-ARCHSRC=urcu/arch_$ARCHTYPE.h
-if test "x$ARCHTYPE" != xx86 -a "x$ARCHTYPE" != xppc; then
-	APISRC=tests/api_gcc.h
-else
-	APISRC=tests/api_$ARCHTYPE.h
-fi
+UATOMICSRC=urcu/uatomic/$ARCHTYPE.h
+ARCHSRC=urcu/arch/$ARCHTYPE.h
 if test "$ARCHTYPE" == "armv7l"; then
 	CFLAGS="-mcpu=cortex-a9 -mtune=cortex-a9 -O"
 fi
@@ -235,12 +235,12 @@ CFLAGS=$saved_CFLAGS
 
 AC_CONFIG_LINKS([
 	urcu/arch.h:$ARCHSRC
-	urcu/uatomic_arch.h:$UATOMICSRC
-	tests/api.h:$APISRC
+	urcu/uatomic.h:$UATOMICSRC
 ])
 AC_CONFIG_FILES([
 	Makefile
 	tests/Makefile
+	liburcu-cds.pc
 	liburcu.pc
 	liburcu-bp.pc
 	liburcu-qsbr.pc

@@ -1,5 +1,9 @@
 /*
- * futex.spin: Promela code to validate futex wakeup algorithm.
+ * futex.spin: Promela code to validate n wakers to 1 waiter selective
+ * futex wakeup algorithm.
+ *
+ * In this model, waker threads are told whether they are still being
+ * waited on, and skip the futex wakeup if not.
  *
  * Algorithm verified :
  *
@@ -56,7 +60,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
  *
- * Copyright (c) 2009 Mathieu Desnoyers
+ * Copyright (c) 2009-2011 Mathieu Desnoyers
  */
 
 #define get_pid()       (_pid)

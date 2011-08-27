@@ -29,7 +29,6 @@ default:
 	make futex_progress | tee futex_progress.log
 	make futex_progress_no_wake | tee futex_progress_no_wake.log
 	make futex_progress_late_dec | tee futex_progress_late_dec.log
-	make futex_progress_inverted_waiting_vs_gp_futex | tee futex_progress_inverted_waiting_vs_gp_futex.define.log
 	make asserts | tee asserts.log
 	make summary
 
@@ -68,13 +67,6 @@ futex_progress_late_dec: clean futex_ltl futex_progress_late_dec_define run_weak
 
 futex_progress_late_dec_define:
 	cp futex_progress_late_dec.define .input.define
-
-futex_progress_inverted_waiting_vs_gp_futex: clean futex_ltl futex_progress_inverted_waiting_vs_gp_futex_define run_weak_fair
-	cp .input.spin $@.spin.input
-	-cp .input.spin.trail $@.spin.input.trail
-
-futex_progress_inverted_waiting_vs_gp_futex_define:
-	cp futex_progress_inverted_waiting_vs_gp_futex.define .input.define
 
 futex_ltl:
 	touch .input.define

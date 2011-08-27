@@ -1,0 +1,1 @@
+#define isactive			(_active == 1)

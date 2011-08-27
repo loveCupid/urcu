@@ -24,7 +24,6 @@
  * 1 waiter
  *
  * while (1) {
- * progress:
  *   futex = -1;
  *   if (queue == 1) {
  *     futex = 0;
@@ -32,7 +31,9 @@
  *     if (futex == -1) {
  *       futex_wake = (futex == -1 ? 0 : 1);  (atomic)
  *       while (futex_wake == 0) { };
+ *     }
  *   }
+ * progress:
  *   queue = 0;
  * }
  *

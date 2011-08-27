@@ -126,8 +126,13 @@ active proctype waiter()
 	do
 	:: 1 ->
 #ifndef INJ_LATE_DEC
+#ifndef INJ_MISORDER
 		futex = -1;
 		waiting[0] = 1;
+#else
+		waiting[0] = 1;
+		futex = -1;
+#endif
 		waiting[1] = 1;
 #endif
 

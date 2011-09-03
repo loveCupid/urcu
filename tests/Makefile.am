@@ -177,8 +177,8 @@ test_urcu_wfs_dynlink_CFLAGS = -DDYNAMIC_LINK_TEST $(AM_CFLAGS)
 test_urcu_wfs_dynlink_LDADD = $(URCU_COMMON_LIB)
 
 test_urcu_hash_SOURCES = test_urcu_hash.c $(COMPAT)
-test_urcu_hash_CFLAGS = -DRCU_MEMBARRIER $(AM_CFLAGS)
-test_urcu_hash_LDADD = $(URCU) $(URCU_CDS_LIB)
+test_urcu_hash_CFLAGS = -DRCU_QSBR $(AM_CFLAGS)
+test_urcu_hash_LDADD = $(URCU_QSBR_LIB) $(URCU_CDS_LIB)
 
 test_glib_hash_SOURCES = test_glib_hash.c $(COMPAT)
 test_glib_hash_CFLAGS = -DRCU_MEMBARRIER $(AM_CFLAGS) -I/usr/include/glib-2.0 -I/usr/lib/glib-2.0/include

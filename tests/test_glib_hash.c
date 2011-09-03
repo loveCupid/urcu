@@ -102,6 +102,7 @@ static unsigned long duration;
 static unsigned long rduration;
 
 static unsigned long init_hash_size = DEFAULT_HASH_SIZE;
+static unsigned long init_populate;
 static unsigned long rand_pool = DEFAULT_RAND_POOL;
 static int add_only, add_unique;
 
@@ -482,6 +483,39 @@ void *thr_writer(void *_count)
 	return ((void*)2);
 }
 
+static void populate_hash(void)
+{
+	struct cds_lfht_node *node, *lookup_node;
+	void *key;
+
+	if (!init_populate)
+		return;
+
+	while (nr_add < init_populate) {
+		node = malloc(1);
+
+		/* Glib hash table only supports replacement. */
+		if (!add_unique) {
+			add_unique = 1;	/* force add_unique */
+			printf("glib hash tables only supports "
+"replacing values (and keys in addition) when the key to insert is already "
+"present. Make sure you compare with the \"add_unique\" (-u) RCU hash table "
+"behavior, which is the closest match.\n");
+		}
+		/* Uniquify behavior: lookup and add if not found */
+		key = (void *)(unsigned long)(rand_r(&rand_lookup) % rand_pool);
+		lookup_node = g_hash_table_lookup(test_ht, key);
+		if (lookup_node == NULL) {
+			g_hash_table_insert(test_ht, key, node);
+			nr_add++;
+		} else {
+			free(node);
+			nr_addexist++;
+		}
+		nr_writes++;
+	}
+}
+
 static
 void count_nodes(gpointer key, gpointer value, gpointer user_data)
 {
@@ -503,6 +537,7 @@ void show_usage(int argc, char **argv)
 	printf(" [-h size] (initial hash table size)");
 	printf(" [-u] Uniquify add.");
 	printf(" [-i] Add only (no removal).");
+	printf(" [-k nr_nodes] Number of nodes to insert initially.");
 	printf("\n");
 }
 
@@ -600,6 +635,9 @@ int main(int argc, char **argv)
 		case 'i':
 			add_only = 1;
 			break;
+		case 'k':
+			init_populate = atol(argv[++i]);
+			break;
 		}
 	}
 
@@ -628,7 +666,7 @@ int main(int argc, char **argv)
 	count_writer = malloc(sizeof(*count_writer) * nr_writers);
 	test_ht = g_hash_table_new_full(test_hash_fct, test_compare_fct,
 			NULL, free);
-
+	populate_hash();
         err = create_all_cpu_call_rcu_data(0);
         assert(!err);
 
@@ -689,11 +727,11 @@ int main(int argc, char **argv)
 	printf("SUMMARY %-25s testdur %4lu nr_readers %3u rdur %6lu "
 		"nr_writers %3u "
 		"wdelay %6lu rand_pool %12llu nr_reads %12llu nr_writes %12llu nr_ops %12llu "
-		"nr_add %12llu nr_add_fail %12llu nr_remove %12llu nr_leaked %12llu\n",
+		"nr_add %12llu nr_add_fail %12llu nr_remove %12llu nr_leaked %12lld\n",
 		argv[0], duration, nr_readers, rduration,
 		nr_writers, wdelay, rand_pool, tot_reads, tot_writes,
 		tot_reads + tot_writes, tot_add, tot_add_exist, tot_remove,
-		tot_add - tot_remove - count);
+		(long long) tot_add + init_populate - tot_remove - count);
 	free(tid_reader);
 	free(tid_writer);
 	free(count_reader);

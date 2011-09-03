@@ -414,17 +414,18 @@ void *thr_writer(void *_count)
 		if (add_only || rand_r(&rand_lookup) & 1) {
 			node = malloc(1);
 			rcu_copy_mutex_lock();
-			//if (add_unique)
-			//	ret_node = ht_add_unique(test_ht, node);
-			//else
+			/* Glib hash table only supports replacement. */
+			if (!add_unique) {
+				add_unique = 1;	/* force add_unique */
+				printf("glib hash tables only supports "
+	"replacing values (and keys in addition) when the key to insert is already "
+	"present. Make sure you compare with the \"add_unique\" (-u) RCU hash table "
+	"behavior, which is the closest match.\n");
+			}
 			g_hash_table_insert(test_ht,
 				(void *)(unsigned long)(rand_r(&rand_lookup) % rand_pool),
 				node);
 			rcu_copy_mutex_unlock();
-			//if (add_unique && ret_node != node) {
-			//	free(node);
-			//	nr_addexist++;
-			//} else
 			nr_add++;
 		} else {
 			/* May delete */

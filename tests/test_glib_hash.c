@@ -73,6 +73,7 @@ static inline pid_t gettid(void)
 struct wr_count {
 	unsigned long update_ops;
 	unsigned long add;
+	unsigned long add_exist;
 	unsigned long remove;
 };
 
@@ -394,7 +395,7 @@ void *thr_reader(void *_count)
 
 void *thr_writer(void *_count)
 {
-	void *node, *ret_node;
+	void *node, *ret_node, *key;
 	struct wr_count *count = _count;
 	int ret;
 
@@ -412,7 +413,10 @@ void *thr_writer(void *_count)
 
 	for (;;) {
 		if (add_only || rand_r(&rand_lookup) & 1) {
+			void *lookup_node;
+
 			node = malloc(1);
+
 			rcu_copy_mutex_lock();
 			/* Glib hash table only supports replacement. */
 			if (!add_unique) {
@@ -422,11 +426,18 @@ void *thr_writer(void *_count)
 	"present. Make sure you compare with the \"add_unique\" (-u) RCU hash table "
 	"behavior, which is the closest match.\n");
 			}
-			g_hash_table_insert(test_ht,
-				(void *)(unsigned long)(rand_r(&rand_lookup) % rand_pool),
-				node);
-			rcu_copy_mutex_unlock();
-			nr_add++;
+			/* Uniquify behavior: lookup and add if not found */
+			key = (void *)(unsigned long)(rand_r(&rand_lookup) % rand_pool);
+			lookup_node = g_hash_table_lookup(test_ht, key);
+			if (lookup_node == NULL) {
+				g_hash_table_insert(test_ht, key, node);
+				rcu_copy_mutex_unlock();
+				nr_add++;
+			} else {
+				rcu_copy_mutex_unlock();
+				free(node);
+				nr_addexist++;
+			}
 		} else {
 			/* May delete */
 			rcu_copy_mutex_lock();
@@ -466,8 +477,16 @@ void *thr_writer(void *_count)
 			nr_addexist, nr_del, nr_delnoent);
 	count->update_ops = nr_writes;
 	count->add = nr_add;
+	count->add_exist = nr_addexist;
 	count->remove = nr_del;
 	return ((void*)2);
+}
+
+static
+void count_nodes(gpointer key, gpointer value, gpointer user_data)
+{
+	unsigned long *count = user_data;
+	(*count)++;
 }
 
 void show_usage(int argc, char **argv)
@@ -495,8 +514,8 @@ int main(int argc, char **argv)
 	unsigned long long *count_reader;
 	struct wr_count *count_writer;
 	unsigned long long tot_reads = 0, tot_writes = 0,
-		tot_add = 0, tot_remove = 0;
-	unsigned long count, removed;
+		tot_add = 0, tot_add_exist = 0, tot_remove = 0;
+	unsigned long count;
 	int i, a, ret;
 
 	if (argc < 4) {
@@ -607,8 +626,6 @@ int main(int argc, char **argv)
 	tid_writer = malloc(sizeof(*tid_writer) * nr_writers);
 	count_reader = malloc(sizeof(*count_reader) * nr_readers);
 	count_writer = malloc(sizeof(*count_writer) * nr_writers);
-	//test_ht = ht_new(test_hash, test_compare, 0x42UL,
-	//		 init_hash_size, call_rcu);
 	test_ht = g_hash_table_new_full(test_hash_fct, test_compare_fct,
 			NULL, free);
 
@@ -650,18 +667,17 @@ int main(int argc, char **argv)
 			exit(1);
 		tot_writes += count_writer[i].update_ops;
 		tot_add += count_writer[i].add;
+		tot_add_exist += count_writer[i].add_exist;
 		tot_remove += count_writer[i].remove;
 	}
-#if 0
 	printf("Counting nodes... ");
 	fflush(stdout);
-	ht_count_nodes(test_ht, &count, &removed);
+	count = 0;
+	g_hash_table_foreach(test_ht, count_nodes, &count);
 	printf("done.\n");
-	if (count || removed)
+	if (count)
 		printf("WARNING: nodes left in the hash table upon destroy: "
-			"%lu nodes + %lu logically removed.\n", count, removed);
-	ret = ht_destroy(test_ht);
-#endif
+			"%lu nodes.\n", count);
 	g_hash_table_destroy(test_ht);
 
 	if (ret)
@@ -673,10 +689,10 @@ int main(int argc, char **argv)
 	printf("SUMMARY %-25s testdur %4lu nr_readers %3u rdur %6lu "
 		"nr_writers %3u "
 		"wdelay %6lu rand_pool %12llu nr_reads %12llu nr_writes %12llu nr_ops %12llu "
-		"nr_add %12llu nr_remove %12llu nr_leaked %12llu\n",
+		"nr_add %12llu nr_add_fail %12llu nr_remove %12llu nr_leaked %12llu\n",
 		argv[0], duration, nr_readers, rduration,
 		nr_writers, wdelay, rand_pool, tot_reads, tot_writes,
-		tot_reads + tot_writes, tot_add, tot_remove,
+		tot_reads + tot_writes, tot_add, tot_add_exist, tot_remove,
 		tot_add - tot_remove - count);
 	free(tid_reader);
 	free(tid_writer);

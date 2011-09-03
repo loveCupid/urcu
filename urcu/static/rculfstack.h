@@ -27,6 +27,7 @@
  */
 
 #include <urcu/uatomic.h>
+#include <urcu-pointer.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -64,9 +65,13 @@ void _cds_lfs_init_rcu(struct cds_lfs_stack_rcu *s)
  * required if we first read the old head value). This design decision
  * might be revisited after more throrough benchmarking on various
  * platforms.
+ *
+ * Returns 0 if the stack was empty prior to adding the node.
+ * Returns non-zero otherwise.
  */
 static inline
-void _cds_lfs_push_rcu(struct cds_lfs_stack_rcu *s, struct cds_lfs_node_rcu *node)
+int _cds_lfs_push_rcu(struct cds_lfs_stack_rcu *s,
+			  struct cds_lfs_node_rcu *node)
 {
 	struct cds_lfs_node_rcu *head = NULL;
 
@@ -82,10 +87,11 @@ void _cds_lfs_push_rcu(struct cds_lfs_stack_rcu *s, struct cds_lfs_node_rcu *nod
 		if (old_head == head)
 			break;
 	}
+	return (int) !!((unsigned long) head);
 }
 
 /*
- * Acts as a RCU reader.
+ * Should be called under rcu read-side lock.
  *
  * The caller must wait for a grace period to pass before freeing the returned
  * node or modifying the cds_lfs_node_rcu structure.
@@ -98,22 +104,18 @@ _cds_lfs_pop_rcu(struct cds_lfs_stack_rcu *s)
 	for (;;) {
 		struct cds_lfs_node_rcu *head;
 
-		rcu_read_lock();
 		head = rcu_dereference(s->head);
 		if (head) {
 			struct cds_lfs_node_rcu *next = rcu_dereference(head->next);
 
 			if (uatomic_cmpxchg(&s->head, head, next) == head) {
-				rcu_read_unlock();
 				return head;
 			} else {
 				/* Concurrent modification. Retry. */
-				rcu_read_unlock();
 				continue;
 			}
 		} else {
 			/* Empty stack */
-			rcu_read_unlock();
 			return NULL;
 		}
 	}

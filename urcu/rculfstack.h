@@ -39,39 +39,20 @@ struct cds_lfs_stack_rcu {
 
 #include <urcu/static/rculfstack.h>
 
-#define cds_lfs_node_init_rcu_qsbr	_cds_lfs_node_init_rcu
-#define cds_lfs_init_rcu_qsbr		_cds_lfs_init_rcu
-#define cds_lfs_push_rcu_qsbr		_cds_lfs_push_rcu
-#define cds_lfs_pop_rcu_qsbr		_cds_lfs_pop_rcu
-
-#define cds_lfs_node_init_rcu_bp	_cds_lfs_node_init_rcu
-#define cds_lfs_init_rcu_bp		_cds_lfs_init_rcu
-#define cds_lfs_push_rcu_bp		_cds_lfs_push_rcu
-#define cds_lfs_pop_rcu_bp		_cds_lfs_pop_rcu
-
-#define cds_lfs_node_init_rcu_memb	_cds_lfs_node_init_rcu
-#define cds_lfs_init_rcu_memb		_cds_lfs_init_rcu
-#define cds_lfs_push_rcu_memb		_cds_lfs_push_rcu
-#define cds_lfs_pop_rcu_memb		_cds_lfs_pop_rcu
-
-#define cds_lfs_node_init_rcu_mb	_cds_lfs_node_init_rcu
-#define cds_lfs_init_rcu_mb		_cds_lfs_init_rcu
-#define cds_lfs_push_rcu_mb		_cds_lfs_push_rcu
-#define cds_lfs_pop_rcu_mb		_cds_lfs_pop_rcu
-
-#define cds_lfs_node_init_rcu_sig	_cds_lfs_node_init_rcu
-#define cds_lfs_init_rcu_sig		_cds_lfs_init_rcu
-#define cds_lfs_push_rcu_sig		_cds_lfs_push_rcu
-#define cds_lfs_pop_rcu_sig		_cds_lfs_pop_rcu
+#define cds_lfs_node_init_rcu		_cds_lfs_node_init_rcu
+#define cds_lfs_init_rcu		_cds_lfs_init_rcu
+#define cds_lfs_push_rcu		_cds_lfs_push_rcu
+#define cds_lfs_pop_rcu			_cds_lfs_pop_rcu
 
 #else /* !_LGPL_SOURCE */
 
 extern void cds_lfs_node_init_rcu(struct cds_lfs_node_rcu *node);
 extern void cds_lfs_init_rcu(struct cds_lfs_stack_rcu *s);
-extern void cds_lfs_push_rcu(struct cds_lfs_stack_rcu *s, struct cds_lfs_node_rcu *node);
+extern int cds_lfs_push_rcu(struct cds_lfs_stack_rcu *s,
+			struct cds_lfs_node_rcu *node);
 
 /*
- * Acts as a RCU reader.
+ * Should be called under rcu read lock critical section.
  *
  * The caller must wait for a grace period to pass before freeing the returned
  * node or modifying the cds_lfs_node_rcu structure.

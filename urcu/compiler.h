@@ -55,13 +55,28 @@
 #define CAA_BITS_PER_LONG	32
 #endif
 
-#define caa_container_of(ptr, type, member)					\
+/*
+ * caa_container_of - Get the address of an object containing a field.
+ *
+ * @ptr: pointer to the field.
+ * @type: type of the object.
+ * @member: name of the field within the object.
+ */
+#define caa_container_of(ptr, type, member)				\
 	({								\
-		const typeof(((type *)NULL)->member) * __ptr = (ptr);	\
+		const typeof(((type *) NULL)->member) * __ptr = (ptr);	\
 		(type *)((char *)__ptr - offsetof(type, member));	\
 	})
 
 #define CAA_BUILD_BUG_ON_ZERO(cond) (sizeof(struct { int:-!!(cond); }))
 #define CAA_BUILD_BUG_ON(cond) ((void)BUILD_BUG_ON_ZERO(cond))
+
+/*
+ * __rcu is an annotation that documents RCU pointer accesses that need
+ * to be protected by a read-side critical section. Eventually, a static
+ * checker will be able to use this annotation to detect incorrect RCU
+ * usage.
+ */
+#define __rcu
 
 #endif /* _URCU_COMPILER_H */

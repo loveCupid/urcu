@@ -39,46 +39,26 @@ struct cds_lfq_node_rcu {
 
 struct cds_lfq_queue_rcu {
 	struct cds_lfq_node_rcu *head, *tail;
+	void (*queue_call_rcu)(struct rcu_head *head,
+		void (*func)(struct rcu_head *head));
 };
 
 #ifdef _LGPL_SOURCE
 
 #include <urcu/static/rculfqueue.h>
 
-#define cds_lfq_node_init_rcu_qsbr	_cds_lfq_node_init_rcu
-#define cds_lfq_init_rcu_qsbr		_cds_lfq_init_rcu
-#define cds_lfq_destroy_rcu_qsbr	_cds_lfq_destroy_rcu
-#define cds_lfq_enqueue_rcu_qsbr	_cds_lfq_enqueue_rcu
-#define cds_lfq_dequeue_rcu_qsbr	_cds_lfq_dequeue_rcu
-
-#define cds_lfq_node_init_rcu_bp	_cds_lfq_node_init_rcu
-#define cds_lfq_init_rcu_bp		_cds_lfq_init_rcu
-#define cds_lfq_destroy_rcu_bp		_cds_lfq_destroy_rcu
-#define cds_lfq_enqueue_rcu_bp		_cds_lfq_enqueue_rcu
-#define cds_lfq_dequeue_rcu_bp		_cds_lfq_dequeue_rcu
-
-#define cds_lfq_node_init_rcu_memb	_cds_lfq_node_init_rcu
-#define cds_lfq_init_rcu_memb		_cds_lfq_init_rcu
-#define cds_lfq_destroy_rcu_memb	_cds_lfq_destroy_rcu
-#define cds_lfq_enqueue_rcu_memb	_cds_lfq_enqueue_rcu
-#define cds_lfq_dequeue_rcu_memb	_cds_lfq_dequeue_rcu
-
-#define cds_lfq_node_init_rcu_mb	_cds_lfq_node_init_rcu
-#define cds_lfq_init_rcu_mb		_cds_lfq_init_rcu
-#define cds_lfq_destroy_rcu_mb		_cds_lfq_destroy_rcu
-#define cds_lfq_enqueue_rcu_mb		_cds_lfq_enqueue_rcu
-#define cds_lfq_dequeue_rcu_mb		_cds_lfq_dequeue_rcu
-
-#define cds_lfq_node_init_rcu_sig	_cds_lfq_node_init_rcu
-#define cds_lfq_init_rcu_sig		_cds_lfq_init_rcu
-#define cds_lfq_destroy_rcu_sig		_cds_lfq_destroy_rcu
-#define cds_lfq_enqueue_rcu_sig		_cds_lfq_enqueue_rcu
-#define cds_lfq_dequeue_rcu_sig		_cds_lfq_dequeue_rcu
+#define cds_lfq_node_init_rcu		_cds_lfq_node_init_rcu
+#define cds_lfq_init_rcu		_cds_lfq_init_rcu
+#define cds_lfq_destroy_rcu		_cds_lfq_destroy_rcu
+#define cds_lfq_enqueue_rcu		_cds_lfq_enqueue_rcu
+#define cds_lfq_dequeue_rcu		_cds_lfq_dequeue_rcu
 
 #else /* !_LGPL_SOURCE */
 
 extern void cds_lfq_node_init_rcu(struct cds_lfq_node_rcu *node);
-extern void cds_lfq_init_rcu(struct cds_lfq_queue_rcu *q);
+extern void cds_lfq_init_rcu(struct cds_lfq_queue_rcu *q,
+			     void queue_call_rcu(struct rcu_head *head,
+					void (*func)(struct rcu_head *head)));
 /*
  * The queue should be emptied before calling destroy.
  *
@@ -87,13 +67,13 @@ extern void cds_lfq_init_rcu(struct cds_lfq_queue_rcu *q);
 extern int cds_lfq_destroy_rcu(struct cds_lfq_queue_rcu *q);
 
 /*
- * Acts as a RCU reader.
+ * Should be called under rcu read lock critical section.
  */
 extern void cds_lfq_enqueue_rcu(struct cds_lfq_queue_rcu *q,
 				struct cds_lfq_node_rcu *node);
 
 /*
- * Acts as a RCU reader.
+ * Should be called under rcu read lock critical section.
  *
  * The caller must wait for a grace period to pass before freeing the returned
  * node or modifying the cds_lfq_node_rcu structure.

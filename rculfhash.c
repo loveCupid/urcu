@@ -112,6 +112,19 @@
 #include <stdio.h>
 #include <pthread.h>
 
+#ifndef CDS_HT_NOATOMIC
+# define test_cmpxchg(ptr, old, _new)	uatomic_cmpxchg(ptr, old, _new)
+#else
+# define test_cmpxchg(ptr, old, _new)		\
+({						\
+	__typeof__(*(ptr)) __readptr = *(ptr);	\
+	(__readptr == (old)) ? ({		\
+		*(ptr) = (_new);		\
+		(old);				\
+	}) : __readptr;				\
+})
+#endif
+
 #ifdef DEBUG
 #define dbg_printf(fmt, args...)     printf("[debug rculfhash] " fmt, ## args)
 #else
@@ -405,7 +418,7 @@ unsigned long _uatomic_max(unsigned long *ptr, unsigned long v)
 		old2 = old1;
 		if (old2 >= v)
 			return old2;
-	} while ((old1 = uatomic_cmpxchg(ptr, old2, v)) != old2);
+	} while ((old1 = test_cmpxchg(ptr, old2, v)) != old2);
 	return v;
 }
 
@@ -438,7 +451,7 @@ void _cds_lfht_gc_bucket(struct cds_lfht_node *dummy, struct cds_lfht_node *node
 			new_next = flag_dummy(clear_flag(next));
 		else
 			new_next = clear_flag(next);
-		(void) uatomic_cmpxchg(&iter_prev->p.next, iter, new_next);
+		(void) test_cmpxchg(&iter_prev->p.next, iter, new_next);
 	}
 }
 
@@ -504,7 +517,7 @@ struct cds_lfht_node *_cds_lfht_add(struct cds_lfht *ht, struct rcu_table *t,
 			new_node = flag_dummy(node);
 		else
 			new_node = node;
-		if (uatomic_cmpxchg(&iter_prev->p.next, iter,
+		if (test_cmpxchg(&iter_prev->p.next, iter,
 				    new_node) != iter)
 			continue;	/* retry */
 		else
@@ -515,7 +528,7 @@ struct cds_lfht_node *_cds_lfht_add(struct cds_lfht *ht, struct rcu_table *t,
 			new_next = flag_dummy(clear_flag(next));
 		else
 			new_next = clear_flag(next);
-		(void) uatomic_cmpxchg(&iter_prev->p.next, iter, new_next);
+		(void) test_cmpxchg(&iter_prev->p.next, iter, new_next);
 		/* retry */
 	}
 gc_end:
@@ -544,7 +557,7 @@ int _cds_lfht_remove(struct cds_lfht *ht, struct rcu_table *t,
 		if (unlikely(is_removed(next)))
 			goto end;
 		assert(!is_dummy(next));
-		old = uatomic_cmpxchg(&node->p.next, next,
+		old = test_cmpxchg(&node->p.next, next,
 				      flag_removed(next));
 	} while (old != next);
 

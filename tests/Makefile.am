@@ -45,8 +45,7 @@ URCU_MB_LIB=$(top_builddir)/liburcu-mb.la
 URCU_SIGNAL_LIB=$(top_builddir)/liburcu-signal.la
 URCU_BP_LIB=$(top_builddir)/liburcu-bp.la
 URCU_CDS_LIB=$(top_builddir)/liburcu-cds.la
-
-URCU_RBTREE=$(URCU) $(top_srcdir)/urcu-rbtree.c
+URCU_RBTREE_LIB=$(top_builddir)/liburcu-rbtree.la
 
 EXTRA_DIST = $(top_srcdir)/tests/api.h runall.sh
 
@@ -178,7 +177,10 @@ test_urcu_wfs_dynlink_SOURCES = test_urcu_wfs.c
 test_urcu_wfs_dynlink_CFLAGS = -DDYNAMIC_LINK_TEST $(AM_CFLAGS)
 test_urcu_wfs_dynlink_LDADD = $(URCU_COMMON_LIB)
 
-test_urcu_rbtree_SOURCES = test_urcu_rbtree.c $(URCU_RBTREE)
+test_urcu_rbtree_SOURCES = test_urcu_rbtree.c
+test_urcu_rbtree_CFLAGS = -DRCU_MEMBARRIER $(AM_CFLAGS)
+test_urcu_rbtree_LDADD = $(URCU_RBTREE_LIB) $(URCU_LIB)
+
 
 urcutorture.c: api.h
 

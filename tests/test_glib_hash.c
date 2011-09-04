@@ -67,7 +67,7 @@ static inline pid_t gettid(void)
 #else
 #define debug_yield_read()
 #endif
-#include <urcu.h>
+#include <urcu-qsbr.h>
 #include <urcu-call-rcu.h>
 
 struct wr_count {

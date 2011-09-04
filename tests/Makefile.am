@@ -181,8 +181,8 @@ test_urcu_hash_CFLAGS = -DRCU_QSBR $(AM_CFLAGS)
 test_urcu_hash_LDADD = $(URCU_QSBR_LIB) $(URCU_CDS_LIB)
 
 test_glib_hash_SOURCES = test_glib_hash.c $(COMPAT)
-test_glib_hash_CFLAGS = -DRCU_MEMBARRIER $(AM_CFLAGS) -I/usr/include/glib-2.0 -I/usr/lib/glib-2.0/include
-test_glib_hash_LDADD = $(URCU) $(URCU_CDS_LIB) -lglib-2.0
+test_glib_hash_CFLAGS = -DRCU_QSBR $(AM_CFLAGS) -I/usr/include/glib-2.0 -I/usr/lib/glib-2.0/include
+test_glib_hash_LDADD = $(URCU_QSBR_LIB) $(URCU_CDS_LIB) -lglib-2.0
 
 urcutorture.c: api.h
 

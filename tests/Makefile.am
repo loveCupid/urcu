@@ -15,7 +15,7 @@ noinst_PROGRAMS = test_urcu test_urcu_dynamic_link test_urcu_timing \
         test_urcu_bp test_urcu_bp_dynamic_link test_cycles_per_loop \
 	test_urcu_lfq test_urcu_wfq test_urcu_lfs test_urcu_wfs \
 	test_urcu_wfq_dynlink test_urcu_wfs_dynlink \
-	test_urcu_lfq_dynlink test_urcu_lfs_dynlink
+	test_urcu_lfq_dynlink test_urcu_lfs_dynlink test_lfq_baseline
 noinst_HEADERS = rcutorture.h
 
 if COMPAT_ARCH
@@ -159,6 +159,8 @@ test_urcu_lfq_SOURCES = test_urcu_lfq.c $(URCU) $(URCU_CDS_LIB)
 test_urcu_lfq_dynlink_SOURCES = test_urcu_lfq.c $(URCU)
 test_urcu_lfq_dynlink_CFLAGS = -DDYNAMIC_LINK_TEST $(AM_CFLAGS)
 test_urcu_lfq_dynlink_LDADD = $(URCU_CDS_LIB)
+
+test_lfq_baseline_SOURCSE = test_lfq_baseline.c
 
 test_urcu_wfq_SOURCES = test_urcu_wfq.c $(URCU_COMMON_LIB)
 test_urcu_wfq_dynlink_SOURCES = test_urcu_wfq.c

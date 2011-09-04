@@ -159,6 +159,7 @@
 #define RBTREE_RCU_SUPPORT_ROTATE_LEFT
 #define RBTREE_RCU_SUPPORT_ROTATE_RIGHT
 #define RBTREE_RCU_SUPPORT_TRANSPLANT
+#define RBTREE_RCU_SUPPORT
 
 #ifdef EXTRA_DEBUG
 static pthread_mutex_t test_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -255,6 +256,8 @@ void _rcu_rbtree_free_node(struct rcu_head *head)
 	node->rbtree->rbfree(node);
 }
 
+#ifdef RBTREE_RCU_SUPPORT
+
 static
 struct rcu_rbtree_node *dup_decay_node(struct rcu_rbtree *rbtree,
 				struct rcu_rbtree_node *x)
@@ -271,6 +274,17 @@ struct rcu_rbtree_node *dup_decay_node(struct rcu_rbtree *rbtree,
 	rbtree->call_rcu(&x->head, _rcu_rbtree_free_node);
 	return xc;
 }
+
+#else /* RBTREE_RCU_SUPPORT */
+
+static
+struct rcu_rbtree_node *dup_decay_node(struct rcu_rbtree *rbtree,
+				struct rcu_rbtree_node *x)
+{
+	return x;
+}
+
+#endif
 
 /*
  * Info for range lookups:
@@ -1282,7 +1296,11 @@ int rcu_rbtree_remove(struct rcu_rbtree *rbtree,
 	 * Commit all _CMM_STORE_SHARED().
 	 */
 	cmm_smp_wmc();
+#ifdef RBTREE_RCU_SUPPORT
 	rbtree->call_rcu(&z->head, _rcu_rbtree_free_node);
+#else
+	_rcu_rbtree_free_node(&z->head);
+#endif
 
 	return 0;
 }

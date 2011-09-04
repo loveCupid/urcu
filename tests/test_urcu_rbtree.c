@@ -48,9 +48,11 @@ extern int __thread disable_debug;
 /* hardcoded number of CPUs */
 #define NR_CPUS 16384
 
-/* number of insert/delete */
-#define NR_RAND 6
-//#define NR_RAND 7
+/* Default number of insert/delete */
+#define DEFAULT_NR_RAND 6
+
+/* Default number of global items (used by readers for lookups) */
+#define DEFAULT_NR_GLOBAL	10
 
 #if defined(_syscall0)
 _syscall0(pid_t, gettid)
@@ -95,9 +97,19 @@ static unsigned long rduration;
 /* write-side C.S. duration, in loops */
 static unsigned long wduration;
 
+static unsigned long nr_rand_items = DEFAULT_NR_RAND;
+
+static int opt_search_begin,
+	opt_search_bottom,
+	opt_search_end,
+	opt_search_mid,
+	opt_iter_min_max,
+	opt_iter_max_min,
+	opt_benchmark;
+
 static inline void loop_sleep(unsigned long l)
 {
-	while(l-- != 0)
+	while (l-- != 0)
 		caa_cpu_relax();
 }
 
@@ -172,7 +184,7 @@ static unsigned long long __thread nr_reads;
 static unsigned int nr_readers;
 static unsigned int nr_writers;
 
-static unsigned long global_items;
+static unsigned long global_items = DEFAULT_NR_GLOBAL;
 static void **global_key = NULL;
 
 pthread_mutex_t rcu_copy_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -235,81 +247,104 @@ void *thr_reader(void *_count)
 	cmm_smp_mb();
 
 	for (;;) {
+		/* search begin key */
+		if (opt_search_begin) {
+			for (i = 0; i < global_items; i++) {
+				rcu_read_lock();
+				node = rcu_rbtree_search_begin_key(&rbtree,
+							 rcu_dereference(rbtree.root),
+							 global_key[i]);
+				assert(!rcu_rbtree_is_nil(&rbtree, node));
+				rcu_read_unlock();
+				nr_reads++;
+			}
+		}
+
 		/* search bottom of range */
-		for (i = 0; i < global_items; i++) {
-			rcu_read_lock();
-			node = rcu_rbtree_search(&rbtree,
-						 rcu_dereference(rbtree.root),
-						 global_key[i]);
-			assert(!rcu_rbtree_is_nil(&rbtree, node));
-			rcu_read_unlock();
+		if (opt_search_bottom) {
+			for (i = 0; i < global_items; i++) {
+				rcu_read_lock();
+				node = rcu_rbtree_search(&rbtree,
+							 rcu_dereference(rbtree.root),
+							 global_key[i]);
+				assert(!rcu_rbtree_is_nil(&rbtree, node));
+				rcu_read_unlock();
+				nr_reads++;
+			}
 		}
 
 		/* search end of range */
-		for (i = 0; i < global_items; i++) {
-			rcu_read_lock();
-			node = rcu_rbtree_search(&rbtree,
-						 rcu_dereference(rbtree.root),
-						 (void*) ((unsigned long) global_key[i] + 3));
-			assert(!rcu_rbtree_is_nil(&rbtree, node));
-			rcu_read_unlock();
+		if (opt_search_end) {
+			for (i = 0; i < global_items; i++) {
+				rcu_read_lock();
+				node = rcu_rbtree_search(&rbtree,
+							 rcu_dereference(rbtree.root),
+							 (void*) ((unsigned long) global_key[i] + 3));
+				assert(!rcu_rbtree_is_nil(&rbtree, node));
+				rcu_read_unlock();
+				nr_reads++;
+			}
 		}
 
 		/* search range (middle) */
-		for (i = 0; i < global_items; i++) {
-			rcu_read_lock();
-			node = rcu_rbtree_search_range(&rbtree,
-						 rcu_dereference(rbtree.root),
-						 (void*) ((unsigned long) global_key[i] + 1),
-						 (void*) ((unsigned long) global_key[i] + 2));
-			assert(!rcu_rbtree_is_nil(&rbtree, node));
-			rcu_read_unlock();
-		}
-
-		/* search begin key */
-		for (i = 0; i < global_items; i++) {
-			rcu_read_lock();
-			node = rcu_rbtree_search_begin_key(&rbtree,
-						 rcu_dereference(rbtree.root),
-						 global_key[i]);
-			assert(!rcu_rbtree_is_nil(&rbtree, node));
-			rcu_read_unlock();
+		if (opt_search_mid) {
+			for (i = 0; i < global_items; i++) {
+				rcu_read_lock();
+				node = rcu_rbtree_search_range(&rbtree,
+							 rcu_dereference(rbtree.root),
+							 (void*) ((unsigned long) global_key[i] + 1),
+							 (void*) ((unsigned long) global_key[i] + 2));
+				assert(!rcu_rbtree_is_nil(&rbtree, node));
+				rcu_read_unlock();
+				nr_reads++;
+			}
 		}
 
 		/* min + next */
-		memset(lookup_hit, 0, sizeof(*lookup_hit) * global_items);
+		if (opt_iter_min_max) {
+			memset(lookup_hit, 0, sizeof(*lookup_hit) * global_items);
 
-		rcu_read_lock();
-		node = rcu_rbtree_min(&rbtree,
-				      rcu_dereference(rbtree.root));
-		while (!rcu_rbtree_is_nil(&rbtree, node)) {
-			set_lookup_index(node, lookup_hit);
-			node = rcu_rbtree_next(&rbtree, node);
+			rcu_read_lock();
+			node = rcu_rbtree_min(&rbtree,
+					      rcu_dereference(rbtree.root));
+			while (!rcu_rbtree_is_nil(&rbtree, node)) {
+				if (!opt_benchmark)
+					set_lookup_index(node, lookup_hit);
+				node = rcu_rbtree_next(&rbtree, node);
+				nr_reads++;
+			}
+			rcu_read_unlock();
+
+			if (!opt_benchmark) {
+				for (i = 0; i < global_items; i++)
+					assert(lookup_hit[i]);
+			}
 		}
-		rcu_read_unlock();
-
-		for (i = 0; i < global_items; i++)
-			assert(lookup_hit[i]);
 
 		/* max + prev */
-		memset(lookup_hit, 0, sizeof(*lookup_hit) * global_items);
+		if (opt_iter_max_min) {
+			memset(lookup_hit, 0, sizeof(*lookup_hit) * global_items);
 
-		rcu_read_lock();
-		node = rcu_rbtree_max(&rbtree,
-				      rcu_dereference(rbtree.root));
-		while (!rcu_rbtree_is_nil(&rbtree, node)) {
-			set_lookup_index(node, lookup_hit);
-			node = rcu_rbtree_prev(&rbtree, node);
+			rcu_read_lock();
+			node = rcu_rbtree_max(&rbtree,
+					      rcu_dereference(rbtree.root));
+			while (!rcu_rbtree_is_nil(&rbtree, node)) {
+				if (!opt_benchmark)
+					set_lookup_index(node, lookup_hit);
+				node = rcu_rbtree_prev(&rbtree, node);
+				nr_reads++;
+			}
+			rcu_read_unlock();
+
+			if (!opt_benchmark) {
+				for (i = 0; i < global_items; i++)
+					assert(lookup_hit[i]);
+			}
 		}
-		rcu_read_unlock();
-
-		for (i = 0; i < global_items; i++)
-			assert(lookup_hit[i]);
 
 		debug_yield_read();
 		if (unlikely(rduration))
 			loop_sleep(rduration);
-		nr_reads++;
 		if (unlikely(!test_duration_read()))
 			break;
 	}
@@ -333,7 +368,7 @@ void *thr_writer(void *_count)
 {
 	unsigned long long *count = _count;
 	struct rcu_rbtree_node *node;
-	void *key[NR_RAND];
+	void **key;
 	int i;
 
 	printf_verbose("thread_begin %s, thread id : %lx, tid %lu\n",
@@ -341,6 +376,8 @@ void *thr_writer(void *_count)
 
 	set_affinity();
 
+	key = malloc(sizeof(*key) * nr_rand_items);
+	assert(key);
 	//disable_debug = 1;
 
 	rcu_register_thread();
@@ -353,7 +390,7 @@ void *thr_writer(void *_count)
 	for (;;) {
 		rcu_copy_mutex_lock();
 
-		for (i = 0; i < NR_RAND; i++) {
+		for (i = 0; i < nr_rand_items; i++) {
 			//key[i] = (void *)(unsigned long)(rand() % 2048);
 			key[i] = (void *)(unsigned long)(((unsigned long) rand() * 4) % 2048);
 			//For more collisions
@@ -365,6 +402,7 @@ void *thr_writer(void *_count)
 			rcu_rbtree_insert(&rbtree, key[i],
 					  (void *)((unsigned long) key[i] + 4));
 			rcu_read_unlock();
+			nr_writes++;
 		}
 		rcu_copy_mutex_unlock();
 
@@ -372,7 +410,7 @@ void *thr_writer(void *_count)
 			loop_sleep(wduration);
 
 		rcu_copy_mutex_lock();
-		for (i = 0; i < NR_RAND; i++) {
+		for (i = 0; i < nr_rand_items; i++) {
 #if 0
 			node = rcu_rbtree_min(rbtree, rbtree->root);
 			while (!rcu_rbtree_is_nil(&rbtree, node)) {
@@ -393,10 +431,10 @@ void *thr_writer(void *_count)
 			assert(!rcu_rbtree_is_nil(&rbtree, node));
 			rcu_rbtree_remove(&rbtree, node);
 			rcu_read_unlock();
+			nr_writes++;
 		}
 
 		rcu_copy_mutex_unlock();
-		nr_writes++;
 		if (unlikely(!test_duration_write()))
 			break;
 		if (unlikely(wdelay))
@@ -408,6 +446,7 @@ void *thr_writer(void *_count)
 	printf_verbose("thread_end %s, thread id : %lx, tid %lu\n",
 			"writer", pthread_self(), (unsigned long)gettid());
 	*count = nr_writes;
+	free(key);
 	return ((void*)2);
 }
 
@@ -422,6 +461,15 @@ void show_usage(int argc, char **argv)
 	printf(" [-e duration] (writer C.S. duration (in loops))");
 	printf(" [-v] (verbose output)");
 	printf(" [-a cpu#] [-a cpu#]... (affinity)");
+	printf(" [-g items] Initially populate n items (for reader lookups)");
+	printf(" [-f items] Writers add n random items and then remove these items");
+	printf(" [-b] Reader: search begin key");
+	printf(" [-n] Reader: search bottom of range");
+	printf(" [-N] Reader: search end of range");
+	printf(" [-m] Reader: search range (middle)");
+	printf(" [-i] Reader: iterate from min to max");
+	printf(" [-I] Reader: iterate from max to min");
+	printf(" [-B] Benchmark mode (no validation)");
 	printf("\n");
 }
 
@@ -511,6 +559,34 @@ int main(int argc, char **argv)
 			}
 			global_items = atol(argv[++i]);
 			break;
+		case 'b':
+			opt_search_begin = 1;
+			break;
+		case 'n':
+			opt_search_bottom = 1;
+			break;
+		case 'N':
+			opt_search_end = 1;
+			break;
+		case 'm':
+			opt_search_mid = 1;
+			break;
+		case 'i':
+			opt_iter_min_max = 1;
+			break;
+		case 'I':
+			opt_iter_max_min = 1;
+			break;
+		case 'B':
+			opt_benchmark = 1;
+			break;
+		case 'f':
+			if (argc < i + 2) {
+				show_usage(argc, argv);
+				return -1;
+			}
+			nr_rand_items = atol(argv[++i]);
+			break;
 		}
 	}
 
@@ -598,10 +674,10 @@ int main(int argc, char **argv)
 	printf("SUMMARY %-25s testdur %4lu nr_readers %3u rdur %6lu wdur %6lu "
 		"nr_writers %3u "
 		"wdelay %6lu nr_reads %12llu nr_writes %12llu nr_ops %12llu "
-		"global_items %6lu\n",
+		"global_items %6lu rand_items %6lu\n",
 		argv[0], duration, nr_readers, rduration, wduration,
 		nr_writers, wdelay, tot_reads, tot_writes,
-		tot_reads + tot_writes, global_items);
+		tot_reads + tot_writes, global_items, nr_rand_items);
 	free(tid_reader);
 	free(tid_writer);
 	free(count_reader);

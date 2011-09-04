@@ -161,7 +161,14 @@
 #define RBTREE_RCU_SUPPORT_TRANSPLANT
 #define RBTREE_RCU_SUPPORT
 
-#ifdef EXTRA_DEBUG
+/*
+ * Add internal mutex locking within the RBTree, for debugging. Enable this
+ * define and add mutexes to RCU readers to debug races with with rotation or
+ * transplant.
+  */
+/* #define RBTREE_INTERNAL_LOCKING */
+
+#ifdef RBTREE_INTERNAL_LOCKING
 static pthread_mutex_t test_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t outer_mutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -187,6 +194,26 @@ static
 void unlock_test_mutex(void)
 {
 	pthread_mutex_unlock(&test_mutex);
+}
+#else
+static
+void lock_outer_mutex(void)
+{
+}
+
+static
+void unlock_outer_mutex(void)
+{
+}
+
+static
+void lock_test_mutex(void)
+{
+}
+
+static
+void unlock_test_mutex(void)
+{
 }
 #endif
 
@@ -779,6 +806,16 @@ void left_rotate(struct rcu_rbtree *rbtree,
 	}
 	y->_left = x;
 	set_parent(x, y, IS_LEFT);
+
+	/*
+	 * We only changed the relative position of x and y wrt their
+	 * children, and reparented y (but are keeping the same nodes in
+	 * place, so its parent does not need to have end value
+	 * recalculated).
+	 */
+	x->max_end = calculate_node_max_end(rbtree, x);
+	y->max_end = calculate_node_max_end(rbtree, y);
+
 	unlock_test_mutex();
 }
 
@@ -892,6 +929,16 @@ void right_rotate(struct rcu_rbtree *rbtree,
 	}
 	y->_right = x;
 	set_parent(x, y, IS_RIGHT);
+
+	/*
+	 * We only changed the relative position of x and y wrt their
+	 * children, and reparented y (but are keeping the same nodes in
+	 * place, so its parent does not need to have end value
+	 * recalculated).
+	 */
+	x->max_end = calculate_node_max_end(rbtree, x);
+	y->max_end = calculate_node_max_end(rbtree, y);
+
 	unlock_test_mutex();
 }
 
@@ -1089,12 +1136,15 @@ void rcu_rbtree_transplant(struct rcu_rbtree *rbtree,
 	dbg_printf("transplant %p\n", v->begin);
 
 	lock_test_mutex();
-	if (rcu_rbtree_is_nil(rbtree, get_parent(u)))
+	if (rcu_rbtree_is_nil(rbtree, get_parent(u))) {
 		rbtree->root = v;
-	else if (u == get_parent(u)->_left)
-		get_parent(u)->_left = v;
-	else
-		get_parent(u)->_right = v;
+	} else {
+		if (u == get_parent(u)->_left)
+			get_parent(u)->_left = v;
+		else
+			get_parent(u)->_right = v;
+		populate_node_end(rbtree, get_parent(u), copy_parents, stop);
+	}
 	set_parent(v, get_parent(u), get_pos(u));
 	unlock_test_mutex();
 }

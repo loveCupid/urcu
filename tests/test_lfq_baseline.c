@@ -242,9 +242,12 @@ void *thr_dequeuer(void *_count)
 		struct test *node;
 
 		test_mutex_lock();
-		node = cds_list_first_entry(&q, struct test, node);
-		if (node)
+		if (!cds_list_empty(&q)) {
+			node = cds_list_first_entry(&q, struct test, node);
 			cds_list_del(&node->node);
+		} else {
+			node = NULL;
+		}
 		test_mutex_unlock();
 
 		if (node) {
@@ -273,7 +276,11 @@ void test_end(unsigned long long *nr_dequeues)
 	struct test *node;
 
 	do {
-		node = cds_list_first_entry(&q, struct test, node);
+		if (!cds_list_empty(&q)) {
+			node = cds_list_first_entry(&q, struct test, node);
+		} else {
+			node = NULL;
+		}
 		if (node) {
 			cds_list_del(&node->node);
 			free(node);	/* no more concurrent access */

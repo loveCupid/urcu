@@ -161,6 +161,12 @@
 #define RBTREE_RCU_SUPPORT_TRANSPLANT
 #define RBTREE_RCU_SUPPORT
 
+#ifdef RBTREE_RCU_SUPPORT
+#define c_rcu_dereference(x)	rcu_dereference(x)
+#else
+#define c_rcu_dereference(x)	(x)
+#endif
+
 /*
  * Add internal mutex locking within the RBTree, for debugging. Enable this
  * define and add mutexes to RCU readers to debug races with with rotation or
@@ -241,7 +247,7 @@ static
 struct rcu_rbtree_node *get_parent_and_pos(struct rcu_rbtree_node *node,
 				unsigned int *pos)
 {
-	unsigned long parent_pos = rcu_dereference(node->parent);
+	unsigned long parent_pos = c_rcu_dereference(node->parent);
 
 	*pos = (unsigned int) (parent_pos & 1UL);
 	return (struct rcu_rbtree_node *) (parent_pos & ~1UL);
@@ -419,11 +425,11 @@ struct rcu_rbtree_node *rcu_rbtree_search(struct rcu_rbtree *rbtree,
 	struct rcu_rbtree_node *xl;
 
 	dbg_printf("searching point 0x%lx\n", (unsigned long) point);
-	x = rcu_dereference(x);
+	x = c_rcu_dereference(x);
 
 	while (!rcu_rbtree_is_nil(rbtree, x)) {
 		dbg_usleep(10);
-		xl = rcu_dereference(x->_left);
+		xl = c_rcu_dereference(x->_left);
 		dbg_printf("search x %lx x_end %lx x_max_end %lx\n", (unsigned long) x->begin,
 						(unsigned long) x->end, (unsigned long) x->max_end);
 		dbg_printf("search xl %lx xl_end %lx xl_max_end %lx\n", (unsigned long) xl->begin,
@@ -438,7 +444,7 @@ struct rcu_rbtree_node *rcu_rbtree_search(struct rcu_rbtree *rbtree,
 			break;
 		} else if (rbtree->comp(point, x->begin) > 0) {
 			dbg_printf("go right\n");
-			x = rcu_dereference(x->_right);
+			x = c_rcu_dereference(x->_right);
 		} else {
 			dbg_printf("not found!\n");
 			x = make_nil(rbtree);
@@ -471,15 +477,15 @@ struct rcu_rbtree_node *rcu_rbtree_search_begin_key(struct rcu_rbtree *rbtree,
 					  struct rcu_rbtree_node *x,
 					  void *k)
 {
-	x = rcu_dereference(x);
+	x = c_rcu_dereference(x);
 	int comp;
 
 	while (!rcu_rbtree_is_nil(rbtree, x) && (comp = rbtree->comp(k, x->begin)) != 0) {
 		dbg_usleep(10);
 		if (comp < 0)
-			x = rcu_dereference(x->_left);
+			x = c_rcu_dereference(x->_left);
 		else
-			x = rcu_dereference(x->_right);
+			x = c_rcu_dereference(x->_right);
 	}
 	return x;
 }
@@ -491,7 +497,7 @@ struct rcu_rbtree_node *rcu_rbtree_min_dup_decay(struct rcu_rbtree *rbtree,
 {
 	struct rcu_rbtree_node *xl;
 
-	x = rcu_dereference(x);
+	x = c_rcu_dereference(x);
 
 	if (rcu_rbtree_is_nil(rbtree, x)) {
 		*zr = x;
@@ -499,7 +505,7 @@ struct rcu_rbtree_node *rcu_rbtree_min_dup_decay(struct rcu_rbtree *rbtree,
 	} else
 		*zr = x = dup_decay_node(rbtree, x);
 
-	while (!rcu_rbtree_is_nil(rbtree, xl = rcu_dereference(x->_left))) {
+	while (!rcu_rbtree_is_nil(rbtree, xl = c_rcu_dereference(x->_left))) {
 		x = dup_decay_node(rbtree, xl);
 		set_parent(x, get_decay(get_parent(x)), get_pos(x));
 		get_parent(x)->_left = get_decay(get_parent(x)->_left);
@@ -513,7 +519,7 @@ struct rcu_rbtree_node *rcu_rbtree_min_update_decay(struct rcu_rbtree *rbtree,
 {
 	struct rcu_rbtree_node *xl;
 
-	x = rcu_dereference(x);
+	x = c_rcu_dereference(x);
 
 	if (rcu_rbtree_is_nil(rbtree, x))
 		return x;
@@ -524,7 +530,7 @@ struct rcu_rbtree_node *rcu_rbtree_min_update_decay(struct rcu_rbtree *rbtree,
 			   get_pos(x->_left));
 	}
 
-	while (!rcu_rbtree_is_nil(rbtree, xl = rcu_dereference(x->_left))) {
+	while (!rcu_rbtree_is_nil(rbtree, xl = c_rcu_dereference(x->_left))) {
 		x = xl;
 		set_parent(x->_right, get_decay(get_parent(x->_right)),
 			   get_pos(x->_right));
@@ -539,12 +545,12 @@ struct rcu_rbtree_node *rcu_rbtree_min(struct rcu_rbtree *rbtree,
 {
 	struct rcu_rbtree_node *xl;
 
-	x = rcu_dereference(x);
+	x = c_rcu_dereference(x);
 
 	if (rcu_rbtree_is_nil(rbtree, x))
 		return x;
 
-	while (!rcu_rbtree_is_nil(rbtree, xl = rcu_dereference(x->_left)))
+	while (!rcu_rbtree_is_nil(rbtree, xl = c_rcu_dereference(x->_left)))
 		x = xl;
 	return x;
 }
@@ -554,12 +560,12 @@ struct rcu_rbtree_node *rcu_rbtree_max(struct rcu_rbtree *rbtree,
 {
 	struct rcu_rbtree_node *xr;
 
-	x = rcu_dereference(x);
+	x = c_rcu_dereference(x);
 
 	if (rcu_rbtree_is_nil(rbtree, x))
 		return x;
 
-	while (!rcu_rbtree_is_nil(rbtree, xr = rcu_dereference(x->_right)))
+	while (!rcu_rbtree_is_nil(rbtree, xr = c_rcu_dereference(x->_right)))
 		x = xr;
 	return x;
 }
@@ -574,9 +580,9 @@ struct rcu_rbtree_node *rcu_rbtree_next(struct rcu_rbtree *rbtree,
 	struct rcu_rbtree_node *xr, *y;
 	unsigned int x_pos;
 
-	x = rcu_dereference(x);
+	x = c_rcu_dereference(x);
 
-	if (!rcu_rbtree_is_nil(rbtree, xr = rcu_dereference(x->_right)))
+	if (!rcu_rbtree_is_nil(rbtree, xr = c_rcu_dereference(x->_right)))
 		return rcu_rbtree_min(rbtree, xr);
 	y = get_parent_and_pos(x, &x_pos);
 	while (!rcu_rbtree_is_nil(rbtree, y) && x_pos == IS_RIGHT) {
@@ -592,9 +598,9 @@ struct rcu_rbtree_node *rcu_rbtree_prev(struct rcu_rbtree *rbtree,
 	struct rcu_rbtree_node *xl, *y;
 	unsigned int x_pos;
 
-	x = rcu_dereference(x);
+	x = c_rcu_dereference(x);
 
-	if (!rcu_rbtree_is_nil(rbtree, xl = rcu_dereference(x->_left)))
+	if (!rcu_rbtree_is_nil(rbtree, xl = c_rcu_dereference(x->_left)))
 		return rcu_rbtree_max(rbtree, xl);
 	y = get_parent_and_pos(x, &x_pos);
 	while (!rcu_rbtree_is_nil(rbtree, y) && x_pos == IS_LEFT) {

@@ -160,7 +160,7 @@ test_urcu_lfq_dynlink_SOURCES = test_urcu_lfq.c $(URCU)
 test_urcu_lfq_dynlink_CFLAGS = -DDYNAMIC_LINK_TEST $(AM_CFLAGS)
 test_urcu_lfq_dynlink_LDADD = $(URCU_CDS_LIB)
 
-test_lfq_baseline_SOURCSE = test_lfq_baseline.c
+test_lfq_baseline_SOURCES = test_lfq_baseline.c
 
 test_urcu_wfq_SOURCES = test_urcu_wfq.c $(URCU_COMMON_LIB)
 test_urcu_wfq_dynlink_SOURCES = test_urcu_wfq.c

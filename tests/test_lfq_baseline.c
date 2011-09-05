@@ -243,7 +243,8 @@ void *thr_dequeuer(void *_count)
 
 		test_mutex_lock();
 		node = cds_list_first_entry(&q, struct test, node);
-		cds_list_del(&node->node);
+		if (node)
+			cds_list_del(&node->node);
 		test_mutex_unlock();
 
 		if (node) {
@@ -273,8 +274,8 @@ void test_end(unsigned long long *nr_dequeues)
 
 	do {
 		node = cds_list_first_entry(&q, struct test, node);
-		cds_list_del(&node->node);
 		if (node) {
+			cds_list_del(&node->node);
 			free(node);	/* no more concurrent access */
 			(*nr_dequeues)++;
 		}
@@ -416,8 +417,6 @@ int main(int argc, char **argv)
 	}
 	
 	test_end(&end_dequeues);
-	err = cds_lfq_destroy_rcu(&q);
-	assert(!err);
 
 	printf_verbose("total number of enqueues : %llu, dequeues %llu\n",
 		       tot_enqueues, tot_dequeues);

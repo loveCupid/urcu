@@ -163,8 +163,16 @@
 
 #ifdef RBTREE_RCU_SUPPORT
 #define c_rcu_dereference(x)	rcu_dereference(x)
+#define c_cmm_smp_wmb()		cmm_smp_wmb()
+#define c_cmm_smp_wmc()		cmm_smp_wmc()
+#define C_CMM_STORE_SHARED(x, v)	CMM_STORE_SHARED(x, v)
+#define C__CMM_STORE_SHARED(x, v)	_CMM_STORE_SHARED(x, v)
 #else
 #define c_rcu_dereference(x)	(x)
+#define c_cmm_smp_wmb()
+#define c_cmm_smp_wmc()
+#define C_CMM_STORE_SHARED(x, v)	((x) = (v))
+#define C__CMM_STORE_SHARED(x, v)	((x) = (v))
 #endif
 
 /*
@@ -228,7 +236,7 @@ void set_parent(struct rcu_rbtree_node *node,
 		struct rcu_rbtree_node *parent,
 		unsigned int pos)
 {
-	_CMM_STORE_SHARED(node->parent, ((unsigned long) parent) | pos);
+	C__CMM_STORE_SHARED(node->parent, ((unsigned long) parent) | pos);
 }
 
 static
@@ -647,14 +655,14 @@ void populate_node_end(struct rcu_rbtree *rbtree, struct rcu_rbtree_node *node,
 			node->max_end = max_end;
 		} else {
 			top = get_parent(node);
-			cmm_smp_wmb();	/* write into node before publish */
+			c_cmm_smp_wmb();	/* write into node before publish */
 			/* make new branch visible to readers */
 			if (rcu_rbtree_is_nil(rbtree, top))
-				_CMM_STORE_SHARED(rbtree->root, node);
+				C__CMM_STORE_SHARED(rbtree->root, node);
 			if (get_pos(node) == IS_LEFT)
-				_CMM_STORE_SHARED(top->_left, node);
+				C__CMM_STORE_SHARED(top->_left, node);
 			else
-				_CMM_STORE_SHARED(top->_right, node);
+				C__CMM_STORE_SHARED(top->_right, node);
 			goto end;
 		}
 
@@ -667,9 +675,9 @@ void populate_node_end(struct rcu_rbtree *rbtree, struct rcu_rbtree_node *node,
 	} while (!rcu_rbtree_is_nil(rbtree, node));
 
 	top = node;	/* nil */
-	cmm_smp_wmb();	/* write into node before publish */
+	c_cmm_smp_wmb();	/* write into node before publish */
 	/* make new branch visible to readers */
-	_CMM_STORE_SHARED(rbtree->root, prev);
+	C__CMM_STORE_SHARED(rbtree->root, prev);
 
 end:
 	if (!copy_parents)
@@ -743,15 +751,15 @@ void left_rotate(struct rcu_rbtree *rbtree,
 	x->max_end = calculate_node_max_end(rbtree, x);
 	y->max_end = calculate_node_max_end(rbtree, y);
 
-	cmm_smp_wmb();	/* write into node before publish */
+	c_cmm_smp_wmb();	/* write into node before publish */
 
 	/* External references update (visible by readers) */
 	if (rcu_rbtree_is_nil(rbtree, get_parent(y)))
-		_CMM_STORE_SHARED(rbtree->root, y);
+		C__CMM_STORE_SHARED(rbtree->root, y);
 	else if (get_pos(y) == IS_LEFT)
-		_CMM_STORE_SHARED(get_parent(y)->_left, y);
+		C__CMM_STORE_SHARED(get_parent(y)->_left, y);
 	else
-		_CMM_STORE_SHARED(get_parent(y)->_right, y);
+		C__CMM_STORE_SHARED(get_parent(y)->_right, y);
 
 	/* Point children to new copy (parent only used by updates/next/prev) */
 	set_parent(x->_left, get_decay(get_parent(x->_left)),
@@ -866,15 +874,15 @@ void right_rotate(struct rcu_rbtree *rbtree,
 	x->max_end = calculate_node_max_end(rbtree, x);
 	y->max_end = calculate_node_max_end(rbtree, y);
 
-	cmm_smp_wmb();	/* write into node before publish */
+	c_cmm_smp_wmb();	/* write into node before publish */
 
 	/* External references update (visible by readers) */
 	if (rcu_rbtree_is_nil(rbtree, get_parent(y)))
-		_CMM_STORE_SHARED(rbtree->root, y);
+		C__CMM_STORE_SHARED(rbtree->root, y);
 	else if (get_pos(y) == IS_RIGHT)
-		_CMM_STORE_SHARED(get_parent(y)->_right, y);
+		C__CMM_STORE_SHARED(get_parent(y)->_right, y);
 	else
-		_CMM_STORE_SHARED(get_parent(y)->_left, y);
+		C__CMM_STORE_SHARED(get_parent(y)->_left, y);
 
 	/* Point children to new copy (parent only used by updates/next/prev) */
 	set_parent(x->_right, get_decay(get_parent(x->_right)),
@@ -1049,30 +1057,30 @@ int rcu_rbtree_insert(struct rcu_rbtree *rbtree,
 		 * Order stores to z (children/parents) before stores
 		 * that will make it visible to the rest of the tree.
 		 */
-		cmm_smp_wmb();
-		_CMM_STORE_SHARED(rbtree->root, z);
+		c_cmm_smp_wmb();
+		C__CMM_STORE_SHARED(rbtree->root, z);
 	} else if (rbtree->comp(z->begin, y->begin) < 0) {
 		y = dup_decay_node(rbtree, y);
 		set_parent(z, y, IS_LEFT);
 		if (get_pos(z) == IS_LEFT)
-			_CMM_STORE_SHARED(y->_left, z);
+			C__CMM_STORE_SHARED(y->_left, z);
 		else
-			_CMM_STORE_SHARED(y->_right, z);
+			C__CMM_STORE_SHARED(y->_right, z);
 		populate_node_end(rbtree, y, 1, NULL);
 	} else {
 		y = dup_decay_node(rbtree, y);
 		set_parent(z, y, IS_RIGHT);
 		if (get_pos(z) == IS_LEFT)
-			_CMM_STORE_SHARED(y->_left, z);
+			C__CMM_STORE_SHARED(y->_left, z);
 		else
-			_CMM_STORE_SHARED(y->_right, z);
+			C__CMM_STORE_SHARED(y->_right, z);
 		populate_node_end(rbtree, y, 1, NULL);
 	}
 	rcu_rbtree_insert_fixup(rbtree, z);
 	/*
-	 * Make sure to commit all _CMM_STORE_SHARED() for non-coherent caches.
+	 * Make sure to commit all C__CMM_STORE_SHARED() for non-coherent caches.
 	 */
-	cmm_smp_wmc();
+	c_cmm_smp_wmc();
 	show_tree(rbtree);
 	check_max_end(rbtree, z);
 	check_max_end(rbtree, y);
@@ -1101,8 +1109,8 @@ void rcu_rbtree_transplant(struct rcu_rbtree *rbtree,
 	if (rcu_rbtree_is_nil(rbtree, get_parent(u))) {
 		/* pos is arbitrary for root node */
 		set_parent(v, get_parent(u), IS_RIGHT);
-		cmm_smp_wmb();	/* write into node before publish */
-		_CMM_STORE_SHARED(rbtree->root, v);
+		c_cmm_smp_wmb();	/* write into node before publish */
+		C__CMM_STORE_SHARED(rbtree->root, v);
 	} else {
 		struct rcu_rbtree_node *vp;
 
@@ -1111,9 +1119,9 @@ void rcu_rbtree_transplant(struct rcu_rbtree *rbtree,
 			vp = dup_decay_node(rbtree, vp);
 		set_parent(v, vp, get_pos(u));
 		if (get_pos(v) == IS_LEFT)
-			_CMM_STORE_SHARED(vp->_left, v);
+			C__CMM_STORE_SHARED(vp->_left, v);
 		else
-			_CMM_STORE_SHARED(vp->_right, v);
+			C__CMM_STORE_SHARED(vp->_right, v);
 		populate_node_end(rbtree, vp, copy_parents, stop);
 		check_max_end(rbtree, vp);
 	}
@@ -1349,9 +1357,9 @@ int rcu_rbtree_remove(struct rcu_rbtree *rbtree,
 	check_max_end(rbtree, x);
 	check_max_end(rbtree, get_decay(y));
 	/*
-	 * Commit all _CMM_STORE_SHARED().
+	 * Commit all C__CMM_STORE_SHARED().
 	 */
-	cmm_smp_wmc();
+	c_cmm_smp_wmc();
 #ifdef RBTREE_RCU_SUPPORT
 	rbtree->call_rcu(&z->head, _rcu_rbtree_free_node);
 #else

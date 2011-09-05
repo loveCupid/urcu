@@ -104,7 +104,7 @@ static unsigned long rduration;
 static unsigned long init_hash_size = DEFAULT_HASH_SIZE;
 static unsigned long init_populate;
 static unsigned long rand_pool = DEFAULT_RAND_POOL;
-static int add_only, add_unique;
+static int add_only, add_unique, no_mutex;
 
 static inline void loop_sleep(unsigned long l)
 {
@@ -176,6 +176,8 @@ void rcu_copy_mutex_lock(void)
 {
 	int ret;
 
+	if (no_mutex)
+		return;
 	ret = pthread_mutex_lock(&rcu_copy_mutex);
 	if (ret) {
 		perror("Error in pthread mutex lock");
@@ -187,6 +189,8 @@ void rcu_copy_mutex_unlock(void)
 {
 	int ret;
 
+	if (no_mutex)
+		return;
 	ret = pthread_mutex_unlock(&rcu_copy_mutex);
 	if (ret) {
 		perror("Error in pthread mutex unlock");
@@ -547,6 +551,7 @@ void show_usage(int argc, char **argv)
 	printf(" [-u] Uniquify add.");
 	printf(" [-i] Add only (no removal).");
 	printf(" [-k nr_nodes] Number of nodes to insert initially.");
+	printf(" [-l] No mutex.");
 	printf("\n");
 }
 
@@ -646,6 +651,9 @@ int main(int argc, char **argv)
 			break;
 		case 'k':
 			init_populate = atol(argv[++i]);
+			break;
+		case 'l':
+			no_mutex = 1;
 			break;
 		}
 	}

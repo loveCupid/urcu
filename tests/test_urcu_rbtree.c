@@ -678,6 +678,7 @@ int main(int argc, char **argv)
 		argv[0], duration, nr_readers, rduration, wduration,
 		nr_writers, wdelay, tot_reads, tot_writes,
 		tot_reads + tot_writes, global_items, nr_rand_items);
+	free_all_cpu_call_rcu_data();
 	free(tid_reader);
 	free(tid_writer);
 	free(count_reader);

@@ -89,31 +89,39 @@ Array of 8-bit values followed by array of associated pointers.
 64-bit: 1 byte + 113 bytes + 6 bytes pad + 113*8 = 1024 bytes
 
 
-- Type B: bitmap, followed by pointers array.
+- Type B: pools of values and pointers arrays
 
-bitmask (256 entries -> 256 bits -> 32 bytes) of populated children
-followed by an array of children pointers, in same order as appears in
-the bitmask
+Pools of values and pointers arrays. Each pool values array is 32-bytes
+in size (so it fits in a L1 cacheline). Each pool begins with an 8-bit
+integer, which is the number of children in this pool, followed by an
+array of 8-bit values, padding, and an array of pointers. Values and
+pointer arrays are associated as in Type A.
 
-+ Allows lookup failure to use 32-byte cache-line only. (1 cacheline)
-+ Allows lookup success to use 32-byte cache-line (bitmap),
-  followed by direct lookup into pointer array. (2 cachelines)
+The entries of a node are associated to their respective pool based
+on their index position.
 
-Filled at 8 entries 32-bit, 12 entries 64-bit
-32-bit: 32 + (4*8) ->  64 bytes
-64-bit: 32 + (8*12) ->  128 bytes
++ Allows lookup failure to use 1 32-byte cache-line only. (1 cacheline)
+  lookup success: 2 cache lines.
 
-Filled at 24 entries 32-bit, 28 entries 64-bit
-32-bit: 32 + (4*24) ->  128 bytes
-64-bit: 32 + (8*28) ->  256 bytes
++ Allows in-place updates without reallocation, except when a pool is
+  full. (this was not possible with bitmap-based nodes)
+- If one pool exhausts its space, we need to increase the node size.
+  Therefore, for very dense populations, we will end up using the
+  pigeon-hole node type sooner, thus consuming more space.
 
-Filled at 56 entries 32-bit, 60 entries 64-bit
-32-bit: 32 + (4*56) ->  256 bytes
-64-bit: 32 + (8*60) ->  512 bytes
+Pool configuration:
 
-Filled at 120 entries 32-bit, 124 entries 64-bit
-32-bit: 32 + (4*95) ->  512 bytes
-64-bit: 32 + (8*124) ->  1024 bytes
+Per pool, filled at 25 entries (32-bit), 28 entries (64-bit)
+32-bit: 1 byte + 25 bytes + 2 bytes pad + 25*4bytes = 128 bytes
+64-bit: 1 byte + 28 bytes + 3 bytes pad + 28*8 = 256 bytes
+
+Total up to 50 entries (32-bit), 56 entries (64-bit)
+2 pools: 32-bit = 256 bytes
+2 pools: 64-bit = 512 bytes
+
+Total up to 100 entries (32-bit), 112 entries (64-bit)
+4 pools: 32-bit = 512 bytes
+4 pools: 32-bit = 1024 bytes
 
 
 - Type C: pigeon-hole array
@@ -152,17 +160,18 @@ up to 6 children
 
 up to 12 children
 
-- Type B: bitmap, followed by pointers array.
-- 2 cache line hit for lookup success
 - 128 bytes storage
 
-up to 24 children
+up to 25 children
+
+- Type B: pool
 
 - 256 bytes storage
-up to 56 children
+
+up to 50 children
 
 - 512 bytes storage
-up to 120 children
+up to 100 children
 
 - Type C: pigeon-hole array
 - 1 cache line hit for lookup success
@@ -192,17 +201,17 @@ up to 7 children
 
 up to 14 children
 
-- Type B: bitmap, followed by pointers array.
-- 2 cache line hit for lookup success
 - 256 bytes storage
 
 up to 28 children
 
+- Type B: pool
+
 - 512 bytes storage
-up to 60 children
+up to 56 children
 
 - 1024 bytes storage
-up to 124 children
+up to 112 children
 
 - Type C: pigeon-hole array
 - 1 cache line hit for lookup success
@@ -224,14 +233,14 @@ Types of children:
 
 enum child_type {
 	RCU_JA_LINEAR = 0,	/* Type A */
-			/* 32-bit: 1 to 12 children, 8 to 64 bytes */
-			/* 64-bit: 1 to 14 children, 16 to 128 bytes */
-	RCU_JA_BITMAP = 1,	/* Type B */
-			/* 32-bit: 13 to 120 children, 128 to 512 bytes */
-			/* 64-bit: 15 to 124 children, 256 to 1024 bytes */
+			/* 32-bit: 1 to 25 children, 8 to 128 bytes */
+			/* 64-bit: 1 to 28 children, 16 to 256 bytes */
+	RCU_JA_POOL = 1,	/* Type B */
+			/* 32-bit: 26 to 100 children, 256 to 512 bytes */
+			/* 64-bit: 29 to 112 children, 512 to 1024 bytes */
 	RCU_JA_PIGEON = 2,	/* Type C */
-			/* 32-bit: 121 to 256 children, 1024 bytes */
-			/* 64-bit: 125 to 256 children, 2048 bytes */
+			/* 32-bit: 101 to 256 children, 1024 bytes */
+			/* 64-bit: 113 to 256 children, 2048 bytes */
 	/* Leaf nodes are implicit from their height in the tree */
 };
 

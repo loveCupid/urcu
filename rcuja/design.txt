@@ -223,16 +223,16 @@ least-significant bits.
 Types of children:
 
 enum child_type {
-	LINEAR = 0,	/* Type A */
-			/* 32-bit: 1 to 12 children, 32 to 64 bytes */
-			/* 64-bit: 1 to 14 children, 32 to 128 bytes */
-	BITMAP = 1,	/* Type B */
+	RCU_JA_LINEAR = 0,	/* Type A */
+			/* 32-bit: 1 to 12 children, 8 to 64 bytes */
+			/* 64-bit: 1 to 14 children, 16 to 128 bytes */
+	RCU_JA_BITMAP = 1,	/* Type B */
 			/* 32-bit: 13 to 120 children, 128 to 512 bytes */
 			/* 64-bit: 15 to 124 children, 256 to 1024 bytes */
-	PIGEON = 2,	/* Type C */
+	RCU_JA_PIGEON = 2,	/* Type C */
 			/* 32-bit: 121 to 256 children, 1024 bytes */
 			/* 64-bit: 125 to 256 children, 2048 bytes */
-	LEAF   = 3,	/* Leaf node */
+	/* Leaf nodes are implicit from their height in the tree */
 };
 
 If entire pointer is NULL, children is empty.

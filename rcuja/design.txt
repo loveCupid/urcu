@@ -124,6 +124,69 @@ Total up to 100 entries (32-bit), 112 entries (64-bit)
 4 pools: 32-bit = 1024 bytes
 
 
+* Choice of pool configuration distribution:
+
+We have pools of either 2 or 4 linear arrays. Their total size is
+between 256 bytes (32-bit 2 arrays) and 1024 bytes (64-bit 4 arrays).
+
+Alignment on 256 bytes means that we can spare the 8 least significant
+bits of the pointers. Given that the type selection already uses 3 bits,
+we have 7 bits left.
+
+Alignment on 512 bytes -> 8 bits left.
+
+We can therefore encode which bit, or which two bits, are used as
+distribution selection. We can use this technique to reequilibrate pools
+if they become unbalanced (e.g. all children are within one of the two
+linear arrays).
+
+Assuming that finding the exact sub-pool usage maximum for any given
+distribution is NP complete (not proven).
+
+Taking into account unbalance ratios (tested programmatically by
+randomly taking N entries from 256, calculating the distribution for
+each bit (number of nodes for which bit is one/zero), and calculating
+the difference in number of nodes for each bit, choosing the minimum
+difference -- for millions of runs).
+
+tot entries   unbalance       largest linear array (stat. approx.)
+---------------------------------------------------------------------
+41 entries:       9                   20.5+4.5=25 (target ~50/2=25)
+47 entries:       9                   23.5+4.5=28 (target ~56/2=28)
+
+Note: there exists rare worse cases where the unbalance is larger, but
+it happens _very_ rarely. But need to provide a fallback if the subclass
+does not fit, but it does not need to be efficient.
+
+
+For pool of size 4, we need to approximate what is the maximum unbalance
+we can get for choice of distributions grouped by pairs of bits.
+
+tot entries     unbalance     largest linear array (stat. approx.)
+---------------------------------------------------------------------
+80 entries:        20              20+5=25  (target: ~100/4=25)
+90 entries:        22              22.5+5.5=28  (target: ~112/4=28)
+
+
+Note: there exists rare worse cases where the unbalance is larger, but
+it happens _very_ rarely. But need to provide a fallback if the subclass
+does not fit, but it does not need to be efficient.
+
+
+* Population "does not fit" and distribution fallback
+
+When adding a child to a distribution node, if the child does not fit,
+we recalculate the best distribution. If it does not fit in that
+distribution neither, we need to expand the node type.
+
+When removing a child, if the node child count is brought to the number
+of entries expected to statistically fit in the lower order node, we try
+to shrink. However, if we notice that the distribution does not actually
+fit in that shrinked node, we abort the shrink operation. If shrink
+fails, we keep a counter of insertion/removal operations on the node
+before we allow the shrink to be attempted again.
+
+
 - Type C: pigeon-hole array
 
 Filled at 47.2%/48.8% or more (32-bit: 121 entries+, 64-bit: 125 entries+)

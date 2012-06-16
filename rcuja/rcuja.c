@@ -72,6 +72,12 @@ struct rcu_ja_type {
  * The node the index within the following arrays is represented on 3
  * bits. It identifies the node type, min/max number of children, and
  * the size order.
+ * The max_child values for the RCU_JA_POOL below result from
+ * statistical approximation: over million populations, the max_child
+ * covers between 97% and 99% of the populations generated. Therefore, a
+ * fallback should exist to cover the rare extreme population unbalance
+ * cases, but it will not have a major impact on speed nor space
+ * consumption, since those are rare cases.
  */
 
 #if (CAA_BITS_PER_LONG < 64)
@@ -84,11 +90,14 @@ const struct rcu_ja_type ja_types[] = {
 	{ .type_class = RCU_JA_LINEAR, .min_child = 10, .max_child = 25, .order = 7, },
 
 	/* Pools may fill sooner than max_child */
-	{ .type_class = RCU_JA_POOL, .min_child = 20, .max_child = 50, .order = 8, .nr_pool_order = 1, .pool_size_order = 7, },
-	{ .type_class = RCU_JA_POOL, .min_child = 42, .max_child = 100, .order = 9, .nr_pool_order = 2, .pool_size_order = 7, },
+	{ .type_class = RCU_JA_POOL, .min_child = 20, .max_child = 48, .order = 8, .nr_pool_order = 1, .pool_size_order = 7, },
+	{ .type_class = RCU_JA_POOL, .min_child = 45, .max_child = 92, .order = 9, .nr_pool_order = 2, .pool_size_order = 7, },
 
-	/* TODO: Upon downsize, if at least one pool is filled, we need to keep pigeon */
-	{ .type_class = RCU_JA_PIGEON, .min_child = 90, .max_child = 256, .order = 10, },
+	/*
+	 * TODO: Upon node removal below min_child, if child pool is
+	 * filled beyond capacity, we need to roll back to pigeon.
+	 */
+	{ .type_class = RCU_JA_PIGEON, .min_child = 89, .max_child = 256, .order = 10, },
 };
 CAA_BUILD_BUG_ON(CAA_ARRAY_SIZE(ja_types) > JA_TYPE_MAX_NR);
 #else /* !(CAA_BITS_PER_LONG < 64) */
@@ -100,12 +109,15 @@ const struct rcu_ja_type ja_types[] = {
 	{ .type_class = RCU_JA_LINEAR, .min_child = 5, .max_child = 14, .order = 7, },
 	{ .type_class = RCU_JA_LINEAR, .min_child = 10, .max_child = 28, .order = 8, },
 
-	/* Pools may fill sooner than max_child */
-	{ .type_class = RCU_JA_POOL, .min_child = 22, .max_child = 56, .order = 9, .nr_pool_order = 1, .pool_size_order = 8, },
-	{ .type_class = RCU_JA_POOL, .min_child = 44, .max_child = 112, .order = 10, .nr_pool_order = 2, .pool_size_order = 8, },
+	/* Pools may fill sooner than max_child. */
+	{ .type_class = RCU_JA_POOL, .min_child = 22, .max_child = 54, .order = 9, .nr_pool_order = 1, .pool_size_order = 8, },
+	{ .type_class = RCU_JA_POOL, .min_child = 51, .max_child = 104, .order = 10, .nr_pool_order = 2, .pool_size_order = 8, },
 
-	/* TODO: Upon downsize, if at least one pool is filled, we need to keep pigeon */
-	{ .type_class = RCU_JA_PIGEON, .min_child = 100, .max_child = 256, .order = 11, },
+	/*
+	 * TODO: Upon node removal below min_child, if child pool is
+	 * filled beyond capacity, we need to roll back to pigeon.
+	 */
+	{ .type_class = RCU_JA_PIGEON, .min_child = 101, .max_child = 256, .order = 11, },
 };
 CAA_BUILD_BUG_ON(CAA_ARRAY_SIZE(ja_types) > JA_TYPE_MAX_NR);
 #endif /* !(BITS_PER_LONG < 64) */
@@ -210,7 +222,7 @@ struct rcu_ja_node_flag *ja_pool_node_get_nth(const struct rcu_ja_type *type,
 
 	assert(type->type_class == RCU_JA_POOL);
 	linear = (struct rcu_ja_node *)
-		&node->data[(n >> (CHAR_BIT - type->nr_pool_order)) << type->pool_size_order];
+		&node->data[((unsigned long) n >> (CHAR_BIT - type->nr_pool_order)) << type->pool_size_order];
 	return ja_linear_node_get_nth(NULL, linear, n);
 }
 

@@ -21,12 +21,9 @@
  */
 
 /*
- * This program generates random populations, and shows the worse-case
- * unbalance, as well as the distribution of unbalance encountered.
- * Remember that the unbalance is the delta between the lowest and
- * largest population. Therefore, to get the delta between the subclass
- * size and the actual number of items, we need to divide the unbalance
- * by the number of subclasses (by hand).
+ * This program generates random populations, and shows the largest
+ * sub-class generated, as well as the distribution of sub-class size
+ * for the largest sub-class of each population.
  */
 
 #include <stdio.h>
@@ -45,9 +42,9 @@ static uint8_t pool[256];
 static uint8_t nr_one[8];
 static uint8_t nr_2d_11[8][8];
 static uint8_t nr_2d_10[8][8];
-static int global_max_minunbalance = 0;
+static int global_max_minsubclass_len = 0;
 
-static unsigned int unbalance_distrib[256];
+static unsigned int subclass_len_distrib[256];
 
 static
 uint8_t random_char(void)
@@ -147,7 +144,7 @@ void print_count(void)
 static
 void stat_count(void)
 {
-	int minunbalance = INT_MAX;
+	int minsubclass_len = INT_MAX;
 
 	if (nr_distrib == 2) {
 		int i;
@@ -158,8 +155,8 @@ void stat_count(void)
 			diff = (int) nr_one[i] * 2 - sel_pool_len;
 			if (diff < 0)
 				diff = -diff;
-			if (diff < minunbalance) {
-				minunbalance = diff;
+			if ((diff >> 1) < minsubclass_len) {
+				minsubclass_len = diff >> 1;
 			}
 		}
 	}
@@ -181,17 +178,17 @@ void stat_count(void)
 				/* Get max linear array size */
 				if (diff[1] > diff[0])
 					diff[0] = diff[1];
-				if (diff[0] < minunbalance) {
-					minunbalance = diff[0];
+				if ((diff[0] >> 2) < minsubclass_len) {
+					minsubclass_len = diff[0] >> 2;
 				}
 			}
 		}
 	}
 
-	if (minunbalance > global_max_minunbalance) {
-		global_max_minunbalance = minunbalance;
+	if (minsubclass_len > global_max_minsubclass_len) {
+		global_max_minsubclass_len = minsubclass_len;
 	}
-	unbalance_distrib[minunbalance]++;
+	subclass_len_distrib[minsubclass_len]++;
 }
 
 static
@@ -201,15 +198,15 @@ void print_distrib(void)
 	unsigned long long tot = 0;
 
 	for (i = 0; i < 256; i++) {
-		tot += unbalance_distrib[i];
+		tot += subclass_len_distrib[i];
 	}
 	if (tot == 0)
 		return;
 	printf("Distribution:\n");
 	for (i = 0; i < 256; i++) {
 		printf("(%u, %u, %llu%%) ",
-			i, unbalance_distrib[i],
-			100 * (unsigned long long) unbalance_distrib[i] / tot);
+			i, subclass_len_distrib[i],
+			100 * (unsigned long long) subclass_len_distrib[i] / tot);
 	}
 	printf("\n");
 }
@@ -217,8 +214,8 @@ void print_distrib(void)
 static
 void print_stat(uint64_t i)
 {
-	printf("after %llu pools, global_max_minunbalance: %d\n",
-		(unsigned long long) i, global_max_minunbalance);
+	printf("after %llu pools, global_max_minsubclass_len extra: %d\n",
+		(unsigned long long) i, global_max_minsubclass_len);
 	print_distrib();
 }
 

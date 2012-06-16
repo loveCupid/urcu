@@ -143,16 +143,19 @@ linear arrays).
 Assuming that finding the exact sub-pool usage maximum for any given
 distribution is NP complete (not proven).
 
-Taking into account unbalance ratios (tested programmatically by
+Taking into account sub-class size unbalance (tested programmatically by
 randomly taking N entries from 256, calculating the distribution for
 each bit (number of nodes for which bit is one/zero), and calculating
 the difference in number of nodes for each bit, choosing the minimum
 difference -- for millions of runs).
 
-tot entries   unbalance       largest linear array (stat. approx.)
+We start from the "ideal" population size (with no unbalance), and do a
+fixed point to find the appropriate population size.
+
+tot entries    subclass extra items       largest linear array (stat. approx.)
 ---------------------------------------------------------------------
-48 entries:      2 (98%)              24+1=25 (target ~50/2=25)
-54 entries:      2 (97%)              27+1=28 (target ~56/2=28)
+48 entries:      1 (98%)                  24+1=25 (target ~50/2=25)
+54 entries:      1 (97%)                  27+1=28 (target ~56/2=28)
 
 Note: there exists rare worse cases where the unbalance is larger, but
 it happens _very_ rarely. But need to provide a fallback if the subclass
@@ -162,10 +165,10 @@ does not fit, but it does not need to be efficient.
 For pool of size 4, we need to approximate what is the maximum unbalance
 we can get for choice of distributions grouped by pairs of bits.
 
-tot entries     unbalance     largest linear array (stat. approx.)
+tot entries     subclass extra items   largest linear array (stat. approx.)
 ---------------------------------------------------------------------
-92 entries:      8 (99%)             23+2=25  (target: ~100/4=25)
-104 entries:     8 (99%)             26+2=28  (target: ~112/4=28)
+92 entries:      2 (99%)                23+2=25  (target: ~100/4=25)
+104 entries:     2 (99%)                26+2=28  (target: ~112/4=28)
 
 
 Note: there exists rare worse cases where the unbalance is larger, but

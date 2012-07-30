@@ -40,6 +40,7 @@ enum rcu_ja_type_class {
 			/* 32-bit: 101 to 256 children, 1024 bytes */
 			/* 64-bit: 113 to 256 children, 2048 bytes */
 	/* Leaf nodes are implicit from their height in the tree */
+	RCU_JA_NR_TYPES,
 };
 
 struct rcu_ja_type {
@@ -82,64 +83,139 @@ struct rcu_ja_type {
 
 #if (CAA_BITS_PER_LONG < 64)
 /* 32-bit pointers */
+enum {
+	ja_type_0_max_child = 1,
+	ja_type_1_max_child = 3,
+	ja_type_2_max_child = 6,
+	ja_type_3_max_child = 12,
+	ja_type_4_max_child = 25,
+	ja_type_5_max_child = 48,
+	ja_type_6_max_child = 92,
+	ja_type_7_max_child = 256,
+};
+
+enum {
+	ja_type_5_nr_pool_order = 1,
+	ja_type_6_nr_pool_order = 2,
+};
+
 const struct rcu_ja_type ja_types[] = {
-	{ .type_class = RCU_JA_LINEAR, .min_child = 1, .max_child = 1, .order = 3, },
-	{ .type_class = RCU_JA_LINEAR, .min_child = 1, .max_child = 3, .order = 4, },
-	{ .type_class = RCU_JA_LINEAR, .min_child = 3, .max_child = 6, .order = 5, },
-	{ .type_class = RCU_JA_LINEAR, .min_child = 4, .max_child = 12, .order = 6, },
-	{ .type_class = RCU_JA_LINEAR, .min_child = 10, .max_child = 25, .order = 7, },
+	{ .type_class = RCU_JA_LINEAR, .min_child = 1, .max_child = ja_type_0_max_child, .order = 3, },
+	{ .type_class = RCU_JA_LINEAR, .min_child = 1, .max_child = ja_type_1_max_child, .order = 4, },
+	{ .type_class = RCU_JA_LINEAR, .min_child = 3, .max_child = ja_type_2_max_child, .order = 5, },
+	{ .type_class = RCU_JA_LINEAR, .min_child = 4, .max_child = ja_type_3_max_child, .order = 6, },
+	{ .type_class = RCU_JA_LINEAR, .min_child = 10, .max_child = ja_type_4_max_child, .order = 7, },
 
 	/* Pools may fill sooner than max_child */
-	{ .type_class = RCU_JA_POOL, .min_child = 20, .max_child = 48, .order = 8, .nr_pool_order = 1, .pool_size_order = 7, },
-	{ .type_class = RCU_JA_POOL, .min_child = 45, .max_child = 92, .order = 9, .nr_pool_order = 2, .pool_size_order = 7, },
+	{ .type_class = RCU_JA_POOL, .min_child = 20, .max_child = ja_type_5_max_child, .order = 8, .nr_pool_order = ja_type_5_nr_pool_order, .pool_size_order = 7, },
+	{ .type_class = RCU_JA_POOL, .min_child = 45, .max_child = ja_type_6_max_child, .order = 9, .nr_pool_order = ja_type_6_nr_pool_order, .pool_size_order = 7, },
 
 	/*
 	 * TODO: Upon node removal below min_child, if child pool is
 	 * filled beyond capacity, we need to roll back to pigeon.
 	 */
-	{ .type_class = RCU_JA_PIGEON, .min_child = 89, .max_child = 256, .order = 10, },
+	{ .type_class = RCU_JA_PIGEON, .min_child = 89, .max_child = ja_type_7_max_child, .order = 10, },
 };
-CAA_BUILD_BUG_ON(CAA_ARRAY_SIZE(ja_types) > JA_TYPE_MAX_NR);
 #else /* !(CAA_BITS_PER_LONG < 64) */
 /* 64-bit pointers */
+enum {
+	ja_type_0_max_child = 1,
+	ja_type_1_max_child = 3,
+	ja_type_2_max_child = 7,
+	ja_type_3_max_child = 14,
+	ja_type_4_max_child = 28,
+	ja_type_5_max_child = 54,
+	ja_type_6_max_child = 104,
+	ja_type_7_max_child = 256,
+};
+
+enum {
+	ja_type_5_nr_pool_order = 1,
+	ja_type_6_nr_pool_order = 2,
+};
+
 const struct rcu_ja_type ja_types[] = {
-	{ .type_class = RCU_JA_LINEAR, .min_child = 1, .max_child = 1, .order = 4, },
-	{ .type_class = RCU_JA_LINEAR, .min_child = 1, .max_child = 3, .order = 5, },
-	{ .type_class = RCU_JA_LINEAR, .min_child = 3, .max_child = 7, .order = 6, },
-	{ .type_class = RCU_JA_LINEAR, .min_child = 5, .max_child = 14, .order = 7, },
-	{ .type_class = RCU_JA_LINEAR, .min_child = 10, .max_child = 28, .order = 8, },
+	{ .type_class = RCU_JA_LINEAR, .min_child = 1, .max_child = ja_type_0_max_child, .order = 4, },
+	{ .type_class = RCU_JA_LINEAR, .min_child = 1, .max_child = ja_type_1_max_child, .order = 5, },
+	{ .type_class = RCU_JA_LINEAR, .min_child = 3, .max_child = ja_type_2_max_child, .order = 6, },
+	{ .type_class = RCU_JA_LINEAR, .min_child = 5, .max_child = ja_type_3_max_child, .order = 7, },
+	{ .type_class = RCU_JA_LINEAR, .min_child = 10, .max_child = ja_type_4_max_child, .order = 8, },
 
 	/* Pools may fill sooner than max_child. */
-	{ .type_class = RCU_JA_POOL, .min_child = 22, .max_child = 54, .order = 9, .nr_pool_order = 1, .pool_size_order = 8, },
-	{ .type_class = RCU_JA_POOL, .min_child = 51, .max_child = 104, .order = 10, .nr_pool_order = 2, .pool_size_order = 8, },
+	{ .type_class = RCU_JA_POOL, .min_child = 22, .max_child = ja_type_5_max_child, .order = 9, .nr_pool_order = ja_type_5_nr_pool_order, .pool_size_order = 8, },
+	{ .type_class = RCU_JA_POOL, .min_child = 51, .max_child = ja_type_6_max_child, .order = 10, .nr_pool_order = ja_type_6_nr_pool_order, .pool_size_order = 8, },
 
 	/*
 	 * TODO: Upon node removal below min_child, if child pool is
 	 * filled beyond capacity, we need to roll back to pigeon.
 	 */
-	{ .type_class = RCU_JA_PIGEON, .min_child = 101, .max_child = 256, .order = 11, },
+	{ .type_class = RCU_JA_PIGEON, .min_child = 101, .max_child = ja_type_7_max_child, .order = 11, },
 };
-CAA_BUILD_BUG_ON(CAA_ARRAY_SIZE(ja_types) > JA_TYPE_MAX_NR);
 #endif /* !(BITS_PER_LONG < 64) */
 
-/*
- * The rcu_ja_node starts with a byte counting the number of children in
- * the node. Then, the node-specific data is placed.
- * TODO: where should we put the mutex for the node ?
- *  -> mutex could be a 0-value node count.
- * TODO: where do we keep nr children for pigeon ?
- */
-struct rcu_ja_node {
-	char data[];
-};
+static inline __attribute__((unused))
+void static_array_size_check(void)
+{
+	CAA_BUILD_BUG_ON(CAA_ARRAY_SIZE(ja_types) > JA_TYPE_MAX_NR);
+}
 
 /* Never declared. Opaque type used to store flagged node pointers. */
 struct rcu_ja_node_flag;
 
+/*
+ * The rcu_ja_node contains the compressed node data needed for
+ * read-side. For linear and pool node configurations, it starts with a
+ * byte counting the number of children in the node.  Then, the
+ * node-specific data is placed.
+ * The node mutex, if any is needed, protecting concurrent updated of
+ * each node is placed in a separate hash table indexed by node address.
+ * For the pigeon configuration, the number of children is also kept in
+ * a separate hash table, indexed by node address, because it is only
+ * required for updates.
+ */
+
+#define DECLARE_LINEAR_NODE(index)									\
+		struct {										\
+			uint8_t nr_child;								\
+			uint8_t child_value[ja_type_## index ##_max_child];				\
+			struct rcu_ja_node_flag *child_ptr[ja_type_## index ##_max_child];			\
+		}
+
+#define DECLARE_POOL_NODE(index)									\
+		struct {										\
+			struct {									\
+				uint8_t nr_child;							\
+				uint8_t child_value[ja_type_## index ##_max_child >> ja_type_## index ##_nr_pool_order]; \
+				struct rcu_ja_node_flag *child_ptr[ja_type_## index ##_max_child >> ja_type_## index ##_nr_pool_order]; \
+			} linear[1U << ja_type_## index ##_nr_pool_order];				\
+		}
+
+struct rcu_ja_node {
+	union {
+		/* Linear configuration */
+		DECLARE_LINEAR_NODE(0) conf_0;
+		DECLARE_LINEAR_NODE(1) conf_1;
+		DECLARE_LINEAR_NODE(2) conf_2;
+		DECLARE_LINEAR_NODE(3) conf_3;
+		DECLARE_LINEAR_NODE(4) conf_4;
+
+		/* Pool configuration */
+		DECLARE_POOL_NODE(5) conf_5;
+		DECLARE_POOL_NODE(6) conf_6;
+
+		/* Pigeon configuration */
+		struct {
+			struct rcu_ja_node_flag *child[ja_type_7_max_child];
+		} conf_7;
+		/* data aliasing nodes for computed accesses */
+		uint8_t data[sizeof(struct rcu_ja_node_flag *) * ja_type_7_max_child];
+	} u;
+};
+
 static
 struct rcu_ja_node_flag *ja_node_flag(struct rcu_ja_node *node, unsigned int type)
 {
-	assert(type < JA_TYPE_NR);
+	assert(type < RCU_JA_NR_TYPES);
 	return (struct rcu_ja_node_flag *) (((unsigned long) node) | type);
 }
 
@@ -149,7 +225,7 @@ unsigned int ja_node_type(struct rcu_ja_node_flag *node)
 	unsigned int type;
 
 	type = (unsigned int) ((unsigned long) node & JA_TYPE_MASK);
-	assert(type < JA_TYPE_NR);
+	assert(type < RCU_JA_NR_TYPES);
 	return type;
 }
 
@@ -161,7 +237,7 @@ struct rcu_ja_node *ja_node_ptr(struct rcu_ja_node_flag *node)
 
 struct rcu_ja_node *alloc_rcu_ja_node(struct rcu_ja_type *ja_type)
 {
-	return zmalloc(1 << ja_type->node_order);
+	return calloc(1U << ja_type->order, sizeof(char));
 }
 
 void free_rcu_ja_node(struct rcu_ja_node *node)
@@ -175,9 +251,9 @@ void free_rcu_ja_node(struct rcu_ja_node *node)
 #define JA_FLOOR(v, align)		__JA_FLOOR_MASK(v, (typeof(v)) (align) - 1)
 
 static
-char *align_ptr_size(char *ptr)
+uint8_t *align_ptr_size(uint8_t *ptr)
 {
-	return JA_ALIGN(ptr, sizeof(ptr));
+	return (uint8_t *) JA_ALIGN((unsigned long) ptr, sizeof(void *));
 }
 
 static
@@ -187,18 +263,18 @@ struct rcu_ja_node_flag *ja_linear_node_get_nth(const struct rcu_ja_type *type,
 {
 	uint8_t nr_child;
 	uint8_t *values;
-	struct rcu_ja_node_flag *pointers;
+	struct rcu_ja_node_flag **pointers;
 	struct rcu_ja_node_flag *ptr;
 	unsigned int i;
 
 	assert(!type || type->type_class == RCU_JA_LINEAR);
 
-	nr_child = node->data[0];
+	nr_child = node->u.data[0];
 	cmm_smp_rmb();	/* read nr_child before values */
 	assert(!type || nr_child <= type->max_child);
 	assert(!type || nr_child >= type->min_child);
 
-	values = &node[1];
+	values = &node->u.data[1];
 	for (i = 0; i < nr_child; i++) {
 		if (values[i] == n)
 			break;
@@ -206,7 +282,7 @@ struct rcu_ja_node_flag *ja_linear_node_get_nth(const struct rcu_ja_type *type,
 	if (i >= nr_child)
 		return NULL;
 	cmm_smp_rmb();	/* read values before pointer */
-	pointers = align_ptr_size(&values[nr_child]);
+	pointers = (struct rcu_ja_node_flag **) align_ptr_size(&values[nr_child]);
 	ptr = pointers[i];
 	assert(ja_node_ptr(ptr) != NULL);
 	return ptr;
@@ -217,12 +293,11 @@ struct rcu_ja_node_flag *ja_pool_node_get_nth(const struct rcu_ja_type *type,
 					struct rcu_ja_node *node,
 					uint8_t n)
 {
-	struct rcu_ja_node_flag *ptr;
 	struct rcu_ja_node *linear;
 
 	assert(type->type_class == RCU_JA_POOL);
 	linear = (struct rcu_ja_node *)
-		&node->data[((unsigned long) n >> (CHAR_BIT - type->nr_pool_order)) << type->pool_size_order];
+		&node->u.data[((unsigned long) n >> (CHAR_BIT - type->nr_pool_order)) << type->pool_size_order];
 	return ja_linear_node_get_nth(NULL, linear, n);
 }
 
@@ -232,7 +307,7 @@ struct rcu_ja_node_flag *ja_pigeon_node_get_nth(const struct rcu_ja_type *type,
 					uint8_t n)
 {
 	assert(type->type_class == RCU_JA_PIGEON);
-	return ((struct rcu_ja_node_flag *) node->data)[n];
+	return ((struct rcu_ja_node_flag **) node->u.data)[n];
 }
 
 /* ja_node_get_nth: get nth item from a node */

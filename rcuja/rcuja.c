@@ -21,11 +21,14 @@
  */
 
 #include <stdint.h>
+#include <errno.h>
 #include <limits.h>
 #include <urcu/rcuja.h>
 #include <urcu/compiler.h>
 #include <urcu/arch.h>
 #include <assert.h>
+#include <urcu-pointer.h>
+
 #include "rcuja-internal.h"
 #include "bitfield.h"
 
@@ -45,9 +48,10 @@ enum rcu_ja_type_class {
 
 struct rcu_ja_type {
 	enum rcu_ja_type_class type_class;
-	uint16_t min_child;	/* minimum number of children: 1 to 256 */
-	uint16_t max_child;	/* maximum number of children: 1 to 256 */
-	uint16_t order;		/* node size is (1 << order), in bytes */
+	uint16_t min_child;		/* minimum number of children: 1 to 256 */
+	uint16_t max_child;		/* maximum number of children: 1 to 256 */
+	uint16_t max_linear_child;	/* per-pool max nr. children: 1 to 256 */
+	uint16_t order;			/* node size is (1 << order), in bytes */
 	uint16_t nr_pool_order;		/* number of pools */
 	uint16_t pool_size_order;	/* pool size */
 };
@@ -95,20 +99,30 @@ enum {
 };
 
 enum {
+	ja_type_0_max_linear_child = 1,
+	ja_type_1_max_linear_child = 3,
+	ja_type_2_max_linear_child = 6,
+	ja_type_3_max_linear_child = 12,
+	ja_type_4_max_linear_child = 25,
+	ja_type_5_max_linear_child = 24,
+	ja_type_6_max_linear_child = 23,
+};
+
+enum {
 	ja_type_5_nr_pool_order = 1,
 	ja_type_6_nr_pool_order = 2,
 };
 
 const struct rcu_ja_type ja_types[] = {
-	{ .type_class = RCU_JA_LINEAR, .min_child = 1, .max_child = ja_type_0_max_child, .order = 3, },
-	{ .type_class = RCU_JA_LINEAR, .min_child = 1, .max_child = ja_type_1_max_child, .order = 4, },
-	{ .type_class = RCU_JA_LINEAR, .min_child = 3, .max_child = ja_type_2_max_child, .order = 5, },
-	{ .type_class = RCU_JA_LINEAR, .min_child = 4, .max_child = ja_type_3_max_child, .order = 6, },
-	{ .type_class = RCU_JA_LINEAR, .min_child = 10, .max_child = ja_type_4_max_child, .order = 7, },
+	{ .type_class = RCU_JA_LINEAR, .min_child = 1, .max_child = ja_type_0_max_child, .max_linear_child = ja_type_0_max_linear_child, .order = 3, },
+	{ .type_class = RCU_JA_LINEAR, .min_child = 1, .max_child = ja_type_1_max_child, .max_linear_child = ja_type_1_max_linear_child, .order = 4, },
+	{ .type_class = RCU_JA_LINEAR, .min_child = 3, .max_child = ja_type_2_max_child, .max_linear_child = ja_type_2_max_linear_child, .order = 5, },
+	{ .type_class = RCU_JA_LINEAR, .min_child = 4, .max_child = ja_type_3_max_child, .max_linear_child = ja_type_3_max_linear_child, .order = 6, },
+	{ .type_class = RCU_JA_LINEAR, .min_child = 10, .max_child = ja_type_4_max_child, .max_linear_child = ja_type_4_max_linear_child, .order = 7, },
 
 	/* Pools may fill sooner than max_child */
-	{ .type_class = RCU_JA_POOL, .min_child = 20, .max_child = ja_type_5_max_child, .order = 8, .nr_pool_order = ja_type_5_nr_pool_order, .pool_size_order = 7, },
-	{ .type_class = RCU_JA_POOL, .min_child = 45, .max_child = ja_type_6_max_child, .order = 9, .nr_pool_order = ja_type_6_nr_pool_order, .pool_size_order = 7, },
+	{ .type_class = RCU_JA_POOL, .min_child = 20, .max_child = ja_type_5_max_child, .max_linear_child = ja_type_5_max_linear_child, .order = 8, .nr_pool_order = ja_type_5_nr_pool_order, .pool_size_order = 7, },
+	{ .type_class = RCU_JA_POOL, .min_child = 45, .max_child = ja_type_6_max_child, .max_linear_child = ja_type_6_max_linear_child, .order = 9, .nr_pool_order = ja_type_6_nr_pool_order, .pool_size_order = 7, },
 
 	/*
 	 * TODO: Upon node removal below min_child, if child pool is
@@ -130,20 +144,30 @@ enum {
 };
 
 enum {
+	ja_type_0_max_linear_child = 1,
+	ja_type_1_max_linear_child = 3,
+	ja_type_2_max_linear_child = 7,
+	ja_type_3_max_linear_child = 14,
+	ja_type_4_max_linear_child = 28,
+	ja_type_5_max_linear_child = 27,
+	ja_type_6_max_linear_child = 26,
+};
+
+enum {
 	ja_type_5_nr_pool_order = 1,
 	ja_type_6_nr_pool_order = 2,
 };
 
 const struct rcu_ja_type ja_types[] = {
-	{ .type_class = RCU_JA_LINEAR, .min_child = 1, .max_child = ja_type_0_max_child, .order = 4, },
-	{ .type_class = RCU_JA_LINEAR, .min_child = 1, .max_child = ja_type_1_max_child, .order = 5, },
-	{ .type_class = RCU_JA_LINEAR, .min_child = 3, .max_child = ja_type_2_max_child, .order = 6, },
-	{ .type_class = RCU_JA_LINEAR, .min_child = 5, .max_child = ja_type_3_max_child, .order = 7, },
-	{ .type_class = RCU_JA_LINEAR, .min_child = 10, .max_child = ja_type_4_max_child, .order = 8, },
+	{ .type_class = RCU_JA_LINEAR, .min_child = 1, .max_child = ja_type_0_max_child, .max_linear_child = ja_type_0_max_linear_child, .order = 4, },
+	{ .type_class = RCU_JA_LINEAR, .min_child = 1, .max_child = ja_type_1_max_child, .max_linear_child = ja_type_1_max_linear_child, .order = 5, },
+	{ .type_class = RCU_JA_LINEAR, .min_child = 3, .max_child = ja_type_2_max_child, .max_linear_child = ja_type_2_max_linear_child, .order = 6, },
+	{ .type_class = RCU_JA_LINEAR, .min_child = 5, .max_child = ja_type_3_max_child, .max_linear_child = ja_type_3_max_linear_child, .order = 7, },
+	{ .type_class = RCU_JA_LINEAR, .min_child = 10, .max_child = ja_type_4_max_child, .max_linear_child = ja_type_4_max_linear_child, .order = 8, },
 
 	/* Pools may fill sooner than max_child. */
-	{ .type_class = RCU_JA_POOL, .min_child = 22, .max_child = ja_type_5_max_child, .order = 9, .nr_pool_order = ja_type_5_nr_pool_order, .pool_size_order = 8, },
-	{ .type_class = RCU_JA_POOL, .min_child = 51, .max_child = ja_type_6_max_child, .order = 10, .nr_pool_order = ja_type_6_nr_pool_order, .pool_size_order = 8, },
+	{ .type_class = RCU_JA_POOL, .min_child = 22, .max_child = ja_type_5_max_child, .max_linear_child = ja_type_5_max_linear_child, .order = 9, .nr_pool_order = ja_type_5_nr_pool_order, .pool_size_order = 8, },
+	{ .type_class = RCU_JA_POOL, .min_child = 51, .max_child = ja_type_6_max_child, .max_linear_child = ja_type_6_max_linear_child, .order = 10, .nr_pool_order = ja_type_6_nr_pool_order, .pool_size_order = 8, },
 
 	/*
 	 * TODO: Upon node removal below min_child, if child pool is
@@ -177,16 +201,16 @@ struct rcu_ja_node_flag;
 #define DECLARE_LINEAR_NODE(index)									\
 		struct {										\
 			uint8_t nr_child;								\
-			uint8_t child_value[ja_type_## index ##_max_child];				\
-			struct rcu_ja_node_flag *child_ptr[ja_type_## index ##_max_child];			\
+			uint8_t child_value[ja_type_## index ##_max_linear_child];			\
+			struct rcu_ja_node_flag *child_ptr[ja_type_## index ##_max_linear_child];	\
 		}
 
 #define DECLARE_POOL_NODE(index)									\
 		struct {										\
 			struct {									\
 				uint8_t nr_child;							\
-				uint8_t child_value[ja_type_## index ##_max_child >> ja_type_## index ##_nr_pool_order]; \
-				struct rcu_ja_node_flag *child_ptr[ja_type_## index ##_max_child >> ja_type_## index ##_nr_pool_order]; \
+				uint8_t child_value[ja_type_## index ##_max_linear_child]; \
+				struct rcu_ja_node_flag *child_ptr[ja_type_## index ##_max_linear_child]; \
 			} linear[1U << ja_type_## index ##_nr_pool_order];				\
 		}
 
@@ -213,7 +237,8 @@ struct rcu_ja_node {
 };
 
 static
-struct rcu_ja_node_flag *ja_node_flag(struct rcu_ja_node *node, unsigned int type)
+struct rcu_ja_node_flag *ja_node_flag(struct rcu_ja_node *node,
+		unsigned int type)
 {
 	assert(type < RCU_JA_NR_TYPES);
 	return (struct rcu_ja_node_flag *) (((unsigned long) node) | type);
@@ -258,8 +283,8 @@ uint8_t *align_ptr_size(uint8_t *ptr)
 
 static
 struct rcu_ja_node_flag *ja_linear_node_get_nth(const struct rcu_ja_type *type,
-					struct rcu_ja_node *node,
-					uint8_t n)
+		struct rcu_ja_node *node,
+		uint8_t n)
 {
 	uint8_t nr_child;
 	uint8_t *values;
@@ -267,12 +292,12 @@ struct rcu_ja_node_flag *ja_linear_node_get_nth(const struct rcu_ja_type *type,
 	struct rcu_ja_node_flag *ptr;
 	unsigned int i;
 
-	assert(!type || type->type_class == RCU_JA_LINEAR);
+	assert(type->type_class == RCU_JA_LINEAR || type->type_class == RCU_JA_POOL);
 
 	nr_child = node->u.data[0];
 	cmm_smp_rmb();	/* read nr_child before values */
-	assert(!type || nr_child <= type->max_child);
-	assert(!type || nr_child >= type->min_child);
+	assert(nr_child <= type->max_linear_child);
+	assert(type->type_class != RCU_JA_LINEAR || nr_child >= type->min_child);
 
 	values = &node->u.data[1];
 	for (i = 0; i < nr_child; i++) {
@@ -282,7 +307,7 @@ struct rcu_ja_node_flag *ja_linear_node_get_nth(const struct rcu_ja_type *type,
 	if (i >= nr_child)
 		return NULL;
 	cmm_smp_rmb();	/* read values before pointer */
-	pointers = (struct rcu_ja_node_flag **) align_ptr_size(&values[nr_child]);
+	pointers = (struct rcu_ja_node_flag **) align_ptr_size(&values[type->max_linear_child]);
 	ptr = pointers[i];
 	assert(ja_node_ptr(ptr) != NULL);
 	return ptr;
@@ -290,21 +315,21 @@ struct rcu_ja_node_flag *ja_linear_node_get_nth(const struct rcu_ja_type *type,
 
 static
 struct rcu_ja_node_flag *ja_pool_node_get_nth(const struct rcu_ja_type *type,
-					struct rcu_ja_node *node,
-					uint8_t n)
+		struct rcu_ja_node *node,
+		uint8_t n)
 {
 	struct rcu_ja_node *linear;
 
 	assert(type->type_class == RCU_JA_POOL);
 	linear = (struct rcu_ja_node *)
 		&node->u.data[((unsigned long) n >> (CHAR_BIT - type->nr_pool_order)) << type->pool_size_order];
-	return ja_linear_node_get_nth(NULL, linear, n);
+	return ja_linear_node_get_nth(type, linear, n);
 }
 
 static
 struct rcu_ja_node_flag *ja_pigeon_node_get_nth(const struct rcu_ja_type *type,
-					struct rcu_ja_node *node,
-					uint8_t n)
+		struct rcu_ja_node *node,
+		uint8_t n)
 {
 	assert(type->type_class == RCU_JA_PIGEON);
 	return ((struct rcu_ja_node_flag **) node->u.data)[n];
@@ -313,7 +338,7 @@ struct rcu_ja_node_flag *ja_pigeon_node_get_nth(const struct rcu_ja_type *type,
 /* ja_node_get_nth: get nth item from a node */
 static
 struct rcu_ja_node_flag *ja_node_get_nth(struct rcu_ja_node_flag *node_flag,
-					uint8_t n)
+		uint8_t n)
 {
 	unsigned int type_index;
 	struct rcu_ja_node *node;
@@ -338,8 +363,101 @@ struct rcu_ja_node_flag *ja_node_get_nth(struct rcu_ja_node_flag *node_flag,
 	}
 }
 
-/*
- * ja_node_set_nth: set nth item within a node. asserts that it is not
- * there yet.
- */
+static
+int ja_linear_node_set_nth(const struct rcu_ja_type *type,
+		struct rcu_ja_node *node,
+		uint8_t n,
+		struct rcu_ja_node_flag *child_node_flag)
+{
+	uint8_t nr_child;
+	uint8_t *values, *nr_child_ptr;
+	struct rcu_ja_node_flag **pointers;
+	unsigned int i;
 
+	assert(type->type_class == RCU_JA_LINEAR || type->type_class == RCU_JA_POOL);
+
+	nr_child_ptr = &node->u.data[0];
+	nr_child = *nr_child_ptr;
+	assert(nr_child <= type->max_linear_child);
+	assert(type->type_class != RCU_JA_LINEAR || nr_child >= type->min_child);
+
+	values = &node->u.data[1];
+	for (i = 0; i < nr_child; i++) {
+		if (values[i] == n)
+			return -EEXIST;
+	}
+	if (nr_child >= type->max_linear_child) {
+		/* No space left in this node type */
+		return -ENOSPC;
+	}
+	pointers = (struct rcu_ja_node_flag **) align_ptr_size(&values[type->max_linear_child]);
+	pointers[nr_child] = child_node_flag;
+	(*nr_child_ptr)++;
+	return 0;
+}
+
+static
+int ja_pool_node_set_nth(const struct rcu_ja_type *type,
+		struct rcu_ja_node *node,
+		uint8_t n,
+		struct rcu_ja_node_flag *child_node_flag)
+{
+	struct rcu_ja_node *linear;
+
+	assert(type->type_class == RCU_JA_POOL);
+	linear = (struct rcu_ja_node *)
+		&node->u.data[((unsigned long) n >> (CHAR_BIT - type->nr_pool_order)) << type->pool_size_order];
+	return ja_linear_node_set_nth(type, linear, n, child_node_flag);
+}
+
+static
+int ja_pigeon_node_set_nth(const struct rcu_ja_type *type,
+		struct rcu_ja_node *node,
+		uint8_t n,
+		struct rcu_ja_node_flag *child_node_flag)
+{
+	struct rcu_ja_node_flag **ptr;
+
+	assert(type->type_class == RCU_JA_PIGEON);
+	ptr = &((struct rcu_ja_node_flag **) node->u.data)[n];
+	if (*ptr != NULL)
+		return -EEXIST;
+	rcu_assign_pointer(*ptr, child_node_flag);
+	return 0;
+}
+
+/*
+ * ja_node_set_nth: set nth item within a node. Return an error
+ * (negative error value) if it is already there.
+ * TODO: exclusive access on node.
+ */
+static
+int ja_node_set_nth(struct rcu_ja_node_flag *node_flag, uint8_t n,
+		struct rcu_ja_node_flag *child_node_flag)
+{
+	unsigned int type_index;
+	struct rcu_ja_node *node;
+	const struct rcu_ja_type *type;
+
+	node = ja_node_ptr(node_flag);
+	assert(node != NULL);
+	type_index = ja_node_type(node_flag);
+	type = &ja_types[type_index];
+
+	switch (type->type_class) {
+	case RCU_JA_LINEAR:
+		return ja_linear_node_set_nth(type, node, n,
+				child_node_flag);
+	case RCU_JA_POOL:
+		return ja_pool_node_set_nth(type, node, n,
+				child_node_flag);
+	case RCU_JA_PIGEON:
+		return ja_pigeon_node_set_nth(type, node, n,
+				child_node_flag);
+	default:
+		assert(0);
+		return -EINVAL;
+	}
+
+	return 0;
+}

@@ -75,11 +75,9 @@ liburcu_signal_la_LIBADD = liburcu-common.la
 liburcu_bp_la_SOURCES = urcu-bp.c urcu-pointer.c $(COMPAT)
 liburcu_bp_la_LIBADD = liburcu-common.la
 
-# liburcu-cds depends on liburcu for the judy array hash table
-# (internally used).
 liburcu_cds_la_SOURCES = rculfqueue.c rculfstack.c lfstack.c \
 	$(RCULFHASH) $(RCUJA) $(COMPAT)
-liburcu_cds_la_LIBADD = liburcu-common.la liburcu.la
+liburcu_cds_la_LIBADD = liburcu-common.la
 
 pkgconfigdir = $(libdir)/pkgconfig
 pkgconfig_DATA = liburcu-cds.pc liburcu.pc liburcu-bp.pc liburcu-qsbr.pc \

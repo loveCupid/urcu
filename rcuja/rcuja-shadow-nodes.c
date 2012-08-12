@@ -215,6 +215,7 @@ rcu_unlock:
 	return shadow_node;
 }
 
+__attribute__((visibility("protected")))
 void rcuja_shadow_unlock(struct rcu_ja_shadow_node *shadow_node)
 {
 	int ret;
@@ -253,15 +254,16 @@ int rcuja_shadow_set(struct cds_lfht *ht,
 }
 
 static
-void free_shadow_node(struct rcu_head *head)
+void free_shadow_node_and_node(struct rcu_head *head)
 {
 	struct rcu_ja_shadow_node *shadow_node =
 		caa_container_of(head, struct rcu_ja_shadow_node, head);
+	free(shadow_node->node);
 	free(shadow_node);
 }
 
 __attribute__((visibility("protected")))
-int rcuja_shadow_clear(struct cds_lfht *ht,
+int rcuja_shadow_clear_and_free_node(struct cds_lfht *ht,
 		struct rcu_ja_node *node)
 {
 	struct cds_lfht_iter iter;
@@ -289,7 +291,7 @@ int rcuja_shadow_clear(struct cds_lfht *ht,
 	 */
 	ret = cds_lfht_del(ht, lookup_node);
 	if (!ret) {
-		call_rcu(&shadow_node->head, free_shadow_node);
+		call_rcu(&shadow_node->head, free_shadow_node_and_node);
 	}
 	lockret = pthread_mutex_unlock(&shadow_node->lock);
 	assert(!lockret);

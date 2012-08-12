@@ -49,4 +49,20 @@ struct rcu_ja {
 	struct cds_lfht *ht;
 };
 
+__attribute__((visibility("protected")))
+struct rcu_ja_shadow_node *rcuja_shadow_lookup_lock(struct cds_lfht *ht,
+		struct rcu_ja_node *node);
+__attribute__((visibility("protected")))
+void rcuja_shadow_unlock(struct rcu_ja_shadow_node *shadow_node);
+__attribute__((visibility("protected")))
+int rcuja_shadow_set(struct cds_lfht *ht,
+		struct rcu_ja_node *node);
+__attribute__((visibility("protected")))
+int rcuja_shadow_clear_and_free_node(struct cds_lfht *ht,
+		struct rcu_ja_node *node);
+__attribute__((visibility("protected")))
+struct cds_lfht *rcuja_create_ht(void);
+__attribute__((visibility("protected")))
+void rcuja_delete_ht(struct cds_lfht *ht);
+
 #endif /* _URCU_RCUJA_INTERNAL_H */

@@ -24,15 +24,6 @@
 #include <stdint.h>
 #include <errno.h>
 #include <limits.h>
-
-/*
- * The hash table used by judy array updates only for the shadow node
- * mapping rely on standard urcu_mb flavor. It does not put any
- * requirement on the RCU flavor used by applications using the judy
- * array.
- */
-#include <urcu.h>
-
 #include <urcu/rcuja.h>
 #include <urcu/compiler.h>
 #include <urcu/arch.h>
@@ -190,9 +181,11 @@ struct rcu_ja_shadow_node *rcuja_shadow_lookup_lock(struct cds_lfht *ht,
 	struct cds_lfht_iter iter;
 	struct cds_lfht_node *lookup_node;
 	struct rcu_ja_shadow_node *shadow_node;
+	const struct rcu_flavor_struct *flavor;
 	int ret;
 
-	rcu_read_lock();
+	flavor = cds_lfht_rcu_flavor(ht);
+	flavor->read_lock();
 	cds_lfht_lookup(ht, hash_pointer(node, hash_seed),
 			match_pointer, node, &iter);
 
@@ -211,7 +204,7 @@ struct rcu_ja_shadow_node *rcuja_shadow_lookup_lock(struct cds_lfht *ht,
 		shadow_node = NULL;
 	}
 rcu_unlock:
-	rcu_read_unlock();
+	flavor->read_unlock();
 	return shadow_node;
 }
 
@@ -230,6 +223,7 @@ int rcuja_shadow_set(struct cds_lfht *ht,
 {
 	struct rcu_ja_shadow_node *shadow_node;
 	struct cds_lfht_node *ret_node;
+	const struct rcu_flavor_struct *flavor;
 
 	shadow_node = calloc(sizeof(*shadow_node), 1);
 	if (!shadow_node)
@@ -238,13 +232,14 @@ int rcuja_shadow_set(struct cds_lfht *ht,
 	shadow_node->node = node;
 	pthread_mutex_init(&shadow_node->lock, NULL);
 
-	rcu_read_lock();
+	flavor = cds_lfht_rcu_flavor(ht);
+	flavor->read_lock();
 	ret_node = cds_lfht_add_unique(ht,
 			hash_pointer(node, hash_seed),
 			match_pointer,
 			node,
 			&shadow_node->ht_node);
-	rcu_read_unlock();
+	flavor->read_unlock();
 
 	if (ret_node != &shadow_node->ht_node) {
 		free(shadow_node);
@@ -269,9 +264,11 @@ int rcuja_shadow_clear_and_free_node(struct cds_lfht *ht,
 	struct cds_lfht_iter iter;
 	struct cds_lfht_node *lookup_node;
 	struct rcu_ja_shadow_node *shadow_node;
+	const struct rcu_flavor_struct *flavor;
 	int ret, lockret;
 
-	rcu_read_lock();
+	flavor = cds_lfht_rcu_flavor(ht);
+	flavor->read_lock();
 	cds_lfht_lookup(ht, hash_pointer(node, hash_seed),
 			match_pointer, node, &iter);
 	lookup_node = cds_lfht_iter_get_node(&iter);
@@ -291,22 +288,22 @@ int rcuja_shadow_clear_and_free_node(struct cds_lfht *ht,
 	 */
 	ret = cds_lfht_del(ht, lookup_node);
 	if (!ret) {
-		call_rcu(&shadow_node->head, free_shadow_node_and_node);
+		flavor->update_call_rcu(&shadow_node->head, free_shadow_node_and_node);
 	}
 	lockret = pthread_mutex_unlock(&shadow_node->lock);
 	assert(!lockret);
 rcu_unlock:
-	rcu_read_unlock();
+	flavor->read_unlock();
 
 	return ret;
 }
 
 __attribute__((visibility("protected")))
-struct cds_lfht *rcuja_create_ht(void)
+struct cds_lfht *rcuja_create_ht(const struct rcu_flavor_struct *flavor)
 {
-	return cds_lfht_new(1, 1, 0,
+	return _cds_lfht_new(1, 1, 0,
 		CDS_LFHT_AUTO_RESIZE | CDS_LFHT_ACCOUNTING,
-		NULL);
+		NULL, flavor, NULL);
 }
 
 __attribute__((visibility("protected")))

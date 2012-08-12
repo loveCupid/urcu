@@ -37,6 +37,7 @@ struct rcu_ja_shadow_node {
 	struct rcu_ja_node *node;	/* reverse mapping and hash table key */
 	pthread_mutex_t lock;		/* mutual exclusion on node */
 	struct rcu_head head;		/* for deferred node and shadow node reclaim */
+	const struct rcu_flavor_struct *flavor;	/* rcu flavor */
 };
 
 struct rcu_ja {
@@ -61,7 +62,7 @@ __attribute__((visibility("protected")))
 int rcuja_shadow_clear_and_free_node(struct cds_lfht *ht,
 		struct rcu_ja_node *node);
 __attribute__((visibility("protected")))
-struct cds_lfht *rcuja_create_ht(void);
+struct cds_lfht *rcuja_create_ht(const struct rcu_flavor_struct *flavor);
 __attribute__((visibility("protected")))
 void rcuja_delete_ht(struct cds_lfht *ht);
 

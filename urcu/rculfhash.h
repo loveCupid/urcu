@@ -484,6 +484,11 @@ void cds_lfht_resize(struct cds_lfht *ht, unsigned long new_size);
 			pos = caa_container_of(cds_lfht_iter_get_node(iter), \
 					__typeof__(*(pos)), member))
 
+/*
+ * cds_lfht_rcu_flavor: get RCU flavor argument from hash table creation.
+ */
+const struct rcu_flavor_struct *cds_lfht_rcu_flavor(struct cds_lfht *ht);
+
 #ifdef __cplusplus
 }
 #endif

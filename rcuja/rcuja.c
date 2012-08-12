@@ -512,6 +512,9 @@ int ja_node_recompact_add(struct rcu_ja_node_flag **old_node_flag, uint8_t n,
 	/* add node */
 	ret = _ja_node_set_nth(new_node_flag, n, child_node_flag);
 	assert(!ret);
+	/* Replace the old node with the new recompacted one */
+	rcu_assign_pointer(*old_node_flag, new_node_flag);
+	/* TODO: free old_node (call_rcu) */
 	return 0;
 }
 

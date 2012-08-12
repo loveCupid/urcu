@@ -260,7 +260,7 @@ struct rcu_ja_node *ja_node_ptr(struct rcu_ja_node_flag *node)
 	return (struct rcu_ja_node *) (((unsigned long) node) | JA_PTR_MASK);
 }
 
-struct rcu_ja_node *alloc_rcu_ja_node(struct rcu_ja_type *ja_type)
+struct rcu_ja_node *alloc_rcu_ja_node(const struct rcu_ja_type *ja_type)
 {
 	return calloc(1U << ja_type->order, sizeof(char));
 }
@@ -436,12 +436,12 @@ int ja_pigeon_node_set_nth(const struct rcu_ja_type *type,
 }
 
 /*
- * ja_node_set_nth: set nth item within a node. Return an error
+ * _ja_node_set_nth: set nth item within a node. Return an error
  * (negative error value) if it is already there.
  * TODO: exclusive access on node.
  */
 static
-int ja_node_set_nth(struct rcu_ja_node_flag *node_flag, uint8_t n,
+int _ja_node_set_nth(struct rcu_ja_node_flag *node_flag, uint8_t n,
 		struct rcu_ja_node_flag *child_node_flag)
 {
 	unsigned int type_index;
@@ -469,4 +469,65 @@ int ja_node_set_nth(struct rcu_ja_node_flag *node_flag, uint8_t n,
 	}
 
 	return 0;
+}
+
+/*
+ * ja_node_recompact_add: recompact a node, adding a new child.
+ */
+static
+int ja_node_recompact_add(struct rcu_ja_node_flag **old_node_flag, uint8_t n,
+		struct rcu_ja_node_flag *child_node_flag)
+
+{
+	unsigned int old_type_index, new_type_index;
+	struct rcu_ja_node *old_node, *new_node;
+	const struct rcu_ja_type *old_type, *new_type;
+	struct rcu_ja_node_flag *new_node_flag;
+	unsigned int i;
+	int ret;
+
+	old_node = ja_node_ptr(*old_node_flag);
+	if (old_node == NULL) {
+		new_type_index = 0;
+	} else {
+		old_type_index = ja_node_type(*old_node_flag);
+		old_type = &ja_types[old_type_index];
+		new_type_index = old_type_index + 1;
+	}
+	new_type = &ja_types[new_type_index];
+	new_node = alloc_rcu_ja_node(new_type);
+	if (!new_node)
+		return -ENOMEM;
+	new_node_flag = ja_node_flag(new_node, new_type_index);
+
+	for (i = 0; i < old_type->max_child; i++) {
+		struct rcu_ja_node_flag *iter;
+
+		iter = ja_node_get_nth(*old_node_flag, i);
+		if (!iter)
+			continue;
+		ret = _ja_node_set_nth(new_node_flag, i, iter);
+		assert(!ret);
+	}
+	/* add node */
+	ret = _ja_node_set_nth(new_node_flag, n, child_node_flag);
+	assert(!ret);
+	return 0;
+}
+
+static
+int ja_node_set_nth(struct rcu_ja_node_flag **node_flag, uint8_t n,
+		struct rcu_ja_node_flag *child_node_flag)
+{
+	int ret;
+
+	ret = _ja_node_set_nth(*node_flag, n, child_node_flag);
+	if (ret == -ENOSPC) {
+		/* Not enough space in node, need to recompact */
+		ret = ja_node_recompact_add(node_flag, n,
+				child_node_flag);
+		if (ret < 0)
+			return ret;
+	}
+	return ret;
 }

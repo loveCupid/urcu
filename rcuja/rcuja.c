@@ -198,21 +198,21 @@ struct rcu_ja_node_flag;
  * required for updates.
  */
 
-#define DECLARE_LINEAR_NODE(index)									\
-		struct {										\
-			uint8_t nr_child;								\
-			uint8_t child_value[ja_type_## index ##_max_linear_child];			\
-			struct rcu_ja_node_flag *child_ptr[ja_type_## index ##_max_linear_child];	\
-		}
+#define DECLARE_LINEAR_NODE(index)								\
+	struct {										\
+		uint8_t nr_child;								\
+		uint8_t child_value[ja_type_## index ##_max_linear_child];			\
+		struct rcu_ja_node_flag *child_ptr[ja_type_## index ##_max_linear_child];	\
+	}
 
-#define DECLARE_POOL_NODE(index)									\
-		struct {										\
-			struct {									\
-				uint8_t nr_child;							\
-				uint8_t child_value[ja_type_## index ##_max_linear_child]; \
-				struct rcu_ja_node_flag *child_ptr[ja_type_## index ##_max_linear_child]; \
-			} linear[1U << ja_type_## index ##_nr_pool_order];				\
-		}
+#define DECLARE_POOL_NODE(index)								\
+	struct {										\
+		struct {									\
+			uint8_t nr_child;							\
+			uint8_t child_value[ja_type_## index ##_max_linear_child];		\
+			struct rcu_ja_node_flag *child_ptr[ja_type_## index ##_max_linear_child]; \
+		} linear[1U << ja_type_## index ##_nr_pool_order];				\
+	}
 
 struct rcu_ja_node {
 	union {

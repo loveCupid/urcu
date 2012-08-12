@@ -33,8 +33,10 @@ struct rcu_ja_node_flag;
  * Shadow node contains mutex and call_rcu head associated with a node.
  */
 struct rcu_ja_shadow_node {
-	pthread_mutex_t lock;	/* mutual exclusion on node */
-	struct rcu_head head;	/* for deferred node and shadow node reclaim */
+	struct cds_lfht_node ht_node;	/* hash table node */
+	struct rcu_ja_node *node;	/* reverse mapping and hash table key */
+	pthread_mutex_t lock;		/* mutual exclusion on node */
+	struct rcu_head head;		/* for deferred node and shadow node reclaim */
 };
 
 struct rcu_ja {

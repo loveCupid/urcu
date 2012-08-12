@@ -281,6 +281,11 @@ uint8_t *align_ptr_size(uint8_t *ptr)
 	return (uint8_t *) JA_ALIGN((unsigned long) ptr, sizeof(void *));
 }
 
+/*
+ * The order in which values and pointers are does does not matter: if
+ * a value is missing, we return NULL. If a value is there, but its
+ * associated pointers is still NULL, we return NULL too.
+ */
 static
 struct rcu_ja_node_flag *ja_linear_node_get_nth(const struct rcu_ja_type *type,
 		struct rcu_ja_node *node,
@@ -294,21 +299,20 @@ struct rcu_ja_node_flag *ja_linear_node_get_nth(const struct rcu_ja_type *type,
 
 	assert(type->type_class == RCU_JA_LINEAR || type->type_class == RCU_JA_POOL);
 
-	nr_child = node->u.data[0];
-	cmm_smp_rmb();	/* read nr_child before values */
+	nr_child = CMM_LOAD_SHARED(node->u.data[0]);
+	cmm_smp_rmb();	/* read nr_child before values and pointers */
 	assert(nr_child <= type->max_linear_child);
 	assert(type->type_class != RCU_JA_LINEAR || nr_child >= type->min_child);
 
 	values = &node->u.data[1];
 	for (i = 0; i < nr_child; i++) {
-		if (values[i] == n)
+		if (CMM_LOAD_SHARED(values[i]) == n)
 			break;
 	}
 	if (i >= nr_child)
 		return NULL;
-	cmm_smp_rmb();	/* read values before pointer */
 	pointers = (struct rcu_ja_node_flag **) align_ptr_size(&values[type->max_linear_child]);
-	ptr = pointers[i];
+	ptr = rcu_dereference(pointers[i]);
 	assert(ja_node_ptr(ptr) != NULL);
 	return ptr;
 }
@@ -332,10 +336,13 @@ struct rcu_ja_node_flag *ja_pigeon_node_get_nth(const struct rcu_ja_type *type,
 		uint8_t n)
 {
 	assert(type->type_class == RCU_JA_PIGEON);
-	return ((struct rcu_ja_node_flag **) node->u.data)[n];
+	return rcu_dereference(((struct rcu_ja_node_flag **) node->u.data)[n]);
 }
 
-/* ja_node_get_nth: get nth item from a node */
+/*
+ * ja_node_get_nth: get nth item from a node.
+ * node_flag is already rcu_dereference'd.
+ */
 static
 struct rcu_ja_node_flag *ja_node_get_nth(struct rcu_ja_node_flag *node_flag,
 		uint8_t n)
@@ -344,7 +351,6 @@ struct rcu_ja_node_flag *ja_node_get_nth(struct rcu_ja_node_flag *node_flag,
 	struct rcu_ja_node *node;
 	const struct rcu_ja_type *type;
 
-	node_flag = rcu_dereference(node_flag);
 	node = ja_node_ptr(node_flag);
 	assert(node != NULL);
 	type_index = ja_node_type(node_flag);
@@ -391,8 +397,11 @@ int ja_linear_node_set_nth(const struct rcu_ja_type *type,
 		return -ENOSPC;
 	}
 	pointers = (struct rcu_ja_node_flag **) align_ptr_size(&values[type->max_linear_child]);
-	pointers[nr_child] = child_node_flag;
-	(*nr_child_ptr)++;
+	assert(pointers[nr_child] == NULL);
+	rcu_assign_pointer(pointers[nr_child], child_node_flag);
+	CMM_STORE_SHARED(values[nr_child], n);
+	cmm_smp_wmb();	/* write value and pointer before nr_child */
+	CMM_STORE_SHARED(*nr_child_ptr, nr_child + 1);
 	return 0;
 }
 

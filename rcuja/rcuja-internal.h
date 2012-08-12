@@ -23,5 +23,28 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include <pthread.h>
+#include <urcu/rculfhash.h>
+
+/* Never declared. Opaque type used to store flagged node pointers. */
+struct rcu_ja_node_flag;
+
+/*
+ * Shadow node contains mutex and call_rcu head associated with a node.
+ */
+struct rcu_ja_shadow_node {
+	pthread_mutex_t lock;	/* mutual exclusion on node */
+	struct rcu_head head;	/* for deferred node and shadow node reclaim */
+};
+
+struct rcu_ja {
+	struct rcu_ja_node_flag *root;
+	/*
+	 * We use a hash table to associate nodes to their respective
+	 * shadow node. This helps reducing lookup hot path cache
+	 * footprint, especially for very small nodes.
+	 */
+	struct cds_lfht *ht;
+};
 
 #endif /* _URCU_RCUJA_INTERNAL_H */

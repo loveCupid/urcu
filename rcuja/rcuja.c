@@ -183,9 +183,6 @@ void static_array_size_check(void)
 	CAA_BUILD_BUG_ON(CAA_ARRAY_SIZE(ja_types) > JA_TYPE_MAX_NR);
 }
 
-/* Never declared. Opaque type used to store flagged node pointers. */
-struct rcu_ja_node_flag;
-
 /*
  * The rcu_ja_node contains the compressed node data needed for
  * read-side. For linear and pool node configurations, it starts with a

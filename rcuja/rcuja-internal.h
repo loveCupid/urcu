@@ -35,17 +35,22 @@ struct rcu_ja_node_flag;
 struct rcu_ja_shadow_node {
 	struct cds_lfht_node ht_node;	/* hash table node */
 	struct rcu_ja_node *node;	/* reverse mapping and hash table key */
-	pthread_mutex_t lock;		/* mutual exclusion on node */
+	/*
+	 * mutual exclusion on all nodes belonging to the same tree
+	 * position (e.g. both nodes before and after recompaction
+	 * use the same lock).
+	 */
+	pthread_mutex_t *lock;
+	unsigned int nr_child;		/* number of children in node */
 	struct rcu_head head;		/* for deferred node and shadow node reclaim */
-	const struct rcu_flavor_struct *flavor;	/* rcu flavor */
 };
 
 struct rcu_ja {
 	struct rcu_ja_node_flag *root;
 	/*
-	 * We use a hash table to associate nodes to their respective
-	 * shadow node. This helps reducing lookup hot path cache
-	 * footprint, especially for very small nodes.
+	 * We use a hash table to associate node keys to their
+	 * respective shadow node. This helps reducing lookup hot path
+	 * cache footprint, especially for very small nodes.
 	 */
 	struct cds_lfht *ht;
 };
@@ -57,10 +62,19 @@ __attribute__((visibility("protected")))
 void rcuja_shadow_unlock(struct rcu_ja_shadow_node *shadow_node);
 __attribute__((visibility("protected")))
 int rcuja_shadow_set(struct cds_lfht *ht,
-		struct rcu_ja_node *node);
+		struct rcu_ja_node *new_node,
+		struct rcu_ja_shadow_node *inherit_from);
 __attribute__((visibility("protected")))
-int rcuja_shadow_clear_and_free_node(struct cds_lfht *ht,
-		struct rcu_ja_node *node);
+
+/* rcuja_shadow_clear flags */
+enum {
+	RCUJA_SHADOW_CLEAR_FREE_NODE = (1U << 0),
+	RCUJA_SHADOW_CLEAR_FREE_LOCK = (1U << 1),
+};
+
+int rcuja_shadow_clear(struct cds_lfht *ht,
+		struct rcu_ja_node *node,
+		unsigned int flags);
 __attribute__((visibility("protected")))
 struct cds_lfht *rcuja_create_ht(const struct rcu_flavor_struct *flavor);
 __attribute__((visibility("protected")))

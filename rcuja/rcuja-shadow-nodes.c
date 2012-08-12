@@ -196,10 +196,10 @@ struct rcu_ja_shadow_node *rcuja_shadow_lookup_lock(struct cds_lfht *ht,
 	}
 	shadow_node = caa_container_of(lookup_node,
 			struct rcu_ja_shadow_node, ht_node);
-	ret = pthread_mutex_lock(&shadow_node->lock);
+	ret = pthread_mutex_lock(shadow_node->lock);
 	assert(!ret);
 	if (cds_lfht_is_node_deleted(lookup_node)) {
-		ret = pthread_mutex_unlock(&shadow_node->lock);
+		ret = pthread_mutex_unlock(shadow_node->lock);
 		assert(!ret);
 		shadow_node = NULL;
 	}
@@ -213,13 +213,14 @@ void rcuja_shadow_unlock(struct rcu_ja_shadow_node *shadow_node)
 {
 	int ret;
 
-	ret = pthread_mutex_unlock(&shadow_node->lock);
+	ret = pthread_mutex_unlock(shadow_node->lock);
 	assert(!ret);
 }
 
 __attribute__((visibility("protected")))
 int rcuja_shadow_set(struct cds_lfht *ht,
-		struct rcu_ja_node *node)
+		struct rcu_ja_node *new_node,
+		struct rcu_ja_shadow_node *inherit_from)
 {
 	struct rcu_ja_shadow_node *shadow_node;
 	struct cds_lfht_node *ret_node;
@@ -229,15 +230,27 @@ int rcuja_shadow_set(struct cds_lfht *ht,
 	if (!shadow_node)
 		return -ENOMEM;
 
-	shadow_node->node = node;
-	pthread_mutex_init(&shadow_node->lock, NULL);
+	shadow_node->node = new_node;
+	/*
+	 * Lock can be inherited from previous node at this position.
+	 */
+	if (inherit_from) {
+		shadow_node->lock = inherit_from->lock;
+	} else {
+		shadow_node->lock = calloc(sizeof(*shadow_node->lock), 1);
+		if (!shadow_node->lock) {
+			free(shadow_node);
+			return -ENOMEM;
+		}
+		pthread_mutex_init(shadow_node->lock, NULL);
+	}
 
 	flavor = cds_lfht_rcu_flavor(ht);
 	flavor->read_lock();
 	ret_node = cds_lfht_add_unique(ht,
-			hash_pointer(node, hash_seed),
+			hash_pointer(new_node, hash_seed),
 			match_pointer,
-			node,
+			new_node,
 			&shadow_node->ht_node);
 	flavor->read_unlock();
 
@@ -257,9 +270,20 @@ void free_shadow_node_and_node(struct rcu_head *head)
 	free(shadow_node);
 }
 
+static
+void free_shadow_node_and_node_and_lock(struct rcu_head *head)
+{
+	struct rcu_ja_shadow_node *shadow_node =
+		caa_container_of(head, struct rcu_ja_shadow_node, head);
+	free(shadow_node->node);
+	free(shadow_node->lock);
+	free(shadow_node);
+}
+
 __attribute__((visibility("protected")))
-int rcuja_shadow_clear_and_free_node(struct cds_lfht *ht,
-		struct rcu_ja_node *node)
+int rcuja_shadow_clear(struct cds_lfht *ht,
+		struct rcu_ja_node *node,
+		unsigned int flags)
 {
 	struct cds_lfht_iter iter;
 	struct cds_lfht_node *lookup_node;
@@ -278,7 +302,7 @@ int rcuja_shadow_clear_and_free_node(struct cds_lfht *ht,
 	}
 	shadow_node = caa_container_of(lookup_node,
 			struct rcu_ja_shadow_node, ht_node);
-	lockret = pthread_mutex_lock(&shadow_node->lock);
+	lockret = pthread_mutex_lock(shadow_node->lock);
 	assert(!lockret);
 
 	/*
@@ -288,9 +312,16 @@ int rcuja_shadow_clear_and_free_node(struct cds_lfht *ht,
 	 */
 	ret = cds_lfht_del(ht, lookup_node);
 	if (!ret) {
-		flavor->update_call_rcu(&shadow_node->head, free_shadow_node_and_node);
+		assert(flags & RCUJA_SHADOW_CLEAR_FREE_NODE);
+		if (flags & RCUJA_SHADOW_CLEAR_FREE_LOCK) {
+			flavor->update_call_rcu(&shadow_node->head,
+				free_shadow_node_and_node_and_lock);
+		} else {
+			flavor->update_call_rcu(&shadow_node->head,
+				free_shadow_node_and_node);
+		}
 	}
-	lockret = pthread_mutex_unlock(&shadow_node->lock);
+	lockret = pthread_mutex_unlock(shadow_node->lock);
 	assert(!lockret);
 rcu_unlock:
 	flavor->read_unlock();

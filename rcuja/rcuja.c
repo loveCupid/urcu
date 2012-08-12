@@ -45,6 +45,8 @@ enum rcu_ja_type_class {
 			/* 64-bit: 113 to 256 children, 2048 bytes */
 	/* Leaf nodes are implicit from their height in the tree */
 	RCU_JA_NR_TYPES,
+
+	RCU_JA_NULL,	/* not an encoded type, but keeps code regular */
 };
 
 struct rcu_ja_type {
@@ -67,6 +69,12 @@ struct rcu_ja_type {
 #define JA_PTR_MASK	(~JA_TYPE_MASK)
 
 #define JA_ENTRY_PER_NODE	256UL
+
+/*
+ * Entry for NULL node is at index 8 of the table. It is never encoded
+ * in flags.
+ */
+#define NODE_INDEX_NULL		8
 
 /*
  * Iteration on the array to find the right node size for the number of
@@ -97,6 +105,7 @@ enum {
 	ja_type_5_max_child = 48,
 	ja_type_6_max_child = 92,
 	ja_type_7_max_child = 256,
+	ja_type_8_max_child = 0,	/* NULL */
 };
 
 enum {
@@ -130,6 +139,8 @@ const struct rcu_ja_type ja_types[] = {
 	 * filled beyond capacity, we need to roll back to pigeon.
 	 */
 	{ .type_class = RCU_JA_PIGEON, .min_child = 89, .max_child = ja_type_7_max_child, .order = 10, },
+
+	{ .type_class = RCU_JA_NULL, .min_child = 0, .max_child = ja_type_8_max_child, },
 };
 #else /* !(CAA_BITS_PER_LONG < 64) */
 /* 64-bit pointers */
@@ -142,6 +153,7 @@ enum {
 	ja_type_5_max_child = 54,
 	ja_type_6_max_child = 104,
 	ja_type_7_max_child = 256,
+	ja_type_8_max_child = 256,
 };
 
 enum {
@@ -175,13 +187,15 @@ const struct rcu_ja_type ja_types[] = {
 	 * filled beyond capacity, we need to roll back to pigeon.
 	 */
 	{ .type_class = RCU_JA_PIGEON, .min_child = 101, .max_child = ja_type_7_max_child, .order = 11, },
+
+	{ .type_class = RCU_JA_NULL, .min_child = 0, .max_child = ja_type_8_max_child, },
 };
 #endif /* !(BITS_PER_LONG < 64) */
 
 static inline __attribute__((unused))
 void static_array_size_check(void)
 {
-	CAA_BUILD_BUG_ON(CAA_ARRAY_SIZE(ja_types) > JA_TYPE_MAX_NR);
+	CAA_BUILD_BUG_ON(CAA_ARRAY_SIZE(ja_types) < JA_TYPE_MAX_NR);
 }
 
 /*
@@ -243,19 +257,22 @@ struct rcu_ja_node_flag *ja_node_flag(struct rcu_ja_node *node,
 }
 
 static
+struct rcu_ja_node *ja_node_ptr(struct rcu_ja_node_flag *node)
+{
+	return (struct rcu_ja_node *) (((unsigned long) node) | JA_PTR_MASK);
+}
+
+static
 unsigned int ja_node_type(struct rcu_ja_node_flag *node)
 {
 	unsigned int type;
 
+	if (ja_node_ptr(node) == NULL) {
+		return NODE_INDEX_NULL;
+	}
 	type = (unsigned int) ((unsigned long) node & JA_TYPE_MASK);
 	assert(type < RCU_JA_NR_TYPES);
 	return type;
-}
-
-static
-struct rcu_ja_node *ja_node_ptr(struct rcu_ja_node_flag *node)
-{
-	return (struct rcu_ja_node *) (((unsigned long) node) | JA_PTR_MASK);
 }
 
 struct rcu_ja_node *alloc_rcu_ja_node(const struct rcu_ja_type *ja_type)
@@ -323,6 +340,10 @@ struct rcu_ja_node_flag *ja_pool_node_get_nth(const struct rcu_ja_type *type,
 	struct rcu_ja_node *linear;
 
 	assert(type->type_class == RCU_JA_POOL);
+	/*
+	 * TODO: currently, we select the pool by highest bits. We
+	 * should support various encodings.
+	 */
 	linear = (struct rcu_ja_node *)
 		&node->u.data[((unsigned long) n >> (CHAR_BIT - type->nr_pool_order)) << type->pool_size_order];
 	return ja_linear_node_get_nth(type, linear, n);
@@ -368,8 +389,15 @@ struct rcu_ja_node_flag *ja_node_get_nth(struct rcu_ja_node_flag *node_flag,
 }
 
 static
+unsigned int ja_get_nr_child(struct rcu_ja_shadow_node *shadow_node)
+{
+	return shadow_node->nr_child;
+}
+
+static
 int ja_linear_node_set_nth(const struct rcu_ja_type *type,
 		struct rcu_ja_node *node,
+		struct rcu_ja_shadow_node *shadow_node,
 		uint8_t n,
 		struct rcu_ja_node_flag *child_node_flag)
 {
@@ -400,12 +428,14 @@ int ja_linear_node_set_nth(const struct rcu_ja_type *type,
 	CMM_STORE_SHARED(values[nr_child], n);
 	cmm_smp_wmb();	/* write value and pointer before nr_child */
 	CMM_STORE_SHARED(*nr_child_ptr, nr_child + 1);
+	shadow_node->nr_child++;
 	return 0;
 }
 
 static
 int ja_pool_node_set_nth(const struct rcu_ja_type *type,
 		struct rcu_ja_node *node,
+		struct rcu_ja_shadow_node *shadow_node,
 		uint8_t n,
 		struct rcu_ja_node_flag *child_node_flag)
 {
@@ -414,12 +444,14 @@ int ja_pool_node_set_nth(const struct rcu_ja_type *type,
 	assert(type->type_class == RCU_JA_POOL);
 	linear = (struct rcu_ja_node *)
 		&node->u.data[((unsigned long) n >> (CHAR_BIT - type->nr_pool_order)) << type->pool_size_order];
-	return ja_linear_node_set_nth(type, linear, n, child_node_flag);
+	return ja_linear_node_set_nth(type, linear, shadow_node,
+			n, child_node_flag);
 }
 
 static
 int ja_pigeon_node_set_nth(const struct rcu_ja_type *type,
 		struct rcu_ja_node *node,
+		struct rcu_ja_shadow_node *shadow_node,
 		uint8_t n,
 		struct rcu_ja_node_flag *child_node_flag)
 {
@@ -430,6 +462,7 @@ int ja_pigeon_node_set_nth(const struct rcu_ja_type *type,
 	if (*ptr != NULL)
 		return -EEXIST;
 	rcu_assign_pointer(*ptr, child_node_flag);
+	shadow_node->nr_child++;
 	return 0;
 }
 
@@ -439,28 +472,24 @@ int ja_pigeon_node_set_nth(const struct rcu_ja_type *type,
  * TODO: exclusive access on node.
  */
 static
-int _ja_node_set_nth(struct rcu_ja_node_flag *node_flag, uint8_t n,
+int _ja_node_set_nth(const struct rcu_ja_type *type,
+		struct rcu_ja_node *node,
+		struct rcu_ja_shadow_node *shadow_node,
+		uint8_t n,
 		struct rcu_ja_node_flag *child_node_flag)
 {
-	unsigned int type_index;
-	struct rcu_ja_node *node;
-	const struct rcu_ja_type *type;
-
-	node = ja_node_ptr(node_flag);
-	assert(node != NULL);
-	type_index = ja_node_type(node_flag);
-	type = &ja_types[type_index];
-
 	switch (type->type_class) {
 	case RCU_JA_LINEAR:
-		return ja_linear_node_set_nth(type, node, n,
+		return ja_linear_node_set_nth(type, node, shadow_node, n,
 				child_node_flag);
 	case RCU_JA_POOL:
-		return ja_pool_node_set_nth(type, node, n,
+		return ja_pool_node_set_nth(type, node, shadow_node, n,
 				child_node_flag);
 	case RCU_JA_PIGEON:
-		return ja_pigeon_node_set_nth(type, node, n,
+		return ja_pigeon_node_set_nth(type, node, shadow_node, n,
 				child_node_flag);
+	case RCU_JA_NULL:
+		return -ENOSPC;
 	default:
 		assert(0);
 		return -EINVAL;
@@ -471,25 +500,27 @@ int _ja_node_set_nth(struct rcu_ja_node_flag *node_flag, uint8_t n,
 
 /*
  * ja_node_recompact_add: recompact a node, adding a new child.
+ * TODO: for pool type, take selection bit(s) into account.
  */
 static
-int ja_node_recompact_add(struct rcu_ja_node_flag **old_node_flag, uint8_t n,
+int ja_node_recompact_add(struct rcu_ja *ja,
+		unsigned int old_type_index,
+		const struct rcu_ja_type *old_type,
+		struct rcu_ja_node *old_node,
+		struct rcu_ja_shadow_node **shadow_node,
+		struct rcu_ja_node_flag **old_node_flag, uint8_t n,
 		struct rcu_ja_node_flag *child_node_flag)
-
 {
-	unsigned int old_type_index, new_type_index;
-	struct rcu_ja_node *old_node, *new_node;
-	const struct rcu_ja_type *old_type, *new_type;
+	unsigned int new_type_index;
+	struct rcu_ja_node *new_node;
+	const struct rcu_ja_type *new_type;
 	struct rcu_ja_node_flag *new_node_flag;
 	unsigned int i;
 	int ret;
 
-	old_node = ja_node_ptr(*old_node_flag);
-	if (old_node == NULL) {
+	if (*shadow_node == NULL) {
 		new_type_index = 0;
 	} else {
-		old_type_index = ja_node_type(*old_node_flag);
-		old_type = &ja_types[old_type_index];
 		new_type_index = old_type_index + 1;
 	}
 	new_type = &ja_types[new_type_index];
@@ -498,37 +529,64 @@ int ja_node_recompact_add(struct rcu_ja_node_flag **old_node_flag, uint8_t n,
 		return -ENOMEM;
 	new_node_flag = ja_node_flag(new_node, new_type_index);
 
+	ret = rcuja_shadow_set(ja->ht, new_node, *shadow_node);
+	if (ret)
+		return ret;
+
+	if (*shadow_node == NULL) {
+		*shadow_node = rcuja_shadow_lookup_lock(ja->ht, new_node);
+		assert(*shadow_node);
+	}
+
+	(*shadow_node)->nr_child = 0;
 	for (i = 0; i < old_type->max_child; i++) {
 		struct rcu_ja_node_flag *iter;
 
 		iter = ja_node_get_nth(*old_node_flag, i);
 		if (!iter)
 			continue;
-		ret = _ja_node_set_nth(new_node_flag, i, iter);
+		ret = _ja_node_set_nth(new_type, new_node, *shadow_node,
+				i, iter);
 		assert(!ret);
 	}
 	/* add node */
-	ret = _ja_node_set_nth(new_node_flag, n, child_node_flag);
+	ret = _ja_node_set_nth(new_type, new_node, *shadow_node,
+			n, child_node_flag);
 	assert(!ret);
 	/* Replace the old node with the new recompacted one */
 	rcu_assign_pointer(*old_node_flag, new_node_flag);
-	/* TODO: free old_node (call_rcu) */
+	ret = rcuja_shadow_clear(ja->ht, old_node,
+			RCUJA_SHADOW_CLEAR_FREE_NODE);
+	assert(!ret);
 	return 0;
 }
 
 static
-int ja_node_set_nth(struct rcu_ja_node_flag **node_flag, uint8_t n,
+int ja_node_set_nth(struct rcu_ja *ja,
+		struct rcu_ja_node_flag **node_flag, uint8_t n,
 		struct rcu_ja_node_flag *child_node_flag)
 {
 	int ret;
+	unsigned int type_index;
+	const struct rcu_ja_type *type;
+	struct rcu_ja_node *node;
+	struct rcu_ja_shadow_node *shadow_node = NULL;
 
-	ret = _ja_node_set_nth(*node_flag, n, child_node_flag);
-	if (ret == -ENOSPC) {
-		/* Not enough space in node, need to recompact */
-		ret = ja_node_recompact_add(node_flag, n,
-				child_node_flag);
-		if (ret < 0)
-			return ret;
+	node = ja_node_ptr(*node_flag);
+	type_index = ja_node_type(*node_flag);
+	type = &ja_types[type_index];
+	if (node != NULL) {
+		shadow_node = rcuja_shadow_lookup_lock(ja->ht, node);
+		assert(shadow_node);
 	}
+	ret = _ja_node_set_nth(type, node, shadow_node,
+			n, child_node_flag);
+	if (ret == -ENOSPC) {
+		/* Not enough space in node, need to recompact. */
+		ret = ja_node_recompact_add(ja, type_index, type, node,
+				&shadow_node, node_flag, n, child_node_flag);
+		/* recompact always leave shadow_node locked */
+	}
+	rcuja_shadow_unlock(shadow_node);
 	return ret;
 }

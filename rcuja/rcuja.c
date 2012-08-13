@@ -296,6 +296,14 @@ uint8_t *align_ptr_size(uint8_t *ptr)
 	return (uint8_t *) JA_ALIGN((unsigned long) ptr, sizeof(void *));
 }
 
+static
+uint8_t ja_linear_node_get_nr_child(const struct rcu_ja_type *type,
+		struct rcu_ja_node *node)
+{
+	assert(type->type_class == RCU_JA_LINEAR || type->type_class == RCU_JA_POOL);
+	return CMM_LOAD_SHARED(node->u.data[0]);
+}
+
 /*
  * The order in which values and pointers are does does not matter: if
  * a value is missing, we return NULL. If a value is there, but its
@@ -314,7 +322,7 @@ struct rcu_ja_node_flag *ja_linear_node_get_nth(const struct rcu_ja_type *type,
 
 	assert(type->type_class == RCU_JA_LINEAR || type->type_class == RCU_JA_POOL);
 
-	nr_child = CMM_LOAD_SHARED(node->u.data[0]);
+	nr_child = ja_linear_node_get_nr_child(type, node);
 	cmm_smp_rmb();	/* read nr_child before values and pointers */
 	assert(nr_child <= type->max_linear_child);
 	assert(type->type_class != RCU_JA_LINEAR || nr_child >= type->min_child);
@@ -333,6 +341,25 @@ struct rcu_ja_node_flag *ja_linear_node_get_nth(const struct rcu_ja_type *type,
 }
 
 static
+struct rcu_ja_node_flag *ja_linear_node_get_ith_pos(const struct rcu_ja_type *type,
+		struct rcu_ja_node *node,
+		uint8_t i,
+		uint8_t *v,
+		struct rcu_ja_node_flag **iter)
+{
+	uint8_t *values;
+	struct rcu_ja_node_flag **pointers;
+
+	assert(type->type_class == RCU_JA_LINEAR || type->type_class == RCU_JA_POOL);
+	assert(i < ja_linear_node_get_nr_child(type, node));
+
+	values = &node->u.data[1];
+	*v = values[i];
+	pointers = (struct rcu_ja_node_flag **) align_ptr_size(&values[type->max_linear_child]);
+	*iter = pointers[i];
+}
+
+static
 struct rcu_ja_node_flag *ja_pool_node_get_nth(const struct rcu_ja_type *type,
 		struct rcu_ja_node *node,
 		uint8_t n)
@@ -347,6 +374,16 @@ struct rcu_ja_node_flag *ja_pool_node_get_nth(const struct rcu_ja_type *type,
 	linear = (struct rcu_ja_node *)
 		&node->u.data[((unsigned long) n >> (CHAR_BIT - type->nr_pool_order)) << type->pool_size_order];
 	return ja_linear_node_get_nth(type, linear, n);
+}
+
+static
+struct rcu_ja_node *ja_pool_node_get_ith_pool(const struct rcu_ja_type *type,
+		struct rcu_ja_node *node,
+		uint8_t i)
+{
+	assert(type->type_class == RCU_JA_POOL);
+	return (struct rcu_ja_node *)
+		&node->u.data[(unsigned int) i << type->pool_size_order];
 }
 
 static
@@ -515,7 +552,6 @@ int ja_node_recompact_add(struct rcu_ja *ja,
 	struct rcu_ja_node *new_node;
 	const struct rcu_ja_type *new_type;
 	struct rcu_ja_node_flag *new_node_flag;
-	unsigned int i;
 	int ret;
 
 	if (*shadow_node == NULL) {
@@ -538,17 +574,66 @@ int ja_node_recompact_add(struct rcu_ja *ja,
 		assert(*shadow_node);
 	}
 
+	/*
+	 * We need to clear nr_child, because it will be re-incremented
+	 * by _ja_node_set_nth().
+	 */
 	(*shadow_node)->nr_child = 0;
-	for (i = 0; i < old_type->max_child; i++) {
-		struct rcu_ja_node_flag *iter;
 
-		iter = ja_node_get_nth(*old_node_flag, i);
-		if (!iter)
-			continue;
-		ret = _ja_node_set_nth(new_type, new_node, *shadow_node,
-				i, iter);
-		assert(!ret);
+	assert(old_type->type_class != RCU_JA_PIGEON);
+	switch (old_type->type_class) {
+	case RCU_JA_LINEAR:
+	{
+		uint8_t nr_child =
+			ja_linear_node_get_nr_child(old_type, old_node);
+		unsigned int i;
+
+		for (i = 0; i < nr_child; i++) {
+			struct rcu_ja_node_flag *iter;
+			uint8_t v;
+
+			ja_linear_node_get_ith_pos(old_type, old_node, i, &v, &iter);
+			if (!iter)
+				continue;
+			ret = _ja_node_set_nth(new_type, new_node, *shadow_node,
+					v, iter);
+			assert(!ret);
+		}
+		break;
 	}
+	case RCU_JA_POOL:
+	{
+		unsigned int pool_nr;
+
+		for (pool_nr = 0; pool_nr < (1U << old_type->nr_pool_order); pool_nr++) {
+			struct rcu_ja_node *pool =
+				ja_pool_node_get_ith_pool(old_type,
+					old_node, pool_nr);
+			uint8_t nr_child =
+				ja_linear_node_get_nr_child(old_type, pool);
+			unsigned int j;
+
+			for (j = 0; j < nr_child; j++) {
+				struct rcu_ja_node_flag *iter;
+				uint8_t v;
+
+				ja_linear_node_get_ith_pos(old_type, pool,
+						j, &v, &iter);
+				if (!iter)
+					continue;
+				ret = _ja_node_set_nth(new_type, new_node, *shadow_node,
+						v, iter);
+				assert(!ret);
+			}
+		}
+		break;
+	}
+	case RCU_JA_PIGEON:
+	default:
+		assert(0);
+		return -EINVAL;
+	}
+
 	/* add node */
 	ret = _ja_node_set_nth(new_type, new_node, *shadow_node,
 			n, child_node_flag);

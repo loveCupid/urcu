@@ -27,14 +27,14 @@
 #include <urcu/rculfhash.h>
 
 /* Never declared. Opaque type used to store flagged node pointers. */
-struct rcu_ja_node_flag;
+struct cds_ja_node_flag;
 
 /*
  * Shadow node contains mutex and call_rcu head associated with a node.
  */
-struct rcu_ja_shadow_node {
+struct cds_ja_shadow_node {
 	struct cds_lfht_node ht_node;	/* hash table node */
-	struct rcu_ja_node *node;	/* reverse mapping and hash table key */
+	struct cds_ja_node *node;	/* reverse mapping and hash table key */
 	/*
 	 * mutual exclusion on all nodes belonging to the same tree
 	 * position (e.g. both nodes before and after recompaction
@@ -45,8 +45,8 @@ struct rcu_ja_shadow_node {
 	struct rcu_head head;		/* for deferred node and shadow node reclaim */
 };
 
-struct rcu_ja {
-	struct rcu_ja_node_flag *root;
+struct cds_ja {
+	struct cds_ja_node_flag *root;
 	/*
 	 * We use a hash table to associate node keys to their
 	 * respective shadow node. This helps reducing lookup hot path
@@ -56,14 +56,14 @@ struct rcu_ja {
 };
 
 __attribute__((visibility("protected")))
-struct rcu_ja_shadow_node *rcuja_shadow_lookup_lock(struct cds_lfht *ht,
-		struct rcu_ja_node *node);
+struct cds_ja_shadow_node *rcuja_shadow_lookup_lock(struct cds_lfht *ht,
+		struct cds_ja_node *node);
 __attribute__((visibility("protected")))
-void rcuja_shadow_unlock(struct rcu_ja_shadow_node *shadow_node);
+void rcuja_shadow_unlock(struct cds_ja_shadow_node *shadow_node);
 __attribute__((visibility("protected")))
 int rcuja_shadow_set(struct cds_lfht *ht,
-		struct rcu_ja_node *new_node,
-		struct rcu_ja_shadow_node *inherit_from);
+		struct cds_ja_node *new_node,
+		struct cds_ja_shadow_node *inherit_from);
 __attribute__((visibility("protected")))
 
 /* rcuja_shadow_clear flags */
@@ -73,7 +73,7 @@ enum {
 };
 
 int rcuja_shadow_clear(struct cds_lfht *ht,
-		struct rcu_ja_node *node,
+		struct cds_ja_node *node,
 		unsigned int flags);
 __attribute__((visibility("protected")))
 struct cds_lfht *rcuja_create_ht(const struct rcu_flavor_struct *flavor);

@@ -168,19 +168,19 @@ unsigned long hash_pointer(const void *_key, unsigned long seed)
 static
 int match_pointer(struct cds_lfht_node *node, const void *key)
 {
-	struct rcu_ja_shadow_node *shadow =
-		caa_container_of(node, struct rcu_ja_shadow_node, ht_node);
+	struct cds_ja_shadow_node *shadow =
+		caa_container_of(node, struct cds_ja_shadow_node, ht_node);
 
 	return (key == shadow->node);
 }
 
 __attribute__((visibility("protected")))
-struct rcu_ja_shadow_node *rcuja_shadow_lookup_lock(struct cds_lfht *ht,
-		struct rcu_ja_node *node)
+struct cds_ja_shadow_node *rcuja_shadow_lookup_lock(struct cds_lfht *ht,
+		struct cds_ja_node *node)
 {
 	struct cds_lfht_iter iter;
 	struct cds_lfht_node *lookup_node;
-	struct rcu_ja_shadow_node *shadow_node;
+	struct cds_ja_shadow_node *shadow_node;
 	const struct rcu_flavor_struct *flavor;
 	int ret;
 
@@ -195,7 +195,7 @@ struct rcu_ja_shadow_node *rcuja_shadow_lookup_lock(struct cds_lfht *ht,
 		goto rcu_unlock;
 	}
 	shadow_node = caa_container_of(lookup_node,
-			struct rcu_ja_shadow_node, ht_node);
+			struct cds_ja_shadow_node, ht_node);
 	ret = pthread_mutex_lock(shadow_node->lock);
 	assert(!ret);
 	if (cds_lfht_is_node_deleted(lookup_node)) {
@@ -209,7 +209,7 @@ rcu_unlock:
 }
 
 __attribute__((visibility("protected")))
-void rcuja_shadow_unlock(struct rcu_ja_shadow_node *shadow_node)
+void rcuja_shadow_unlock(struct cds_ja_shadow_node *shadow_node)
 {
 	int ret;
 
@@ -219,10 +219,10 @@ void rcuja_shadow_unlock(struct rcu_ja_shadow_node *shadow_node)
 
 __attribute__((visibility("protected")))
 int rcuja_shadow_set(struct cds_lfht *ht,
-		struct rcu_ja_node *new_node,
-		struct rcu_ja_shadow_node *inherit_from)
+		struct cds_ja_node *new_node,
+		struct cds_ja_shadow_node *inherit_from)
 {
-	struct rcu_ja_shadow_node *shadow_node;
+	struct cds_ja_shadow_node *shadow_node;
 	struct cds_lfht_node *ret_node;
 	const struct rcu_flavor_struct *flavor;
 
@@ -264,8 +264,8 @@ int rcuja_shadow_set(struct cds_lfht *ht,
 static
 void free_shadow_node_and_node(struct rcu_head *head)
 {
-	struct rcu_ja_shadow_node *shadow_node =
-		caa_container_of(head, struct rcu_ja_shadow_node, head);
+	struct cds_ja_shadow_node *shadow_node =
+		caa_container_of(head, struct cds_ja_shadow_node, head);
 	free(shadow_node->node);
 	free(shadow_node);
 }
@@ -273,8 +273,8 @@ void free_shadow_node_and_node(struct rcu_head *head)
 static
 void free_shadow_node_and_node_and_lock(struct rcu_head *head)
 {
-	struct rcu_ja_shadow_node *shadow_node =
-		caa_container_of(head, struct rcu_ja_shadow_node, head);
+	struct cds_ja_shadow_node *shadow_node =
+		caa_container_of(head, struct cds_ja_shadow_node, head);
 	free(shadow_node->node);
 	free(shadow_node->lock);
 	free(shadow_node);
@@ -282,12 +282,12 @@ void free_shadow_node_and_node_and_lock(struct rcu_head *head)
 
 __attribute__((visibility("protected")))
 int rcuja_shadow_clear(struct cds_lfht *ht,
-		struct rcu_ja_node *node,
+		struct cds_ja_node *node,
 		unsigned int flags)
 {
 	struct cds_lfht_iter iter;
 	struct cds_lfht_node *lookup_node;
-	struct rcu_ja_shadow_node *shadow_node;
+	struct cds_ja_shadow_node *shadow_node;
 	const struct rcu_flavor_struct *flavor;
 	int ret, lockret;
 
@@ -301,7 +301,7 @@ int rcuja_shadow_clear(struct cds_lfht *ht,
 		goto rcu_unlock;
 	}
 	shadow_node = caa_container_of(lookup_node,
-			struct rcu_ja_shadow_node, ht_node);
+			struct cds_ja_shadow_node, ht_node);
 	lockret = pthread_mutex_lock(shadow_node->lock);
 	assert(!lockret);
 

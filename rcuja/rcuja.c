@@ -402,7 +402,7 @@ struct cds_ja_inode_flag *ja_pigeon_node_get_nth(const struct cds_ja_type *type,
  * node_flag is already rcu_dereference'd.
  */
 static
-struct cds_ja_inode_flag *ja_node_get_nth(struct cds_ja_inode_flag *node_flag,
+struct cds_ja_inode_flag * ja_node_get_nth(struct cds_ja_inode_flag *node_flag,
 		uint8_t n)
 {
 	unsigned int type_index;
@@ -410,7 +410,8 @@ struct cds_ja_inode_flag *ja_node_get_nth(struct cds_ja_inode_flag *node_flag,
 	const struct cds_ja_type *type;
 
 	node = ja_node_ptr(node_flag);
-	assert(node != NULL);
+	if (caa_unlikely(node == NULL))
+		return NULL;
 	type_index = ja_node_type(node_flag);
 	type = &ja_types[type_index];
 
@@ -684,9 +685,26 @@ int ja_node_set_nth(struct cds_ja *ja,
 	return ret;
 }
 
-struct cds_ja_node *cds_ja_lookup(uint64_t key)
+struct cds_ja_node *cds_ja_lookup(struct cds_ja *ja, uint64_t key)
 {
-	/* TODO */
+	unsigned int tree_depth, i;
+	struct cds_ja_inode_flag *node_flag;
+
+	if (caa_unlikely(key > ja->key_max))
+		return NULL;
+	tree_depth = ja->tree_depth;
+	node_flag = ja->root;
+
+	for (i = 0; i < tree_depth; i++) {
+		node_flag = ja_node_get_nth(node_flag,
+			(unsigned char) key);
+		if (!ja_node_ptr(node_flag))
+			return NULL;
+		key >>= JA_BITS_PER_BYTE;
+	}
+
+	/* Last level lookup succeded. We got an actual node. */
+	return (struct cds_ja_node *) node_flag;
 }
 
 struct cds_ja *_cds_ja_new(unsigned int key_bits,
@@ -744,4 +762,5 @@ int cds_ja_destroy(struct cds_ja *ja)
 	if (ret)
 		return ret;
 	free(ja);
+	return 0;
 }

@@ -681,3 +681,33 @@ int ja_node_set_nth(struct cds_ja *ja,
 	rcuja_shadow_unlock(shadow_node);
 	return ret;
 }
+
+struct cds_ja *_cds_ja_new(const struct rcu_flavor_struct *flavor)
+{
+	struct cds_ja *ja;
+
+	ja = calloc(sizeof(*ja), 1);
+	if (!ja)
+		goto ja_error;
+	/* ja->root is NULL */
+	ja->ht = rcuja_create_ht(flavor);
+	if (!ja->ht)
+		goto ht_error;
+	return ja;
+
+ht_error:
+	free(ja);
+ja_error:
+	return NULL;
+}
+
+/*
+ * There should be no more concurrent add to the judy array while it is
+ * being destroyed (ensured by the caller).
+ */
+int cds_ja_destroy(struct cds_ja *ja)
+{
+	rcuja_shadow_prune(ja->ht,
+		RCUJA_SHADOW_CLEAR_FREE_NODE | RCUJA_SHADOW_CLEAR_FREE_LOCK);
+	return rcuja_delete_ht(ja->ht);
+}

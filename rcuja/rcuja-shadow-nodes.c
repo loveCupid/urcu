@@ -329,6 +329,38 @@ rcu_unlock:
 	return ret;
 }
 
+/*
+ * Delete all shadow nodes and nodes from hash table, along with their
+ * associated lock.
+ */
+__attribute__((visibility("protected")))
+void rcuja_shadow_prune(struct cds_lfht *ht,
+		unsigned int flags)
+{
+	const struct rcu_flavor_struct *flavor;
+	struct cds_ja_shadow_node *shadow_node;
+	struct cds_lfht_iter iter;
+	int ret, lockret;
+
+	flavor = cds_lfht_rcu_flavor(ht);
+	flavor->read_lock();
+	cds_lfht_for_each_entry(ht, &iter, shadow_node, ht_node) {
+		lockret = pthread_mutex_lock(shadow_node->lock);
+		assert(!lockret);
+	
+		ret = cds_lfht_del(ht, &shadow_node->ht_node);
+		if (!ret) {
+			assert((flags & RCUJA_SHADOW_CLEAR_FREE_NODE)
+				&& (flags & RCUJA_SHADOW_CLEAR_FREE_LOCK));
+			flavor->update_call_rcu(&shadow_node->head,
+				free_shadow_node_and_node_and_lock);
+		}
+		lockret = pthread_mutex_unlock(shadow_node->lock);
+		assert(!lockret);
+	}
+	flavor->read_unlock();
+}
+
 __attribute__((visibility("protected")))
 struct cds_lfht *rcuja_create_ht(const struct rcu_flavor_struct *flavor)
 {
@@ -338,12 +370,9 @@ struct cds_lfht *rcuja_create_ht(const struct rcu_flavor_struct *flavor)
 }
 
 __attribute__((visibility("protected")))
-void rcuja_delete_ht(struct cds_lfht *ht)
+int rcuja_delete_ht(struct cds_lfht *ht)
 {
-	int ret;
-
-	ret = cds_lfht_destroy(ht, NULL);
-	assert(!ret);
+	return cds_lfht_destroy(ht, NULL);
 }
 
 __attribute__((constructor))

@@ -58,13 +58,14 @@ struct cds_ja {
 __attribute__((visibility("protected")))
 struct cds_ja_shadow_node *rcuja_shadow_lookup_lock(struct cds_lfht *ht,
 		struct cds_ja_node *node);
+
 __attribute__((visibility("protected")))
 void rcuja_shadow_unlock(struct cds_ja_shadow_node *shadow_node);
+
 __attribute__((visibility("protected")))
 int rcuja_shadow_set(struct cds_lfht *ht,
 		struct cds_ja_node *new_node,
 		struct cds_ja_shadow_node *inherit_from);
-__attribute__((visibility("protected")))
 
 /* rcuja_shadow_clear flags */
 enum {
@@ -72,12 +73,19 @@ enum {
 	RCUJA_SHADOW_CLEAR_FREE_LOCK = (1U << 1),
 };
 
+__attribute__((visibility("protected")))
 int rcuja_shadow_clear(struct cds_lfht *ht,
 		struct cds_ja_node *node,
 		unsigned int flags);
+
+__attribute__((visibility("protected")))
+void rcuja_shadow_prune(struct cds_lfht *ht,
+		unsigned int flags);
+
 __attribute__((visibility("protected")))
 struct cds_lfht *rcuja_create_ht(const struct rcu_flavor_struct *flavor);
+
 __attribute__((visibility("protected")))
-void rcuja_delete_ht(struct cds_lfht *ht);
+int rcuja_delete_ht(struct cds_lfht *ht);
 
 #endif /* _URCU_RCUJA_INTERNAL_H */

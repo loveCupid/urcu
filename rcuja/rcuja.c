@@ -425,6 +425,12 @@ struct rcu_ja_node_flag *ja_node_get_nth(struct rcu_ja_node_flag *node_flag,
 	}
 }
 
+/*
+ * TODO: use ja_get_nr_child to monitor limits triggering shrink
+ * recompaction.
+ * Also use ja_get_nr_child to make the difference between resize and
+ * pool change of compaction bit(s).
+ */
 static
 unsigned int ja_get_nr_child(struct rcu_ja_shadow_node *shadow_node)
 {

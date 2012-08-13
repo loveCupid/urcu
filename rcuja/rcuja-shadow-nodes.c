@@ -176,7 +176,7 @@ int match_pointer(struct cds_lfht_node *node, const void *key)
 
 __attribute__((visibility("protected")))
 struct cds_ja_shadow_node *rcuja_shadow_lookup_lock(struct cds_lfht *ht,
-		struct cds_ja_node *node)
+		struct cds_ja_inode *node)
 {
 	struct cds_lfht_iter iter;
 	struct cds_lfht_node *lookup_node;
@@ -219,7 +219,7 @@ void rcuja_shadow_unlock(struct cds_ja_shadow_node *shadow_node)
 
 __attribute__((visibility("protected")))
 int rcuja_shadow_set(struct cds_lfht *ht,
-		struct cds_ja_node *new_node,
+		struct cds_ja_inode *new_node,
 		struct cds_ja_shadow_node *inherit_from)
 {
 	struct cds_ja_shadow_node *shadow_node;
@@ -282,7 +282,7 @@ void free_shadow_node_and_node_and_lock(struct rcu_head *head)
 
 __attribute__((visibility("protected")))
 int rcuja_shadow_clear(struct cds_lfht *ht,
-		struct cds_ja_node *node,
+		struct cds_ja_inode *node,
 		unsigned int flags)
 {
 	struct cds_lfht_iter iter;

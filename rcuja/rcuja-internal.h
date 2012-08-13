@@ -27,14 +27,14 @@
 #include <urcu/rculfhash.h>
 
 /* Never declared. Opaque type used to store flagged node pointers. */
-struct cds_ja_node_flag;
+struct cds_ja_inode_flag;
 
 /*
  * Shadow node contains mutex and call_rcu head associated with a node.
  */
 struct cds_ja_shadow_node {
 	struct cds_lfht_node ht_node;	/* hash table node */
-	struct cds_ja_node *node;	/* reverse mapping and hash table key */
+	struct cds_ja_inode *node;	/* reverse mapping and hash table key */
 	/*
 	 * mutual exclusion on all nodes belonging to the same tree
 	 * position (e.g. both nodes before and after recompaction
@@ -46,7 +46,9 @@ struct cds_ja_shadow_node {
 };
 
 struct cds_ja {
-	struct cds_ja_node_flag *root;
+	struct cds_ja_inode_flag *root;
+	unsigned int tree_depth;
+	uint64_t key_max;
 	/*
 	 * We use a hash table to associate node keys to their
 	 * respective shadow node. This helps reducing lookup hot path
@@ -57,14 +59,14 @@ struct cds_ja {
 
 __attribute__((visibility("protected")))
 struct cds_ja_shadow_node *rcuja_shadow_lookup_lock(struct cds_lfht *ht,
-		struct cds_ja_node *node);
+		struct cds_ja_inode *node);
 
 __attribute__((visibility("protected")))
 void rcuja_shadow_unlock(struct cds_ja_shadow_node *shadow_node);
 
 __attribute__((visibility("protected")))
 int rcuja_shadow_set(struct cds_lfht *ht,
-		struct cds_ja_node *new_node,
+		struct cds_ja_inode *new_node,
 		struct cds_ja_shadow_node *inherit_from);
 
 /* rcuja_shadow_clear flags */
@@ -75,7 +77,7 @@ enum {
 
 __attribute__((visibility("protected")))
 int rcuja_shadow_clear(struct cds_lfht *ht,
-		struct cds_ja_node *node,
+		struct cds_ja_inode *node,
 		unsigned int flags);
 
 __attribute__((visibility("protected")))

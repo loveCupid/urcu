@@ -29,6 +29,7 @@
 #include <urcu/arch.h>
 #include <assert.h>
 #include <urcu-pointer.h>
+#include <stdint.h>
 
 #include "rcuja-internal.h"
 #include "bitfield.h"
@@ -69,6 +70,7 @@ struct cds_ja_type {
 #define JA_PTR_MASK	(~JA_TYPE_MASK)
 
 #define JA_ENTRY_PER_NODE	256UL
+#define JA_BITS_PER_BYTE	3
 
 /*
  * Entry for NULL node is at index 8 of the table. It is never encoded
@@ -214,7 +216,7 @@ void static_array_size_check(void)
 	struct {										\
 		uint8_t nr_child;								\
 		uint8_t child_value[ja_type_## index ##_max_linear_child];			\
-		struct cds_ja_node_flag *child_ptr[ja_type_## index ##_max_linear_child];	\
+		struct cds_ja_inode_flag *child_ptr[ja_type_## index ##_max_linear_child];	\
 	}
 
 #define DECLARE_POOL_NODE(index)								\
@@ -222,11 +224,11 @@ void static_array_size_check(void)
 		struct {									\
 			uint8_t nr_child;							\
 			uint8_t child_value[ja_type_## index ##_max_linear_child];		\
-			struct cds_ja_node_flag *child_ptr[ja_type_## index ##_max_linear_child]; \
+			struct cds_ja_inode_flag *child_ptr[ja_type_## index ##_max_linear_child]; \
 		} linear[1U << ja_type_## index ##_nr_pool_order];				\
 	}
 
-struct cds_ja_node {
+struct cds_ja_inode {
 	union {
 		/* Linear configuration */
 		DECLARE_LINEAR_NODE(0) conf_0;
@@ -241,29 +243,29 @@ struct cds_ja_node {
 
 		/* Pigeon configuration */
 		struct {
-			struct cds_ja_node_flag *child[ja_type_7_max_child];
+			struct cds_ja_inode_flag *child[ja_type_7_max_child];
 		} conf_7;
 		/* data aliasing nodes for computed accesses */
-		uint8_t data[sizeof(struct cds_ja_node_flag *) * ja_type_7_max_child];
+		uint8_t data[sizeof(struct cds_ja_inode_flag *) * ja_type_7_max_child];
 	} u;
 };
 
 static
-struct cds_ja_node_flag *ja_node_flag(struct cds_ja_node *node,
+struct cds_ja_inode_flag *ja_node_flag(struct cds_ja_inode *node,
 		unsigned int type)
 {
 	assert(type < RCU_JA_NR_TYPES);
-	return (struct cds_ja_node_flag *) (((unsigned long) node) | type);
+	return (struct cds_ja_inode_flag *) (((unsigned long) node) | type);
 }
 
 static
-struct cds_ja_node *ja_node_ptr(struct cds_ja_node_flag *node)
+struct cds_ja_inode *ja_node_ptr(struct cds_ja_inode_flag *node)
 {
-	return (struct cds_ja_node *) (((unsigned long) node) | JA_PTR_MASK);
+	return (struct cds_ja_inode *) (((unsigned long) node) | JA_PTR_MASK);
 }
 
 static
-unsigned int ja_node_type(struct cds_ja_node_flag *node)
+unsigned int ja_node_type(struct cds_ja_inode_flag *node)
 {
 	unsigned int type;
 
@@ -275,12 +277,12 @@ unsigned int ja_node_type(struct cds_ja_node_flag *node)
 	return type;
 }
 
-struct cds_ja_node *alloc_cds_ja_node(const struct cds_ja_type *ja_type)
+struct cds_ja_inode *alloc_cds_ja_node(const struct cds_ja_type *ja_type)
 {
 	return calloc(1U << ja_type->order, sizeof(char));
 }
 
-void free_cds_ja_node(struct cds_ja_node *node)
+void free_cds_ja_node(struct cds_ja_inode *node)
 {
 	free(node);
 }
@@ -298,7 +300,7 @@ uint8_t *align_ptr_size(uint8_t *ptr)
 
 static
 uint8_t ja_linear_node_get_nr_child(const struct cds_ja_type *type,
-		struct cds_ja_node *node)
+		struct cds_ja_inode *node)
 {
 	assert(type->type_class == RCU_JA_LINEAR || type->type_class == RCU_JA_POOL);
 	return CMM_LOAD_SHARED(node->u.data[0]);
@@ -310,14 +312,14 @@ uint8_t ja_linear_node_get_nr_child(const struct cds_ja_type *type,
  * associated pointers is still NULL, we return NULL too.
  */
 static
-struct cds_ja_node_flag *ja_linear_node_get_nth(const struct cds_ja_type *type,
-		struct cds_ja_node *node,
+struct cds_ja_inode_flag *ja_linear_node_get_nth(const struct cds_ja_type *type,
+		struct cds_ja_inode *node,
 		uint8_t n)
 {
 	uint8_t nr_child;
 	uint8_t *values;
-	struct cds_ja_node_flag **pointers;
-	struct cds_ja_node_flag *ptr;
+	struct cds_ja_inode_flag **pointers;
+	struct cds_ja_inode_flag *ptr;
 	unsigned int i;
 
 	assert(type->type_class == RCU_JA_LINEAR || type->type_class == RCU_JA_POOL);
@@ -334,65 +336,65 @@ struct cds_ja_node_flag *ja_linear_node_get_nth(const struct cds_ja_type *type,
 	}
 	if (i >= nr_child)
 		return NULL;
-	pointers = (struct cds_ja_node_flag **) align_ptr_size(&values[type->max_linear_child]);
+	pointers = (struct cds_ja_inode_flag **) align_ptr_size(&values[type->max_linear_child]);
 	ptr = rcu_dereference(pointers[i]);
 	assert(ja_node_ptr(ptr) != NULL);
 	return ptr;
 }
 
 static
-struct cds_ja_node_flag *ja_linear_node_get_ith_pos(const struct cds_ja_type *type,
-		struct cds_ja_node *node,
+struct cds_ja_inode_flag *ja_linear_node_get_ith_pos(const struct cds_ja_type *type,
+		struct cds_ja_inode *node,
 		uint8_t i,
 		uint8_t *v,
-		struct cds_ja_node_flag **iter)
+		struct cds_ja_inode_flag **iter)
 {
 	uint8_t *values;
-	struct cds_ja_node_flag **pointers;
+	struct cds_ja_inode_flag **pointers;
 
 	assert(type->type_class == RCU_JA_LINEAR || type->type_class == RCU_JA_POOL);
 	assert(i < ja_linear_node_get_nr_child(type, node));
 
 	values = &node->u.data[1];
 	*v = values[i];
-	pointers = (struct cds_ja_node_flag **) align_ptr_size(&values[type->max_linear_child]);
+	pointers = (struct cds_ja_inode_flag **) align_ptr_size(&values[type->max_linear_child]);
 	*iter = pointers[i];
 }
 
 static
-struct cds_ja_node_flag *ja_pool_node_get_nth(const struct cds_ja_type *type,
-		struct cds_ja_node *node,
+struct cds_ja_inode_flag *ja_pool_node_get_nth(const struct cds_ja_type *type,
+		struct cds_ja_inode *node,
 		uint8_t n)
 {
-	struct cds_ja_node *linear;
+	struct cds_ja_inode *linear;
 
 	assert(type->type_class == RCU_JA_POOL);
 	/*
 	 * TODO: currently, we select the pool by highest bits. We
 	 * should support various encodings.
 	 */
-	linear = (struct cds_ja_node *)
+	linear = (struct cds_ja_inode *)
 		&node->u.data[((unsigned long) n >> (CHAR_BIT - type->nr_pool_order)) << type->pool_size_order];
 	return ja_linear_node_get_nth(type, linear, n);
 }
 
 static
-struct cds_ja_node *ja_pool_node_get_ith_pool(const struct cds_ja_type *type,
-		struct cds_ja_node *node,
+struct cds_ja_inode *ja_pool_node_get_ith_pool(const struct cds_ja_type *type,
+		struct cds_ja_inode *node,
 		uint8_t i)
 {
 	assert(type->type_class == RCU_JA_POOL);
-	return (struct cds_ja_node *)
+	return (struct cds_ja_inode *)
 		&node->u.data[(unsigned int) i << type->pool_size_order];
 }
 
 static
-struct cds_ja_node_flag *ja_pigeon_node_get_nth(const struct cds_ja_type *type,
-		struct cds_ja_node *node,
+struct cds_ja_inode_flag *ja_pigeon_node_get_nth(const struct cds_ja_type *type,
+		struct cds_ja_inode *node,
 		uint8_t n)
 {
 	assert(type->type_class == RCU_JA_PIGEON);
-	return rcu_dereference(((struct cds_ja_node_flag **) node->u.data)[n]);
+	return rcu_dereference(((struct cds_ja_inode_flag **) node->u.data)[n]);
 }
 
 /*
@@ -400,11 +402,11 @@ struct cds_ja_node_flag *ja_pigeon_node_get_nth(const struct cds_ja_type *type,
  * node_flag is already rcu_dereference'd.
  */
 static
-struct cds_ja_node_flag *ja_node_get_nth(struct cds_ja_node_flag *node_flag,
+struct cds_ja_inode_flag *ja_node_get_nth(struct cds_ja_inode_flag *node_flag,
 		uint8_t n)
 {
 	unsigned int type_index;
-	struct cds_ja_node *node;
+	struct cds_ja_inode *node;
 	const struct cds_ja_type *type;
 
 	node = ja_node_ptr(node_flag);
@@ -439,14 +441,14 @@ unsigned int ja_get_nr_child(struct cds_ja_shadow_node *shadow_node)
 
 static
 int ja_linear_node_set_nth(const struct cds_ja_type *type,
-		struct cds_ja_node *node,
+		struct cds_ja_inode *node,
 		struct cds_ja_shadow_node *shadow_node,
 		uint8_t n,
-		struct cds_ja_node_flag *child_node_flag)
+		struct cds_ja_inode_flag *child_node_flag)
 {
 	uint8_t nr_child;
 	uint8_t *values, *nr_child_ptr;
-	struct cds_ja_node_flag **pointers;
+	struct cds_ja_inode_flag **pointers;
 	unsigned int i;
 
 	assert(type->type_class == RCU_JA_LINEAR || type->type_class == RCU_JA_POOL);
@@ -465,7 +467,7 @@ int ja_linear_node_set_nth(const struct cds_ja_type *type,
 		/* No space left in this node type */
 		return -ENOSPC;
 	}
-	pointers = (struct cds_ja_node_flag **) align_ptr_size(&values[type->max_linear_child]);
+	pointers = (struct cds_ja_inode_flag **) align_ptr_size(&values[type->max_linear_child]);
 	assert(pointers[nr_child] == NULL);
 	rcu_assign_pointer(pointers[nr_child], child_node_flag);
 	CMM_STORE_SHARED(values[nr_child], n);
@@ -477,15 +479,15 @@ int ja_linear_node_set_nth(const struct cds_ja_type *type,
 
 static
 int ja_pool_node_set_nth(const struct cds_ja_type *type,
-		struct cds_ja_node *node,
+		struct cds_ja_inode *node,
 		struct cds_ja_shadow_node *shadow_node,
 		uint8_t n,
-		struct cds_ja_node_flag *child_node_flag)
+		struct cds_ja_inode_flag *child_node_flag)
 {
-	struct cds_ja_node *linear;
+	struct cds_ja_inode *linear;
 
 	assert(type->type_class == RCU_JA_POOL);
-	linear = (struct cds_ja_node *)
+	linear = (struct cds_ja_inode *)
 		&node->u.data[((unsigned long) n >> (CHAR_BIT - type->nr_pool_order)) << type->pool_size_order];
 	return ja_linear_node_set_nth(type, linear, shadow_node,
 			n, child_node_flag);
@@ -493,15 +495,15 @@ int ja_pool_node_set_nth(const struct cds_ja_type *type,
 
 static
 int ja_pigeon_node_set_nth(const struct cds_ja_type *type,
-		struct cds_ja_node *node,
+		struct cds_ja_inode *node,
 		struct cds_ja_shadow_node *shadow_node,
 		uint8_t n,
-		struct cds_ja_node_flag *child_node_flag)
+		struct cds_ja_inode_flag *child_node_flag)
 {
-	struct cds_ja_node_flag **ptr;
+	struct cds_ja_inode_flag **ptr;
 
 	assert(type->type_class == RCU_JA_PIGEON);
-	ptr = &((struct cds_ja_node_flag **) node->u.data)[n];
+	ptr = &((struct cds_ja_inode_flag **) node->u.data)[n];
 	if (*ptr != NULL)
 		return -EEXIST;
 	rcu_assign_pointer(*ptr, child_node_flag);
@@ -516,10 +518,10 @@ int ja_pigeon_node_set_nth(const struct cds_ja_type *type,
  */
 static
 int _ja_node_set_nth(const struct cds_ja_type *type,
-		struct cds_ja_node *node,
+		struct cds_ja_inode *node,
 		struct cds_ja_shadow_node *shadow_node,
 		uint8_t n,
-		struct cds_ja_node_flag *child_node_flag)
+		struct cds_ja_inode_flag *child_node_flag)
 {
 	switch (type->type_class) {
 	case RCU_JA_LINEAR:
@@ -549,15 +551,15 @@ static
 int ja_node_recompact_add(struct cds_ja *ja,
 		unsigned int old_type_index,
 		const struct cds_ja_type *old_type,
-		struct cds_ja_node *old_node,
+		struct cds_ja_inode *old_node,
 		struct cds_ja_shadow_node **shadow_node,
-		struct cds_ja_node_flag **old_node_flag, uint8_t n,
-		struct cds_ja_node_flag *child_node_flag)
+		struct cds_ja_inode_flag **old_node_flag, uint8_t n,
+		struct cds_ja_inode_flag *child_node_flag)
 {
 	unsigned int new_type_index;
-	struct cds_ja_node *new_node;
+	struct cds_ja_inode *new_node;
 	const struct cds_ja_type *new_type;
-	struct cds_ja_node_flag *new_node_flag;
+	struct cds_ja_inode_flag *new_node_flag;
 	int ret;
 
 	if (*shadow_node == NULL) {
@@ -595,7 +597,7 @@ int ja_node_recompact_add(struct cds_ja *ja,
 		unsigned int i;
 
 		for (i = 0; i < nr_child; i++) {
-			struct cds_ja_node_flag *iter;
+			struct cds_ja_inode_flag *iter;
 			uint8_t v;
 
 			ja_linear_node_get_ith_pos(old_type, old_node, i, &v, &iter);
@@ -612,7 +614,7 @@ int ja_node_recompact_add(struct cds_ja *ja,
 		unsigned int pool_nr;
 
 		for (pool_nr = 0; pool_nr < (1U << old_type->nr_pool_order); pool_nr++) {
-			struct cds_ja_node *pool =
+			struct cds_ja_inode *pool =
 				ja_pool_node_get_ith_pool(old_type,
 					old_node, pool_nr);
 			uint8_t nr_child =
@@ -620,7 +622,7 @@ int ja_node_recompact_add(struct cds_ja *ja,
 			unsigned int j;
 
 			for (j = 0; j < nr_child; j++) {
-				struct cds_ja_node_flag *iter;
+				struct cds_ja_inode_flag *iter;
 				uint8_t v;
 
 				ja_linear_node_get_ith_pos(old_type, pool,
@@ -654,13 +656,13 @@ int ja_node_recompact_add(struct cds_ja *ja,
 
 static
 int ja_node_set_nth(struct cds_ja *ja,
-		struct cds_ja_node_flag **node_flag, uint8_t n,
-		struct cds_ja_node_flag *child_node_flag)
+		struct cds_ja_inode_flag **node_flag, uint8_t n,
+		struct cds_ja_inode_flag *child_node_flag)
 {
 	int ret;
 	unsigned int type_index;
 	const struct cds_ja_type *type;
-	struct cds_ja_node *node;
+	struct cds_ja_inode *node;
 	struct cds_ja_shadow_node *shadow_node = NULL;
 
 	node = ja_node_ptr(*node_flag);
@@ -682,20 +684,47 @@ int ja_node_set_nth(struct cds_ja *ja,
 	return ret;
 }
 
-struct cds_ja *_cds_ja_new(const struct rcu_flavor_struct *flavor)
+struct cds_ja_node *cds_ja_lookup(uint64_t key)
+{
+	/* TODO */
+}
+
+struct cds_ja *_cds_ja_new(unsigned int key_bits,
+		const struct rcu_flavor_struct *flavor)
 {
 	struct cds_ja *ja;
+
 
 	ja = calloc(sizeof(*ja), 1);
 	if (!ja)
 		goto ja_error;
+
+	switch (key_bits) {
+	case 8:
+		ja->key_max = UINT8_MAX;
+		break;
+	case 16:
+		ja->key_max = UINT16_MAX;
+		break;
+	case 32:
+		ja->key_max = UINT32_MAX;
+		break;
+	case 64:
+		ja->key_max = UINT64_MAX;
+		break;
+	default:
+		goto check_error;
+	}
+
 	/* ja->root is NULL */
+	ja->tree_depth = key_bits >> JA_BITS_PER_BYTE;
 	ja->ht = rcuja_create_ht(flavor);
 	if (!ja->ht)
 		goto ht_error;
 	return ja;
 
 ht_error:
+check_error:
 	free(ja);
 ja_error:
 	return NULL;
@@ -707,7 +736,12 @@ ja_error:
  */
 int cds_ja_destroy(struct cds_ja *ja)
 {
+	int ret;
+
 	rcuja_shadow_prune(ja->ht,
 		RCUJA_SHADOW_CLEAR_FREE_NODE | RCUJA_SHADOW_CLEAR_FREE_LOCK);
-	return rcuja_delete_ht(ja->ht);
+	ret = rcuja_delete_ht(ja->ht);
+	if (ret)
+		return ret;
+	free(ja);
 }

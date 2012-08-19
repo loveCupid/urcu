@@ -876,7 +876,8 @@ int cds_ja_add(struct cds_ja *ja, uint64_t key,
 retry:
 	iter_key = key;
 	parent2_node_flag = NULL;
-	parent_node_flag = NULL;
+	parent_node_flag =
+		(struct cds_ja_inode_flag *) &ja->root;	/* Use root ptr address as key for mutex */
 	node_flag_ptr = &ja->root;
 	node_flag = rcu_dereference(*node_flag_ptr);
 
@@ -921,6 +922,7 @@ struct cds_ja *_cds_ja_new(unsigned int key_bits,
 		const struct rcu_flavor_struct *flavor)
 {
 	struct cds_ja *ja;
+	int ret;
 
 	ja = calloc(sizeof(*ja), 1);
 	if (!ja)
@@ -950,8 +952,21 @@ struct cds_ja *_cds_ja_new(unsigned int key_bits,
 	ja->ht = rcuja_create_ht(flavor);
 	if (!ja->ht)
 		goto ht_error;
+
+	/*
+	 * Note: we should not free this node until judy array destroy.
+	 */
+	ret = rcuja_shadow_set(ja->ht,
+			ja_node_ptr((struct cds_ja_inode_flag *) &ja->root),
+			NULL);
+	if (ret)
+		goto ht_node_error;
+
 	return ja;
 
+ht_node_error:
+	ret = rcuja_delete_ht(ja->ht);
+	assert(!ret);
 ht_error:
 check_error:
 	free(ja);

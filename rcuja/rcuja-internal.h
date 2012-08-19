@@ -43,6 +43,7 @@ struct cds_ja_shadow_node {
 	pthread_mutex_t *lock;
 	unsigned int nr_child;		/* number of children in node */
 	struct rcu_head head;		/* for deferred node and shadow node reclaim */
+	int is_root;			/* is it a root node ? */
 };
 
 struct cds_ja {

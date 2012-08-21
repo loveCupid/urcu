@@ -762,11 +762,13 @@ struct cds_hlist_head *cds_ja_lookup(struct cds_ja *ja, uint64_t key)
 		return NULL;
 
 	for (i = 1; i < tree_depth; i++) {
+		uint8_t iter_key;
+
+		iter_key = (uint8_t) (key >> (JA_BITS_PER_BYTE * (tree_depth - i - 1)));
 		node_flag = ja_node_get_nth(node_flag, NULL,
-			(unsigned char) key);
+			iter_key);
 		if (!ja_node_ptr(node_flag))
 			return NULL;
-		key >>= JA_BITS_PER_BYTE;
 	}
 
 	/* Last level lookup succeded. We got an actual match. */
@@ -791,7 +793,7 @@ int ja_attach_node(struct cds_ja *ja,
 		struct cds_ja_inode_flag *node_flag,
 		struct cds_ja_inode_flag *parent_node_flag,
 		uint64_t key,
-		unsigned int depth,
+		unsigned int level,
 		struct cds_ja_node *child_node)
 {
 	struct cds_ja_shadow_node *shadow_node = NULL,
@@ -805,7 +807,7 @@ int ja_attach_node(struct cds_ja *ja,
 	struct cds_ja_inode_flag *created_nodes[JA_MAX_DEPTH];
 	int nr_created_nodes = 0;
 
-	dbg_printf("Attach node at depth %u\n", depth);
+	dbg_printf("Attach node at level %u\n", level);
 
 	assert(node);
 	shadow_node = rcuja_shadow_lookup_lock(ja->ht, node);
@@ -837,12 +839,15 @@ int ja_attach_node(struct cds_ja *ja,
 	}
 	created_nodes[nr_created_nodes++] = iter_node_flag;
 
-	for (i = ja->tree_depth - 1; i >= (int) depth; i--) {
-		dbg_printf("branch creation level %d, key %" PRIu64 "\n",
-				i, key >> (JA_BITS_PER_BYTE * (i - 2)));
+	for (i = ja->tree_depth; i > (int) level; i--) {
+		uint8_t iter_key;
+
+		iter_key = (uint8_t) (key >> (JA_BITS_PER_BYTE * (ja->tree_depth - i)));
+		dbg_printf("branch creation level %d, key %u\n",
+				i - 1, (unsigned int) iter_key);
 		iter_dest_node_flag = NULL;
 		ret = ja_node_set_nth(ja, &iter_dest_node_flag,
-			key >> (JA_BITS_PER_BYTE * (i - 2)),
+			iter_key,
 			iter_node_flag,
 			NULL);
 		if (ret)
@@ -851,11 +856,14 @@ int ja_attach_node(struct cds_ja *ja,
 		iter_node_flag = iter_dest_node_flag;
 	}
 
-	if (depth > 1) {
+	if (level > 1) {
+		uint8_t iter_key;
+
+		iter_key = (uint8_t) (key >> (JA_BITS_PER_BYTE * (ja->tree_depth - level)));
 		/* We need to use set_nth on the previous level. */
 		iter_dest_node_flag = node_flag;
 		ret = ja_node_set_nth(ja, &iter_dest_node_flag,
-			key >> (JA_BITS_PER_BYTE * (depth - 2)),
+			iter_key,
 			iter_node_flag,
 			shadow_node);
 		if (ret)
@@ -923,7 +931,6 @@ int cds_ja_add(struct cds_ja *ja, uint64_t key,
 		struct cds_ja_node *new_node)
 {
 	unsigned int tree_depth, i;
-	uint64_t iter_key;
 	struct cds_ja_inode_flag **node_flag_ptr;	/* in parent */
 	struct cds_ja_inode_flag *node_flag,
 		*parent_node_flag,
@@ -937,7 +944,6 @@ int cds_ja_add(struct cds_ja *ja, uint64_t key,
 retry:
 	dbg_printf("cds_ja_add attempt: key %" PRIu64 ", node %p\n",
 		key, new_node);
-	iter_key = key;
 	parent2_node_flag = NULL;
 	parent_node_flag =
 		(struct cds_ja_inode_flag *) &ja->root;	/* Use root ptr address as key for mutex */
@@ -946,6 +952,8 @@ retry:
 
 	/* Iterate on all internal levels */
 	for (i = 1; i < tree_depth; i++) {
+		uint8_t iter_key;
+
 		if (!ja_node_ptr(node_flag)) {
 			ret = ja_attach_node(ja, node_flag_ptr,
 					parent_node_flag, parent2_node_flag,
@@ -955,12 +963,12 @@ retry:
 			else
 				goto end;
 		}
+		iter_key = (uint8_t) (key >> (JA_BITS_PER_BYTE * (tree_depth - i - 1)));
 		parent2_node_flag = parent_node_flag;
 		parent_node_flag = node_flag;
 		node_flag = ja_node_get_nth(node_flag,
 			&node_flag_ptr,
-			(unsigned char) iter_key);
-		iter_key >>= JA_BITS_PER_BYTE;
+			iter_key);
 	}
 
 	/*

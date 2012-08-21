@@ -220,7 +220,7 @@ void rcuja_shadow_unlock(struct cds_ja_shadow_node *shadow_node)
 }
 
 __attribute__((visibility("protected")))
-int rcuja_shadow_set(struct cds_lfht *ht,
+struct cds_ja_shadow_node *rcuja_shadow_set(struct cds_lfht *ht,
 		struct cds_ja_inode *new_node,
 		struct cds_ja_shadow_node *inherit_from)
 {
@@ -230,7 +230,7 @@ int rcuja_shadow_set(struct cds_lfht *ht,
 
 	shadow_node = calloc(sizeof(*shadow_node), 1);
 	if (!shadow_node)
-		return -ENOMEM;
+		return NULL;
 
 	shadow_node->node = new_node;
 	/*
@@ -242,7 +242,7 @@ int rcuja_shadow_set(struct cds_lfht *ht,
 		shadow_node->lock = calloc(sizeof(*shadow_node->lock), 1);
 		if (!shadow_node->lock) {
 			free(shadow_node);
-			return -ENOMEM;
+			return NULL;
 		}
 		pthread_mutex_init(shadow_node->lock, NULL);
 	}
@@ -258,9 +258,9 @@ int rcuja_shadow_set(struct cds_lfht *ht,
 
 	if (ret_node != &shadow_node->ht_node) {
 		free(shadow_node);
-		return -EEXIST;
+		return NULL;
 	}
-	return 0;
+	return shadow_node;
 }
 
 static

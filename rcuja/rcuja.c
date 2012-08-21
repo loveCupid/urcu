@@ -29,6 +29,7 @@
 #include <urcu/arch.h>
 #include <assert.h>
 #include <urcu-pointer.h>
+#include <urcu/uatomic.h>
 #include <stdint.h>
 
 #include "rcuja-internal.h"
@@ -79,6 +80,12 @@ struct cds_ja_type {
  * in flags.
  */
 #define NODE_INDEX_NULL		8
+
+/*
+ * Number of removals needed on a fallback node before we try to shrink
+ * it.
+ */
+#define JA_FALLBACK_REMOVAL_COUNT	8
 
 /*
  * Iteration on the array to find the right node size for the number of
@@ -581,18 +588,20 @@ int ja_node_recompact_add(struct cds_ja *ja,
 {
 	unsigned int new_type_index;
 	struct cds_ja_inode *new_node;
+	struct cds_ja_shadow_node *new_shadow_node;
 	const struct cds_ja_type *new_type;
 	struct cds_ja_inode_flag *new_node_flag;
-	int new_shadow = 0;
 	int ret;
+	int fallback = 0;
 
 	if (!shadow_node || old_type_index == NODE_INDEX_NULL) {
 		new_type_index = 0;
 	} else {
 		new_type_index = old_type_index + 1;
 	}
-	dbg_printf("Recompact to type %d\n", new_type_index);
 
+retry:		/* for fallback */
+	dbg_printf("Recompact to type %d\n", new_type_index);
 	new_type = &ja_types[new_type_index];
 	new_node = alloc_cds_ja_node(new_type);
 	if (!new_node)
@@ -600,23 +609,14 @@ int ja_node_recompact_add(struct cds_ja *ja,
 	new_node_flag = ja_node_flag(new_node, new_type_index);
 
 	dbg_printf("Recompact inherit lock from %p\n", shadow_node);
-	ret = rcuja_shadow_set(ja->ht, new_node, shadow_node);
-	if (ret) {
+	new_shadow_node = rcuja_shadow_set(ja->ht, new_node, shadow_node);
+	if (!new_shadow_node) {
 		free(new_node);
-		return ret;
+		return -ENOMEM;
 	}
-
-	if (!shadow_node) {
-		shadow_node = rcuja_shadow_lookup_lock(ja->ht, new_node);
-		assert(shadow_node);
-		new_shadow = 1;
-	}
-
-	/*
-	 * We need to clear nr_child, because it will be re-incremented
-	 * by _ja_node_set_nth().
-	 */
-	shadow_node->nr_child = 0;
+	if (fallback)
+		new_shadow_node->fallback_removal_count =
+					JA_FALLBACK_REMOVAL_COUNT;
 
 	assert(old_type->type_class != RCU_JA_PIGEON);
 	switch (old_type->type_class) {
@@ -633,8 +633,12 @@ int ja_node_recompact_add(struct cds_ja *ja,
 			ja_linear_node_get_ith_pos(old_type, old_node, i, &v, &iter);
 			if (!iter)
 				continue;
-			ret = _ja_node_set_nth(new_type, new_node, shadow_node,
+			ret = _ja_node_set_nth(new_type, new_node,
+					new_shadow_node,
 					v, iter);
+			if (new_type->type_class == RCU_JA_POOL && ret) {
+				goto fallback_toosmall;
+			}
 			assert(!ret);
 		}
 		break;
@@ -659,8 +663,13 @@ int ja_node_recompact_add(struct cds_ja *ja,
 						j, &v, &iter);
 				if (!iter)
 					continue;
-				ret = _ja_node_set_nth(new_type, new_node, shadow_node,
+				ret = _ja_node_set_nth(new_type, new_node,
+						new_shadow_node,
 						v, iter);
+				if (new_type->type_class == RCU_JA_POOL
+						&& ret) {
+					goto fallback_toosmall;
+				}
 				assert(!ret);
 			}
 		}
@@ -673,11 +682,12 @@ int ja_node_recompact_add(struct cds_ja *ja,
 	default:
 		assert(0);
 		ret = -EINVAL;
-		goto unlock_new_shadow;
+		goto end;
 	}
 
 	/* add node */
-	ret = _ja_node_set_nth(new_type, new_node, shadow_node,
+	ret = _ja_node_set_nth(new_type, new_node,
+			new_shadow_node,
 			n, child_node_flag);
 	assert(!ret);
 	/* Return pointer to new recompacted new through old_node_flag */
@@ -689,11 +699,21 @@ int ja_node_recompact_add(struct cds_ja *ja,
 	}
 
 	ret = 0;
-
-unlock_new_shadow:
-	if (new_shadow)
-		rcuja_shadow_unlock(shadow_node);
+end:
 	return ret;
+
+fallback_toosmall:
+	/* fallback if next pool is too small */
+	ret = rcuja_shadow_clear(ja->ht, new_node, new_shadow_node,
+			RCUJA_SHADOW_CLEAR_FREE_NODE);
+	assert(!ret);
+
+	/* Last type: pigeon */
+	new_type_index = (1UL << JA_TYPE_BITS) - 1;
+	dbg_printf("Fallback to type %d\n", new_type_index);
+	uatomic_inc(&ja->nr_fallback);
+	fallback = 1;
+	goto retry;
 }
 
 /*
@@ -775,7 +795,8 @@ int ja_attach_node(struct cds_ja *ja,
 		struct cds_ja_node *child_node)
 {
 	struct cds_ja_shadow_node *shadow_node = NULL,
-			*parent_shadow_node = NULL;
+			*parent_shadow_node = NULL,
+			*iter_shadow_node;
 	struct cds_ja_inode *node = ja_node_ptr(node_flag);
 	struct cds_ja_inode *parent_node = ja_node_ptr(parent_node_flag);
 	struct cds_hlist_head head;
@@ -808,9 +829,12 @@ int ja_attach_node(struct cds_ja *ja,
 
 	/* Create shadow node for the leaf node */
 	dbg_printf("leaf shadow node creation\n");
-	ret = rcuja_shadow_set(ja->ht, ja_node_ptr(iter_node_flag), NULL);
-	if (ret)
+	iter_shadow_node = rcuja_shadow_set(ja->ht,
+			ja_node_ptr(iter_node_flag), NULL);
+	if (!iter_shadow_node) {
+		ret = -ENOMEM;
 		goto check_error;
+	}
 	created_nodes[nr_created_nodes++] = iter_node_flag;
 
 	for (i = ja->tree_depth - 1; i >= (int) depth; i--) {
@@ -962,6 +986,7 @@ struct cds_ja *_cds_ja_new(unsigned int key_bits,
 {
 	struct cds_ja *ja;
 	int ret;
+	struct cds_ja_shadow_node *root_shadow_node;
 
 	ja = calloc(sizeof(*ja), 1);
 	if (!ja)
@@ -995,11 +1020,13 @@ struct cds_ja *_cds_ja_new(unsigned int key_bits,
 	/*
 	 * Note: we should not free this node until judy array destroy.
 	 */
-	ret = rcuja_shadow_set(ja->ht,
+	root_shadow_node = rcuja_shadow_set(ja->ht,
 			ja_node_ptr((struct cds_ja_inode_flag *) &ja->root),
 			NULL);
-	if (ret)
+	if (!root_shadow_node) {
+		ret = -ENOMEM;
 		goto ht_node_error;
+	}
 
 	return ja;
 
@@ -1026,6 +1053,10 @@ int cds_ja_destroy(struct cds_ja *ja)
 	ret = rcuja_delete_ht(ja->ht);
 	if (ret)
 		return ret;
+	if (uatomic_read(&ja->nr_fallback))
+		fprintf(stderr,
+			"[warning] RCU Judy Array used %lu fallback node(s)\n",
+			uatomic_read(&ja->nr_fallback));
 	free(ja);
 	return 0;
 }

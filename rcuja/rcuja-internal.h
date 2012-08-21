@@ -46,6 +46,7 @@ struct cds_ja_shadow_node {
 	unsigned int nr_child;		/* number of children in node */
 	struct rcu_head head;		/* for deferred node and shadow node reclaim */
 	int is_root;			/* is it a root node ? */
+	int fallback_removal_count;	/* removals left keeping fallback */
 };
 
 struct cds_ja {
@@ -58,6 +59,7 @@ struct cds_ja {
 	 * cache footprint, especially for very small nodes.
 	 */
 	struct cds_lfht *ht;
+	unsigned long nr_fallback;	/* Number of fallback nodes used */
 };
 
 __attribute__((visibility("protected")))
@@ -68,7 +70,7 @@ __attribute__((visibility("protected")))
 void rcuja_shadow_unlock(struct cds_ja_shadow_node *shadow_node);
 
 __attribute__((visibility("protected")))
-int rcuja_shadow_set(struct cds_lfht *ht,
+struct cds_ja_shadow_node *rcuja_shadow_set(struct cds_lfht *ht,
 		struct cds_ja_inode *new_node,
 		struct cds_ja_shadow_node *inherit_from);
 

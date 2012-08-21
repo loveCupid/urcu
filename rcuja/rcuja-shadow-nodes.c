@@ -294,6 +294,7 @@ void free_shadow_node_and_node_and_lock(struct rcu_head *head)
 {
 	struct cds_ja_shadow_node *shadow_node =
 		caa_container_of(head, struct cds_ja_shadow_node, head);
+	assert(!shadow_node->is_root);
 	free(shadow_node->node);
 	free(shadow_node->lock);
 	free(shadow_node);
@@ -337,7 +338,8 @@ int rcuja_shadow_clear(struct cds_lfht *ht,
 	 */
 	ret = cds_lfht_del(ht, lookup_node);
 	if (!ret) {
-		if (flags & RCUJA_SHADOW_CLEAR_FREE_NODE) {
+		if ((flags & RCUJA_SHADOW_CLEAR_FREE_NODE)
+				&& !shadow_node->is_root) {
 			if (flags & RCUJA_SHADOW_CLEAR_FREE_LOCK) {
 				flavor->update_call_rcu(&shadow_node->head,
 					free_shadow_node_and_node_and_lock);
@@ -386,10 +388,24 @@ void rcuja_shadow_prune(struct cds_lfht *ht,
 	
 		ret = cds_lfht_del(ht, &shadow_node->ht_node);
 		if (!ret) {
-			assert((flags & RCUJA_SHADOW_CLEAR_FREE_NODE)
-				&& (flags & RCUJA_SHADOW_CLEAR_FREE_LOCK));
-			flavor->update_call_rcu(&shadow_node->head,
-				free_shadow_node_and_node_and_lock);
+			if ((flags & RCUJA_SHADOW_CLEAR_FREE_NODE)
+					&& !shadow_node->is_root) {
+				if (flags & RCUJA_SHADOW_CLEAR_FREE_LOCK) {
+					flavor->update_call_rcu(&shadow_node->head,
+						free_shadow_node_and_node_and_lock);
+				} else {
+					flavor->update_call_rcu(&shadow_node->head,
+						free_shadow_node_and_node);
+				}
+			} else {
+				if (flags & RCUJA_SHADOW_CLEAR_FREE_LOCK) {
+					flavor->update_call_rcu(&shadow_node->head,
+						free_shadow_node_and_lock);
+				} else {
+					flavor->update_call_rcu(&shadow_node->head,
+						free_shadow_node);
+				}
+			}
 		}
 		lockret = pthread_mutex_unlock(shadow_node->lock);
 		assert(!lockret);

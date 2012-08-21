@@ -23,6 +23,7 @@
 #define _GNU_SOURCE
 #include "test_urcu_ja.h"
 #include <inttypes.h>
+#include <stdint.h>
 
 DEFINE_URCU_TLS(unsigned int, rand_lookup);
 DEFINE_URCU_TLS(unsigned long, nr_add);
@@ -172,6 +173,234 @@ printf("        [not -u nor -s] Add entries (supports redundant keys).\n");
 	printf("\n\n");
 }
 
+
+static
+int test_8bit_key(void)
+{
+	int ret;
+	uint64_t key;
+
+	/* Test with 8-bit key */
+	test_ja = cds_ja_new(8);
+	if (!test_ja) {
+		printf("Error allocating judy array.\n");
+		return -1;
+	}
+
+	/* Add keys */
+	printf("Test #1: add keys (8-bit).\n");
+	for (key = 0; key < 200; key++) {
+		struct ja_test_node *node =
+			calloc(sizeof(*node), 1);
+
+		ja_test_node_init(node, key);
+		rcu_read_lock();
+		ret = cds_ja_add(test_ja, key, &node->node);
+		rcu_read_unlock();
+		if (ret) {
+			fprintf(stderr, "Error (%d) adding node %" PRIu64 "\n",
+				ret, key);
+			assert(0);
+		}
+	}
+	printf("OK\n");
+
+	printf("Test #2: successful key lookup (8-bit).\n");
+	for (key = 0; key < 200; key++) {
+		struct cds_hlist_head *head;
+
+		rcu_read_lock();
+		head = cds_ja_lookup(test_ja, key);
+		if (!head) {
+			fprintf(stderr, "Error lookup node %" PRIu64 "\n", key);
+			assert(0);
+		}
+		rcu_read_unlock();
+	}
+	printf("OK\n");
+	printf("Test #3: unsuccessful key lookup (8-bit).\n");
+	for (key = 200; key < 240; key++) {
+		struct cds_hlist_head *head;
+
+		rcu_read_lock();
+		head = cds_ja_lookup(test_ja, key);
+		if (head) {
+			fprintf(stderr,
+				"Error unexpected lookup node %" PRIu64 "\n",
+				key);
+			assert(0);
+		}
+		rcu_read_unlock();
+	}
+	printf("OK\n");
+
+	ret = cds_ja_destroy(test_ja);
+	if (ret) {
+		fprintf(stderr, "Error destroying judy array\n");
+		return -1;
+	}
+	return 0;
+}
+
+static
+int test_16bit_key(void)
+{
+	int ret;
+	uint64_t key;
+
+	/* Test with 16-bit key */
+	test_ja = cds_ja_new(16);
+	if (!test_ja) {
+		printf("Error allocating judy array.\n");
+		return -1;
+	}
+
+	/* Add keys */
+	printf("Test #1: add keys (16-bit).\n");
+	//for (key = 0; key < 10000; key++) {
+	for (key = 0; key < 65536; key+=256) {
+		struct ja_test_node *node =
+			calloc(sizeof(*node), 1);
+
+		ja_test_node_init(node, key);
+		rcu_read_lock();
+		ret = cds_ja_add(test_ja, key, &node->node);
+		rcu_read_unlock();
+		if (ret) {
+			fprintf(stderr, "Error (%d) adding node %" PRIu64 "\n",
+				ret, key);
+			assert(0);
+		}
+	}
+	printf("OK\n");
+
+	printf("Test #2: successful key lookup (16-bit).\n");
+	//for (key = 0; key < 10000; key++) {
+	for (key = 0; key < 65536; key+=256) {
+		struct cds_hlist_head *head;
+
+		rcu_read_lock();
+		head = cds_ja_lookup(test_ja, key);
+		if (!head) {
+			fprintf(stderr, "Error lookup node %" PRIu64 "\n", key);
+			assert(0);
+		}
+		rcu_read_unlock();
+	}
+	printf("OK\n");
+	printf("Test #3: unsuccessful key lookup (16-bit).\n");
+	for (key = 11000; key <= 11002; key++) {
+		struct cds_hlist_head *head;
+
+		rcu_read_lock();
+		head = cds_ja_lookup(test_ja, key);
+		if (head) {
+			fprintf(stderr,
+				"Error unexpected lookup node %" PRIu64 "\n",
+				key);
+			assert(0);
+		}
+		rcu_read_unlock();
+	}
+	printf("OK\n");
+
+	ret = cds_ja_destroy(test_ja);
+	if (ret) {
+		fprintf(stderr, "Error destroying judy array\n");
+		return -1;
+	}
+	return 0;
+}
+
+static
+int test_sparse_key(unsigned int bits)
+{
+	int ret;
+	uint64_t key, max_key;
+	int zerocount;
+
+	if (bits == 64)
+		max_key = UINT64_MAX;
+	else
+		max_key = (1ULL << bits) - 1;
+
+	printf("Sparse key test begins for %u-bit keys\n", bits);
+	/* Test with 16-bit key */
+	test_ja = cds_ja_new(bits);
+	if (!test_ja) {
+		printf("Error allocating judy array.\n");
+		return -1;
+	}
+
+	/* Add keys */
+	printf("Test #1: add keys (%u-bit).\n", bits);
+	zerocount = 0;
+	for (key = 0; key <= max_key && (key != 0 || zerocount < 1); key += 1ULL << (bits - 8)) {
+		struct ja_test_node *node =
+			calloc(sizeof(*node), 1);
+
+		ja_test_node_init(node, key);
+		rcu_read_lock();
+		ret = cds_ja_add(test_ja, key, &node->node);
+		rcu_read_unlock();
+		if (ret) {
+			fprintf(stderr, "Error (%d) adding node %" PRIu64 "\n",
+				ret, key);
+			assert(0);
+		}
+		if (key == 0)
+			zerocount++;
+	}
+	printf("OK\n");
+
+	printf("Test #2: successful key lookup (%u-bit).\n", bits);
+	zerocount = 0;
+	for (key = 0; key <= max_key && (key != 0 || zerocount < 1); key += 1ULL << (bits - 8)) {
+		struct cds_hlist_head *head;
+
+		rcu_read_lock();
+		head = cds_ja_lookup(test_ja, key);
+		if (!head) {
+			fprintf(stderr, "Error lookup node %" PRIu64 "\n", key);
+			assert(0);
+		}
+		rcu_read_unlock();
+		if (key == 0)
+			zerocount++;
+	}
+	printf("OK\n");
+	if (bits > 8) {
+		printf("Test #3: unsuccessful key lookup (%u-bit).\n", bits);
+		zerocount = 0;
+		for (key = 0; key <= max_key && (key != 0 || zerocount < 1); key += 1ULL << (bits - 8)) {
+			struct cds_hlist_head *head;
+
+			rcu_read_lock();
+			head = cds_ja_lookup(test_ja, key + 42);
+			if (head) {
+				fprintf(stderr,
+					"Error unexpected lookup node %" PRIu64 "\n",
+					key + 42);
+				assert(0);
+			}
+			rcu_read_unlock();
+			if (key == 0)
+				zerocount++;
+		}
+		printf("OK\n");
+	}
+
+	ret = cds_ja_destroy(test_ja);
+	if (ret) {
+		fprintf(stderr, "Error destroying judy array\n");
+		return -1;
+	}
+	printf("Test ends\n");
+
+	return 0;
+}
+
+
 int main(int argc, char **argv)
 {
 	int err;
@@ -302,66 +531,49 @@ int main(int argc, char **argv)
 		printf("Per-CPU call_rcu() worker threads unavailable. Using default global worker thread.\n");
 	}
 
-	/* Test with 8-bit key */
-	test_ja = cds_ja_new(8);
-	if (!test_ja) {
-		printf("Error allocating judy array.\n");
-		return -1;
-	}
+	rcu_register_thread();
 
-	/* Add keys */
-	printf("Test #1: add keys (8-bit).\n");
-	for (key = 0; key < 200; key++) {
-		struct ja_test_node *node =
-			calloc(sizeof(*node), 1);
+	printf("Test start.\n");
 
-		ja_test_node_init(node, key);
-		rcu_read_lock();
-		ret = cds_ja_add(test_ja, key, &node->node);
-		rcu_read_unlock();
+	for (i = 0; i < 3; i++) {
+		ret = test_8bit_key();
 		if (ret) {
-			fprintf(stderr, "Error (%d) adding node %" PRIu64 "\n",
-				ret, key);
-			assert(0);
+			return ret;
 		}
+		rcu_quiescent_state();
 	}
-	printf("OK\n");
-
-	printf("Test #2: successful key lookup (8-bit).\n");
-	for (key = 0; key < 200; key++) {
-		struct cds_hlist_head *head;
-
-		rcu_read_lock();
-		head = cds_ja_lookup(test_ja, key);
-		if (!head) {
-			fprintf(stderr, "Error lookup node %" PRIu64 "\n", key);
-			assert(0);
-		}
-		rcu_read_unlock();
-	}
-	printf("OK\n");
-	printf("Test #3: unsuccessful key lookup (8-bit).\n");
-	for (key = 200; key < 240; key++) {
-		struct cds_hlist_head *head;
-
-		rcu_read_lock();
-		head = cds_ja_lookup(test_ja, key);
-		if (head) {
-			fprintf(stderr,
-				"Error unexpected lookup node %" PRIu64 "\n",
-				key);
-			assert(0);
-		}
-		rcu_read_unlock();
-	}
-	printf("OK\n");
-
-	ret = cds_ja_destroy(test_ja);
+	ret = test_16bit_key();
 	if (ret) {
-		fprintf(stderr, "Error destroying judy array\n");
-		return -1;
+		return ret;
 	}
+	rcu_quiescent_state();
+
+	ret = test_sparse_key(8);
+	if (ret) {
+		return ret;
+	}
+	rcu_quiescent_state();
+
+	ret = test_sparse_key(16);
+	if (ret) {
+		return ret;
+	}
+	rcu_quiescent_state();
+
+	ret = test_sparse_key(32);
+	if (ret) {
+		return ret;
+	}
+	rcu_quiescent_state();
+
+	ret = test_sparse_key(64);
+	if (ret) {
+		return ret;
+	}
+	rcu_quiescent_state();
+
 	printf("Test end.\n");
+	rcu_unregister_thread();
 	return 0;
 
 #if 0

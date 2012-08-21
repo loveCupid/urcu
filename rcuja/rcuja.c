@@ -73,7 +73,7 @@ struct cds_ja_type {
 #define JA_ENTRY_PER_NODE	256UL
 #define JA_BITS_PER_BYTE	3
 
-#define JA_MAX_DEPTH	5	/* Maximum depth, including leafs */
+#define JA_MAX_DEPTH	9	/* Maximum depth, including leafs */
 
 /*
  * Entry for NULL node is at index 8 of the table. It is never encoded

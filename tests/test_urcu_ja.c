@@ -22,6 +22,7 @@
 
 #define _GNU_SOURCE
 #include "test_urcu_ja.h"
+#include <inttypes.h>
 
 DEFINE_URCU_TLS(unsigned int, rand_lookup);
 DEFINE_URCU_TLS(unsigned long, nr_add);
@@ -182,6 +183,7 @@ int main(int argc, char **argv)
 		tot_add = 0, tot_add_exist = 0, tot_remove = 0;
 	int i, a, ret;
 	unsigned int remain;
+	uint64_t key;
 
 	if (argc < 4) {
 		show_usage(argc, argv);
@@ -308,21 +310,55 @@ int main(int argc, char **argv)
 	}
 
 	/* Add keys */
-	for (i = 0; i < 200; i++) {
+	printf("Test #1: add keys (8-bit).\n");
+	for (key = 0; key < 200; key++) {
 		struct ja_test_node *node =
 			calloc(sizeof(*node), 1);
 
-		ja_test_node_init(node, i);
-		ret = cds_ja_add(test_ja, i, &node->node);
+		ja_test_node_init(node, key);
+		rcu_read_lock();
+		ret = cds_ja_add(test_ja, key, &node->node);
+		rcu_read_unlock();
 		if (ret) {
-			printf("Error adding node (%d)\n", ret);
-			return -1;
+			fprintf(stderr, "Error (%d) adding node %" PRIu64 "\n",
+				ret, key);
+			assert(0);
 		}
 	}
+	printf("OK\n");
+
+	printf("Test #2: successful key lookup (8-bit).\n");
+	for (key = 0; key < 200; key++) {
+		struct cds_hlist_head *head;
+
+		rcu_read_lock();
+		head = cds_ja_lookup(test_ja, key);
+		if (!head) {
+			fprintf(stderr, "Error lookup node %" PRIu64 "\n", key);
+			assert(0);
+		}
+		rcu_read_unlock();
+	}
+	printf("OK\n");
+	printf("Test #3: unsuccessful key lookup (8-bit).\n");
+	for (key = 200; key < 240; key++) {
+		struct cds_hlist_head *head;
+
+		rcu_read_lock();
+		head = cds_ja_lookup(test_ja, key);
+		if (head) {
+			fprintf(stderr,
+				"Error unexpected lookup node %" PRIu64 "\n",
+				key);
+			assert(0);
+		}
+		rcu_read_unlock();
+	}
+	printf("OK\n");
 
 	ret = cds_ja_destroy(test_ja);
 	if (ret) {
-		printf("Error destroying judy array\n");
+		fprintf(stderr, "Error destroying judy array\n");
 		return -1;
 	}
 	printf("Test end.\n");

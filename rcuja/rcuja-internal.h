@@ -24,6 +24,8 @@
  */
 
 #include <pthread.h>
+#include <stdio.h>
+#include <inttypes.h>
 #include <urcu/rculfhash.h>
 
 /* Never declared. Opaque type used to store flagged node pointers. */
@@ -79,6 +81,7 @@ enum {
 __attribute__((visibility("protected")))
 int rcuja_shadow_clear(struct cds_lfht *ht,
 		struct cds_ja_inode *node,
+		struct cds_ja_shadow_node *shadow_node,
 		unsigned int flags);
 
 __attribute__((visibility("protected")))
@@ -90,5 +93,18 @@ struct cds_lfht *rcuja_create_ht(const struct rcu_flavor_struct *flavor);
 
 __attribute__((visibility("protected")))
 int rcuja_delete_ht(struct cds_lfht *ht);
+
+#define DEBUG
+
+#ifdef DEBUG
+#define dbg_printf(fmt, args...)     printf("[debug rcuja] " fmt, ## args)
+#else
+#define dbg_printf(fmt, args...)				\
+do {								\
+	/* do nothing but check printf format */		\
+	if (0)							\
+		printf("[debug rcuja] " fmt, ## args);	\
+} while (0)
+#endif
 
 #endif /* _URCU_RCUJA_INTERNAL_H */

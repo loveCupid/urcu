@@ -65,14 +65,14 @@ struct cds_ja_type {
  * child type.
  */
 #define JA_TYPE_BITS	3
-#define JA_TYPE_MAX_NR	(1U << JA_TYPE_BITS)
+#define JA_TYPE_MAX_NR	(1UL << JA_TYPE_BITS)
 #define JA_TYPE_MASK	(JA_TYPE_MAX_NR - 1)
 #define JA_PTR_MASK	(~JA_TYPE_MASK)
 
 #define JA_ENTRY_PER_NODE	256UL
 #define JA_BITS_PER_BYTE	3
 
-#define JA_MAX_INTERNAL_DEPTH	5	/* Maximum depth, excluding leafs */
+#define JA_MAX_DEPTH	5	/* Maximum depth, including leafs */
 
 /*
  * Entry for NULL node is at index 8 of the table. It is never encoded
@@ -254,28 +254,28 @@ struct cds_ja_inode {
 
 static
 struct cds_ja_inode_flag *ja_node_flag(struct cds_ja_inode *node,
-		unsigned int type)
+		unsigned long type)
 {
-	assert(type < RCU_JA_NR_TYPES);
+	assert(type < (1UL << JA_TYPE_BITS));
 	return (struct cds_ja_inode_flag *) (((unsigned long) node) | type);
 }
 
 static
 struct cds_ja_inode *ja_node_ptr(struct cds_ja_inode_flag *node)
 {
-	return (struct cds_ja_inode *) (((unsigned long) node) | JA_PTR_MASK);
+	return (struct cds_ja_inode *) (((unsigned long) node) & JA_PTR_MASK);
 }
 
 static
-unsigned int ja_node_type(struct cds_ja_inode_flag *node)
+unsigned long ja_node_type(struct cds_ja_inode_flag *node)
 {
-	unsigned int type;
+	unsigned long type;
 
 	if (ja_node_ptr(node) == NULL) {
 		return NODE_INDEX_NULL;
 	}
 	type = (unsigned int) ((unsigned long) node & JA_TYPE_MASK);
-	assert(type < RCU_JA_NR_TYPES);
+	assert(type < (1UL << JA_TYPE_BITS));
 	return type;
 }
 
@@ -470,9 +470,9 @@ int ja_linear_node_set_nth(const struct cds_ja_type *type,
 	assert(type->type_class == RCU_JA_LINEAR || type->type_class == RCU_JA_POOL);
 
 	nr_child_ptr = &node->u.data[0];
+	dbg_printf("linear set nth: nr_child_ptr %p\n", nr_child_ptr);
 	nr_child = *nr_child_ptr;
 	assert(nr_child <= type->max_linear_child);
-	assert(type->type_class != RCU_JA_LINEAR || nr_child >= type->min_child);
 
 	values = &node->u.data[1];
 	for (i = 0; i < nr_child; i++) {
@@ -490,6 +490,11 @@ int ja_linear_node_set_nth(const struct cds_ja_type *type,
 	cmm_smp_wmb();	/* write value and pointer before nr_child */
 	CMM_STORE_SHARED(*nr_child_ptr, nr_child + 1);
 	shadow_node->nr_child++;
+	dbg_printf("linear set nth: %u child, shadow: %u child, for node %p shadow %p\n",
+		(unsigned int) CMM_LOAD_SHARED(*nr_child_ptr),
+		(unsigned int) shadow_node->nr_child,
+		node, shadow_node);
+
 	return 0;
 }
 
@@ -581,17 +586,20 @@ int ja_node_recompact_add(struct cds_ja *ja,
 	int new_shadow = 0;
 	int ret;
 
-	if (!shadow_node) {
+	if (!shadow_node || old_type_index == NODE_INDEX_NULL) {
 		new_type_index = 0;
 	} else {
 		new_type_index = old_type_index + 1;
 	}
+	dbg_printf("Recompact to type %d\n", new_type_index);
+
 	new_type = &ja_types[new_type_index];
 	new_node = alloc_cds_ja_node(new_type);
 	if (!new_node)
 		return -ENOMEM;
 	new_node_flag = ja_node_flag(new_node, new_type_index);
 
+	dbg_printf("Recompact inherit lock from %p\n", shadow_node);
 	ret = rcuja_shadow_set(ja->ht, new_node, shadow_node);
 	if (ret) {
 		free(new_node);
@@ -658,6 +666,9 @@ int ja_node_recompact_add(struct cds_ja *ja,
 		}
 		break;
 	}
+	case RCU_JA_NULL:
+		/* Nothing to copy */
+		break;
 	case RCU_JA_PIGEON:
 	default:
 		assert(0);
@@ -671,9 +682,11 @@ int ja_node_recompact_add(struct cds_ja *ja,
 	assert(!ret);
 	/* Return pointer to new recompacted new through old_node_flag */
 	*old_node_flag = new_node_flag;
-	ret = rcuja_shadow_clear(ja->ht, old_node,
-			RCUJA_SHADOW_CLEAR_FREE_NODE);
-	assert(!ret);
+	if (old_node) {
+		ret = rcuja_shadow_clear(ja->ht, old_node, shadow_node,
+				RCUJA_SHADOW_CLEAR_FREE_NODE);
+		assert(!ret);
+	}
 
 	ret = 0;
 
@@ -697,6 +710,9 @@ int ja_node_set_nth(struct cds_ja *ja,
 	unsigned int type_index;
 	const struct cds_ja_type *type;
 	struct cds_ja_inode *node;
+
+	dbg_printf("ja_node_set_nth for n=%u, node %p, shadow %p\n",
+		(unsigned int) n, ja_node_ptr(*node_flag), shadow_node);
 
 	node = ja_node_ptr(*node_flag);
 	type_index = ja_node_type(*node_flag);
@@ -765,8 +781,10 @@ int ja_attach_node(struct cds_ja *ja,
 	struct cds_hlist_head head;
 	struct cds_ja_inode_flag *iter_node_flag, *iter_dest_node_flag;
 	int ret, i;
-	struct cds_ja_inode_flag *created_nodes[JA_MAX_INTERNAL_DEPTH];
+	struct cds_ja_inode_flag *created_nodes[JA_MAX_DEPTH];
 	int nr_created_nodes = 0;
+
+	dbg_printf("Attach node at depth %u\n", depth);
 
 	assert(node);
 	shadow_node = rcuja_shadow_lookup_lock(ja->ht, node);
@@ -783,24 +801,24 @@ int ja_attach_node(struct cds_ja *ja,
 		}
 	}
 
+	/* Create new branch, starting from bottom */
 	CDS_INIT_HLIST_HEAD(&head);
 	cds_hlist_add_head_rcu(&child_node->list, &head);
+	iter_node_flag = (struct cds_ja_inode_flag *) head.next;
 
-	iter_dest_node_flag = NULL;
-	ret = ja_node_set_nth(ja, &iter_dest_node_flag,
-			key >> (JA_BITS_PER_BYTE * (ja->tree_depth - 2)),
-			(struct cds_ja_inode_flag *) head.next,
-			NULL);
+	/* Create shadow node for the leaf node */
+	dbg_printf("leaf shadow node creation\n");
+	ret = rcuja_shadow_set(ja->ht, ja_node_ptr(iter_node_flag), NULL);
 	if (ret)
-		goto unlock_parent;
-	created_nodes[nr_created_nodes++] = iter_dest_node_flag;
-	iter_node_flag = iter_dest_node_flag;
+		goto check_error;
+	created_nodes[nr_created_nodes++] = iter_node_flag;
 
-	/* Create new branch, starting from bottom */
-	for (i = ja->tree_depth - 2; i >= (int) depth; i--) {
+	for (i = ja->tree_depth - 1; i >= (int) depth; i--) {
+		dbg_printf("branch creation level %d, key %" PRIu64 "\n",
+				i, key >> (JA_BITS_PER_BYTE * (i - 2)));
 		iter_dest_node_flag = NULL;
 		ret = ja_node_set_nth(ja, &iter_dest_node_flag,
-			key >> (JA_BITS_PER_BYTE * (i - 1)),
+			key >> (JA_BITS_PER_BYTE * (i - 2)),
 			iter_node_flag,
 			NULL);
 		if (ret)
@@ -809,7 +827,22 @@ int ja_attach_node(struct cds_ja *ja,
 		iter_node_flag = iter_dest_node_flag;
 	}
 
+	if (depth > 1) {
+		/* We need to use set_nth on the previous level. */
+		iter_dest_node_flag = node_flag;
+		ret = ja_node_set_nth(ja, &iter_dest_node_flag,
+			key >> (JA_BITS_PER_BYTE * (depth - 2)),
+			iter_node_flag,
+			shadow_node);
+		if (ret)
+			goto check_error;
+		created_nodes[nr_created_nodes++] = iter_dest_node_flag;
+		iter_node_flag = iter_dest_node_flag;
+	}
+
 	/* Publish new branch */
+	dbg_printf("Publish branch %p, replacing %p\n",
+		iter_node_flag, *node_flag_ptr);
 	rcu_assign_pointer(*node_flag_ptr, iter_node_flag);
 
 	/* Success */
@@ -819,14 +852,18 @@ check_error:
 	if (ret) {
 		for (i = 0; i < nr_created_nodes; i++) {
 			int tmpret;
+			int flags;
+
+			flags = RCUJA_SHADOW_CLEAR_FREE_LOCK;
+			if (i)
+				flags |= RCUJA_SHADOW_CLEAR_FREE_NODE;
 			tmpret = rcuja_shadow_clear(ja->ht,
 					ja_node_ptr(created_nodes[i]),
-					RCUJA_SHADOW_CLEAR_FREE_NODE
-					| RCUJA_SHADOW_CLEAR_FREE_LOCK);
+					NULL,
+					flags);
 			assert(!tmpret);
 		}
 	}
-unlock_parent:
 	if (parent_shadow_node)
 		rcuja_shadow_unlock(parent_shadow_node);
 unlock_shadow:
@@ -874,6 +911,8 @@ int cds_ja_add(struct cds_ja *ja, uint64_t key,
 	tree_depth = ja->tree_depth;
 
 retry:
+	dbg_printf("cds_ja_add attempt: key %" PRIu64 ", node %p\n",
+		key, new_node);
 	iter_key = key;
 	parent2_node_flag = NULL;
 	parent_node_flag =
@@ -882,7 +921,7 @@ retry:
 	node_flag = rcu_dereference(*node_flag_ptr);
 
 	/* Iterate on all internal levels */
-	for (i = 0; i < tree_depth - 1; i++) {
+	for (i = 1; i < tree_depth; i++) {
 		if (!ja_node_ptr(node_flag)) {
 			ret = ja_attach_node(ja, node_flag_ptr,
 					parent_node_flag, parent2_node_flag,
@@ -948,7 +987,7 @@ struct cds_ja *_cds_ja_new(unsigned int key_bits,
 	/* ja->root is NULL */
 	/* tree_depth 0 is for pointer to root node */
 	ja->tree_depth = (key_bits >> JA_BITS_PER_BYTE) + 1;
-	assert(ja->tree_depth <= JA_MAX_INTERNAL_DEPTH + 1);
+	assert(ja->tree_depth <= JA_MAX_DEPTH);
 	ja->ht = rcuja_create_ht(flavor);
 	if (!ja->ht)
 		goto ht_error;

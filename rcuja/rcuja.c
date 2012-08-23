@@ -1186,7 +1186,7 @@ retry:
 	parent_node_flag =
 		(struct cds_ja_inode_flag *) &ja->root;	/* Use root ptr address as key for mutex */
 	node_flag_ptr = &ja->root;
-	node_flag = rcu_dereference(*node_flag_ptr);
+	node_flag = rcu_dereference(ja->root);
 
 	/* Iterate on all internal levels */
 	for (i = 1; i < tree_depth; i++) {
@@ -1230,6 +1230,90 @@ retry:
 	if (ret == -EAGAIN)
 		goto retry;
 end:
+	return ret;
+}
+
+static
+int ja_detach_node(struct cds_ja *ja,
+		struct cds_ja_inode_flag **snapshot,
+		int nr_snapshot,
+		uint64_t key,
+		struct cds_ja_node *node)
+{
+	int ret;
+
+	assert(nr_snapshot == ja->tree_depth - 1);
+
+	return ret;
+}
+
+int cds_ja_del(struct cds_ja *ja, uint64_t key,
+		struct cds_ja_node *node)
+{
+	unsigned int tree_depth, i;
+	struct cds_ja_inode_flag *snapshot[JA_MAX_DEPTH];
+	struct cds_ja_inode_flag *node_flag;
+	int nr_snapshot = 0;
+	int ret;
+
+	if (caa_unlikely(key > ja->key_max))
+		return -EINVAL;
+	tree_depth = ja->tree_depth;
+
+retry:
+	dbg_printf("cds_ja_del attempt: key %" PRIu64 ", node %p\n",
+		key, node);
+
+	/* snapshot for level 0 is only for shadow node lookup */
+	snapshot[nr_snapshot++] = (struct cds_ja_inode_flag *) &ja->root;
+	node_flag = rcu_dereference(ja->root);
+
+	/* Iterate on all internal levels */
+	for (i = 1; i < tree_depth; i++) {
+		uint8_t iter_key;
+
+		dbg_printf("cds_ja_del iter node_flag %p\n",
+				node_flag);
+		if (!ja_node_ptr(node_flag)) {
+			return -ENOENT;
+		}
+		snapshot[nr_snapshot++] = node_flag;
+		iter_key = (uint8_t) (key >> (JA_BITS_PER_BYTE * (tree_depth - i - 1)));
+		node_flag = ja_node_get_nth(node_flag,
+			NULL,
+			iter_key);
+		dbg_printf("cds_ja_del iter key lookup %u finds node_flag %p\n",
+				(unsigned int) iter_key, node_flag);
+	}
+
+	/*
+	 * We reached bottom of tree, try to find the node we are trying
+	 * to remove. Fail if we cannot find it.
+	 */
+	if (!ja_node_ptr(node_flag)) {
+		return -ENOENT;
+	} else {
+		struct cds_hlist_head *hlist_head;
+		struct cds_hlist_node *hlist_node;
+		struct cds_ja_node *entry;
+		int found;
+
+		hlist_head = (struct cds_hlist_head *) ja_node_ptr(node_flag);
+		cds_hlist_for_each_entry(entry,
+				hlist_node,
+				hlist_head,
+				list) {
+			if (entry == node) {
+				found = 1;
+				break;
+			}
+		}
+		if (!found)
+			return -ENOENT;
+		ret = ja_detach_node(ja, snapshot, nr_snapshot, key, node);
+	}
+	if (ret == -EAGAIN)
+		goto retry;
 	return ret;
 }
 

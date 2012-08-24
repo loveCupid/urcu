@@ -123,14 +123,14 @@ void rcu_copy_mutex_unlock(void)
 	}
 }
 
-#if 0
 void free_node_cb(struct rcu_head *head)
 {
 	struct ja_test_node *node =
-		caa_container_of(head, struct ja_test_node, head);
+		caa_container_of(head, struct ja_test_node, node.head);
 	free(node);
 }
 
+#if 0
 static
 void test_delete_all_nodes(struct cds_lfht *ht)
 {
@@ -233,8 +233,29 @@ int test_8bit_key(void)
 		rcu_read_unlock();
 	}
 	printf("OK\n");
+	printf("Test #4: remove keys (8-bit).\n");
+	for (key = 0; key < 200; key++) {
+		struct cds_hlist_head head;
+		struct ja_test_node *node;
 
-	ret = cds_ja_destroy(test_ja);
+		rcu_read_lock();
+		head = cds_ja_lookup(test_ja, key);
+		node = cds_hlist_first_entry_rcu(&head, struct ja_test_node, node.list);
+		if (!node) {
+			fprintf(stderr, "Error lookup node %" PRIu64 "\n", key);
+			assert(0);
+		}
+		ret = cds_ja_del(test_ja, key, &node->node);
+		if (ret) {
+			fprintf(stderr, "Error (%d) removing node %" PRIu64 "\n", ret, key);
+			assert(0);
+		}
+		call_rcu(&node->node.head, free_node_cb);
+		rcu_read_unlock();
+	}
+	printf("OK\n");
+
+	ret = cds_ja_destroy(test_ja, free_node_cb);
 	if (ret) {
 		fprintf(stderr, "Error destroying judy array\n");
 		return -1;
@@ -304,7 +325,7 @@ int test_16bit_key(void)
 	}
 	printf("OK\n");
 
-	ret = cds_ja_destroy(test_ja);
+	ret = cds_ja_destroy(test_ja, free_node_cb);
 	if (ret) {
 		fprintf(stderr, "Error destroying judy array\n");
 		return -1;
@@ -390,7 +411,7 @@ int test_sparse_key(unsigned int bits)
 		printf("OK\n");
 	}
 
-	ret = cds_ja_destroy(test_ja);
+	ret = cds_ja_destroy(test_ja, free_node_cb);
 	if (ret) {
 		fprintf(stderr, "Error destroying judy array\n");
 		return -1;

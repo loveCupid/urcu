@@ -171,12 +171,12 @@ int match_pointer(struct cds_lfht_node *node, const void *key)
 	struct cds_ja_shadow_node *shadow =
 		caa_container_of(node, struct cds_ja_shadow_node, ht_node);
 
-	return (key == shadow->node);
+	return (key == shadow->node_flag);
 }
 
 __attribute__((visibility("protected")))
 struct cds_ja_shadow_node *rcuja_shadow_lookup_lock(struct cds_lfht *ht,
-		struct cds_ja_inode *node)
+		struct cds_ja_inode_flag *node_flag)
 {
 	struct cds_lfht_iter iter;
 	struct cds_lfht_node *lookup_node;
@@ -186,8 +186,8 @@ struct cds_ja_shadow_node *rcuja_shadow_lookup_lock(struct cds_lfht *ht,
 
 	flavor = cds_lfht_rcu_flavor(ht);
 	flavor->read_lock();
-	cds_lfht_lookup(ht, hash_pointer(node, hash_seed),
-			match_pointer, node, &iter);
+	cds_lfht_lookup(ht, hash_pointer(node_flag, hash_seed),
+			match_pointer, node_flag, &iter);
 
 	lookup_node = cds_lfht_iter_get_node(&iter);
 	if (!lookup_node) {
@@ -221,8 +221,9 @@ void rcuja_shadow_unlock(struct cds_ja_shadow_node *shadow_node)
 
 __attribute__((visibility("protected")))
 struct cds_ja_shadow_node *rcuja_shadow_set(struct cds_lfht *ht,
-		struct cds_ja_inode *new_node,
-		struct cds_ja_shadow_node *inherit_from)
+		struct cds_ja_inode_flag *new_node_flag,
+		struct cds_ja_shadow_node *inherit_from,
+		struct cds_ja *ja)
 {
 	struct cds_ja_shadow_node *shadow_node;
 	struct cds_lfht_node *ret_node;
@@ -232,7 +233,8 @@ struct cds_ja_shadow_node *rcuja_shadow_set(struct cds_lfht *ht,
 	if (!shadow_node)
 		return NULL;
 
-	shadow_node->node = new_node;
+	shadow_node->node_flag = new_node_flag;
+	shadow_node->ja = ja;
 	/*
 	 * Lock can be inherited from previous node at this position.
 	 */
@@ -250,9 +252,9 @@ struct cds_ja_shadow_node *rcuja_shadow_set(struct cds_lfht *ht,
 	flavor = cds_lfht_rcu_flavor(ht);
 	flavor->read_lock();
 	ret_node = cds_lfht_add_unique(ht,
-			hash_pointer(new_node, hash_seed),
+			hash_pointer(new_node_flag, hash_seed),
 			match_pointer,
-			new_node,
+			new_node_flag,
 			&shadow_node->ht_node);
 	flavor->read_unlock();
 
@@ -276,7 +278,7 @@ void free_shadow_node_and_node(struct rcu_head *head)
 {
 	struct cds_ja_shadow_node *shadow_node =
 		caa_container_of(head, struct cds_ja_shadow_node, head);
-	free(shadow_node->node);
+	free(ja_node_ptr(shadow_node->node_flag));
 	free(shadow_node);
 }
 
@@ -294,15 +296,15 @@ void free_shadow_node_and_node_and_lock(struct rcu_head *head)
 {
 	struct cds_ja_shadow_node *shadow_node =
 		caa_container_of(head, struct cds_ja_shadow_node, head);
-	assert(!shadow_node->is_root);
-	free(shadow_node->node);
+	assert(shadow_node->level);
+	free(ja_node_ptr(shadow_node->node_flag));
 	free(shadow_node->lock);
 	free(shadow_node);
 }
 
 __attribute__((visibility("protected")))
 int rcuja_shadow_clear(struct cds_lfht *ht,
-		struct cds_ja_inode *node,
+		struct cds_ja_inode_flag *node_flag,
 		struct cds_ja_shadow_node *shadow_node,
 		unsigned int flags)
 {
@@ -315,8 +317,8 @@ int rcuja_shadow_clear(struct cds_lfht *ht,
 	flavor = cds_lfht_rcu_flavor(ht);
 	flavor->read_lock();
 
-	cds_lfht_lookup(ht, hash_pointer(node, hash_seed),
-			match_pointer, node, &iter);
+	cds_lfht_lookup(ht, hash_pointer(node_flag, hash_seed),
+			match_pointer, node_flag, &iter);
 	lookup_node = cds_lfht_iter_get_node(&iter);
 	if (!lookup_node) {
 		ret = -ENOENT;
@@ -339,7 +341,7 @@ int rcuja_shadow_clear(struct cds_lfht *ht,
 	ret = cds_lfht_del(ht, lookup_node);
 	if (!ret) {
 		if ((flags & RCUJA_SHADOW_CLEAR_FREE_NODE)
-				&& !shadow_node->is_root) {
+				&& shadow_node->level) {
 			if (flags & RCUJA_SHADOW_CLEAR_FREE_LOCK) {
 				flavor->update_call_rcu(&shadow_node->head,
 					free_shadow_node_and_node_and_lock);
@@ -373,7 +375,8 @@ rcu_unlock:
  */
 __attribute__((visibility("protected")))
 void rcuja_shadow_prune(struct cds_lfht *ht,
-		unsigned int flags)
+		unsigned int flags,
+		void (*free_node_cb)(struct rcu_head *head))
 {
 	const struct rcu_flavor_struct *flavor;
 	struct cds_ja_shadow_node *shadow_node;
@@ -389,7 +392,12 @@ void rcuja_shadow_prune(struct cds_lfht *ht,
 		ret = cds_lfht_del(ht, &shadow_node->ht_node);
 		if (!ret) {
 			if ((flags & RCUJA_SHADOW_CLEAR_FREE_NODE)
-					&& !shadow_node->is_root) {
+					&& shadow_node->level) {
+				if (shadow_node->level == shadow_node->ja->tree_depth - 1) {
+					rcuja_free_all_children(shadow_node,
+							shadow_node->node_flag,
+							free_node_cb);
+				}
 				if (flags & RCUJA_SHADOW_CLEAR_FREE_LOCK) {
 					flavor->update_call_rcu(&shadow_node->head,
 						free_shadow_node_and_node_and_lock);

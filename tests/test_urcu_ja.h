@@ -107,8 +107,6 @@ extern struct cds_ja *test_ja;
 struct ja_test_node {
 	struct cds_ja_node node;
 	uint64_t key; /* for testing */
-	/* cache-cold for iteration */
-	struct rcu_head head;
 };
 
 static inline struct ja_test_node *

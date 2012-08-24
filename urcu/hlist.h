@@ -39,6 +39,10 @@ static inline void  CDS_INIT_HLIST_HEAD(struct cds_hlist_head *ptr)
 #define cds_hlist_entry(ptr, type, member)					\
 	((type *) ((char *) (ptr) - (unsigned long) (&((type *) 0)->member)))
 
+/* Get first entry from a list. Assumes the hlist is not empty. */
+#define cds_hlist_first_entry(ptr, type, member) \
+	cds_list_entry((ptr)->next, type, member)
+
 static inline int cds_hlist_empty(struct cds_hlist_head *head)
 {
 	return !head->next;

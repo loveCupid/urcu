@@ -28,15 +28,43 @@
 #include <inttypes.h>
 #include <urcu/rculfhash.h>
 
+/*
+ * Number of least significant pointer bits reserved to represent the
+ * child type.
+ */
+#define JA_TYPE_BITS	3
+#define JA_TYPE_MAX_NR	(1UL << JA_TYPE_BITS)
+#define JA_TYPE_MASK	(JA_TYPE_MAX_NR - 1)
+#define JA_PTR_MASK	(~JA_TYPE_MASK)
+
+#define JA_ENTRY_PER_NODE	256UL
+#define JA_LOG2_BITS_PER_BYTE	3U
+#define JA_BITS_PER_BYTE	(1U << JA_LOG2_BITS_PER_BYTE)
+
+#define JA_MAX_DEPTH	9	/* Maximum depth, including leafs */
+
+/*
+ * Entry for NULL node is at index 8 of the table. It is never encoded
+ * in flags.
+ */
+#define NODE_INDEX_NULL		8
+
+/*
+ * Number of removals needed on a fallback node before we try to shrink
+ * it.
+ */
+#define JA_FALLBACK_REMOVAL_COUNT	8
+
 /* Never declared. Opaque type used to store flagged node pointers. */
 struct cds_ja_inode_flag;
+struct cds_ja_inode;
 
 /*
  * Shadow node contains mutex and call_rcu head associated with a node.
  */
 struct cds_ja_shadow_node {
 	struct cds_lfht_node ht_node;	/* hash table node */
-	struct cds_ja_inode *node;	/* reverse mapping and hash table key */
+	struct cds_ja_inode_flag *node_flag;	/* reverse mapping and hash table key */
 	/*
 	 * mutual exclusion on all nodes belonging to the same tree
 	 * position (e.g. both nodes before and after recompaction
@@ -45,8 +73,9 @@ struct cds_ja_shadow_node {
 	pthread_mutex_t *lock;
 	unsigned int nr_child;		/* number of children in node */
 	struct rcu_head head;		/* for deferred node and shadow node reclaim */
-	int is_root;			/* is it a root node ? */
 	int fallback_removal_count;	/* removals left keeping fallback */
+	int level;			/* level in the tree */
+	struct cds_ja *ja;		/* toplevel judy array */
 };
 
 struct cds_ja {
@@ -62,17 +91,50 @@ struct cds_ja {
 	unsigned long nr_fallback;	/* Number of fallback nodes used */
 };
 
+static inline
+struct cds_ja_inode_flag *ja_node_flag(struct cds_ja_inode *node,
+		unsigned long type)
+{
+	assert(type < (1UL << JA_TYPE_BITS));
+	return (struct cds_ja_inode_flag *) (((unsigned long) node) | type);
+}
+
+static inline
+struct cds_ja_inode *ja_node_ptr(struct cds_ja_inode_flag *node)
+{
+	return (struct cds_ja_inode *) (((unsigned long) node) & JA_PTR_MASK);
+}
+
+static inline
+unsigned long ja_node_type(struct cds_ja_inode_flag *node)
+{
+	unsigned long type;
+
+	if (ja_node_ptr(node) == NULL) {
+		return NODE_INDEX_NULL;
+	}
+	type = (unsigned int) ((unsigned long) node & JA_TYPE_MASK);
+	assert(type < (1UL << JA_TYPE_BITS));
+	return type;
+}
+
+__attribute__((visibility("protected")))
+void rcuja_free_all_children(struct cds_ja_shadow_node *shadow_node,
+		struct cds_ja_inode_flag *node_flag,
+		void (*free_node_cb)(struct rcu_head *head));
+
 __attribute__((visibility("protected")))
 struct cds_ja_shadow_node *rcuja_shadow_lookup_lock(struct cds_lfht *ht,
-		struct cds_ja_inode *node);
+		struct cds_ja_inode_flag *node_flag);
 
 __attribute__((visibility("protected")))
 void rcuja_shadow_unlock(struct cds_ja_shadow_node *shadow_node);
 
 __attribute__((visibility("protected")))
 struct cds_ja_shadow_node *rcuja_shadow_set(struct cds_lfht *ht,
-		struct cds_ja_inode *new_node,
-		struct cds_ja_shadow_node *inherit_from);
+		struct cds_ja_inode_flag *new_node_flag,
+		struct cds_ja_shadow_node *inherit_from,
+		struct cds_ja *ja);
 
 /* rcuja_shadow_clear flags */
 enum {
@@ -82,13 +144,14 @@ enum {
 
 __attribute__((visibility("protected")))
 int rcuja_shadow_clear(struct cds_lfht *ht,
-		struct cds_ja_inode *node,
+		struct cds_ja_inode_flag *node_flag,
 		struct cds_ja_shadow_node *shadow_node,
 		unsigned int flags);
 
 __attribute__((visibility("protected")))
 void rcuja_shadow_prune(struct cds_lfht *ht,
-		unsigned int flags);
+		unsigned int flags,
+		void (*free_node_cb)(struct rcu_head *head));
 
 __attribute__((visibility("protected")))
 struct cds_lfht *rcuja_create_ht(const struct rcu_flavor_struct *flavor);

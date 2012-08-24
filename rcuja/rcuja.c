@@ -590,35 +590,21 @@ int _ja_node_set_nth(const struct cds_ja_type *type,
 }
 
 static
-int ja_linear_node_clear_nth(const struct cds_ja_type *type,
+int ja_linear_node_clear_ptr(const struct cds_ja_type *type,
 		struct cds_ja_inode *node,
 		struct cds_ja_shadow_node *shadow_node,
-		uint8_t n)
+		struct cds_ja_inode_flag **node_flag_ptr)
 {
 	uint8_t nr_child;
-	uint8_t *values, *nr_child_ptr;
-	struct cds_ja_inode_flag **pointers;
-	unsigned int i;
+	uint8_t *nr_child_ptr;
 
 	assert(type->type_class == RCU_JA_LINEAR || type->type_class == RCU_JA_POOL);
 
 	nr_child_ptr = &node->u.data[0];
-	dbg_printf("linear clear nth: nr_child_ptr %p\n", nr_child_ptr);
+	dbg_printf("linear clear ptr: nr_child_ptr %p\n", nr_child_ptr);
 	nr_child = *nr_child_ptr;
 	assert(nr_child <= type->max_linear_child);
 
-	values = &node->u.data[1];
-	pointers = (struct cds_ja_inode_flag **) align_ptr_size(&values[type->max_linear_child]);
-	for (i = 0; i < nr_child; i++) {
-		if (values[i] == n) {
-			if (pointers[i])
-				break;
-			else
-				return -ENOENT;
-		}
-	}
-	if (i >= nr_child)
-		return -ENOENT;
 	if (shadow_node->fallback_removal_count) {
 		shadow_node->fallback_removal_count--;
 	} else {
@@ -627,8 +613,8 @@ int ja_linear_node_clear_nth(const struct cds_ja_type *type,
 			return -EFBIG;
 		}
 	}
-	assert(pointers[i] != NULL);
-	rcu_assign_pointer(pointers[i], NULL);
+	assert(*node_flag_ptr != NULL);
+	rcu_assign_pointer(*node_flag_ptr, NULL);
 	/*
 	 * Value and nr_child are never changed (would cause ABA issue).
 	 * Instead, we leave the pointer to NULL and recompact the node
@@ -637,7 +623,7 @@ int ja_linear_node_clear_nth(const struct cds_ja_type *type,
 	 * Only update the shadow node accounting.
 	 */
 	shadow_node->nr_child--;
-	dbg_printf("linear set nth: %u child, shadow: %u child, for node %p shadow %p\n",
+	dbg_printf("linear clear ptr: %u child, shadow: %u child, for node %p shadow %p\n",
 		(unsigned int) CMM_LOAD_SHARED(*nr_child_ptr),
 		(unsigned int) shadow_node->nr_child,
 		node, shadow_node);
@@ -646,9 +632,10 @@ int ja_linear_node_clear_nth(const struct cds_ja_type *type,
 }
 
 static
-int ja_pool_node_clear_nth(const struct cds_ja_type *type,
+int ja_pool_node_clear_ptr(const struct cds_ja_type *type,
 		struct cds_ja_inode *node,
 		struct cds_ja_shadow_node *shadow_node,
+		struct cds_ja_inode_flag **node_flag_ptr,
 		uint8_t n)
 {
 	struct cds_ja_inode *linear;
@@ -656,43 +643,39 @@ int ja_pool_node_clear_nth(const struct cds_ja_type *type,
 	assert(type->type_class == RCU_JA_POOL);
 	linear = (struct cds_ja_inode *)
 		&node->u.data[((unsigned long) n >> (CHAR_BIT - type->nr_pool_order)) << type->pool_size_order];
-	return ja_linear_node_clear_nth(type, linear, shadow_node, n);
+	return ja_linear_node_clear_ptr(type, linear, shadow_node, node_flag_ptr);
 }
 
 static
-int ja_pigeon_node_clear_nth(const struct cds_ja_type *type,
+int ja_pigeon_node_clear_ptr(const struct cds_ja_type *type,
 		struct cds_ja_inode *node,
 		struct cds_ja_shadow_node *shadow_node,
-		uint8_t n)
+		struct cds_ja_inode_flag **node_flag_ptr)
 {
-	struct cds_ja_inode_flag **ptr;
-
 	assert(type->type_class == RCU_JA_PIGEON);
-	ptr = &((struct cds_ja_inode_flag **) node->u.data)[n];
-	if (!*ptr)
-		return -ENOENT;
-	rcu_assign_pointer(*ptr, NULL);
+	rcu_assign_pointer(*node_flag_ptr, NULL);
 	shadow_node->nr_child--;
 	return 0;
 }
 
 /*
- * _ja_node_clear_nth: clear nth item within a node. Return an error
+ * _ja_node_clear_ptr: clear ptr item within a node. Return an error
  * (negative error value) if it is not found (-ENOENT).
  */
 static
-int _ja_node_clear_nth(const struct cds_ja_type *type,
+int _ja_node_clear_ptr(const struct cds_ja_type *type,
 		struct cds_ja_inode *node,
 		struct cds_ja_shadow_node *shadow_node,
+		struct cds_ja_inode_flag **node_flag_ptr,
 		uint8_t n)
 {
 	switch (type->type_class) {
 	case RCU_JA_LINEAR:
-		return ja_linear_node_clear_nth(type, node, shadow_node, n);
+		return ja_linear_node_clear_ptr(type, node, shadow_node, node_flag_ptr);
 	case RCU_JA_POOL:
-		return ja_pool_node_clear_nth(type, node, shadow_node, n);
+		return ja_pool_node_clear_ptr(type, node, shadow_node, node_flag_ptr, n);
 	case RCU_JA_PIGEON:
-		return ja_pigeon_node_clear_nth(type, node, shadow_node, n);
+		return ja_pigeon_node_clear_ptr(type, node, shadow_node, node_flag_ptr);
 	case RCU_JA_NULL:
 		return -ENOENT;
 	default:
@@ -717,11 +700,12 @@ int ja_node_recompact(enum ja_recompact mode,
 		struct cds_ja_inode *old_node,
 		struct cds_ja_shadow_node *shadow_node,
 		struct cds_ja_inode_flag **old_node_flag, uint8_t n,
-		struct cds_ja_inode_flag *child_node_flag)
+		struct cds_ja_inode_flag *child_node_flag,
+		struct cds_ja_inode_flag **nullify_node_flag_ptr)
 {
 	unsigned int new_type_index;
 	struct cds_ja_inode *new_node;
-	struct cds_ja_shadow_node *new_shadow_node;
+	struct cds_ja_shadow_node *new_shadow_node = NULL;
 	const struct cds_ja_type *new_type;
 	struct cds_ja_inode_flag *new_node_flag;
 	int ret;
@@ -791,7 +775,7 @@ retry:		/* for fallback */
 			ja_linear_node_get_ith_pos(old_type, old_node, i, &v, &iter);
 			if (!iter)
 				continue;
-			if (mode == JA_RECOMPACT_DEL && v == n)
+			if (mode == JA_RECOMPACT_DEL && *nullify_node_flag_ptr == iter)
 				continue;
 			ret = _ja_node_set_nth(new_type, new_node,
 					new_shadow_node,
@@ -823,7 +807,7 @@ retry:		/* for fallback */
 						j, &v, &iter);
 				if (!iter)
 					continue;
-				if (mode == JA_RECOMPACT_DEL && v == n)
+				if (mode == JA_RECOMPACT_DEL && *nullify_node_flag_ptr == iter)
 					continue;
 				ret = _ja_node_set_nth(new_type, new_node,
 						new_shadow_node,
@@ -853,7 +837,7 @@ retry:		/* for fallback */
 			iter = ja_pigeon_node_get_ith_pos(old_type, old_node, i);
 			if (!iter)
 				continue;
-			if (mode == JA_RECOMPACT_DEL && i == n)
+			if (mode == JA_RECOMPACT_DEL && *nullify_node_flag_ptr == iter)
 				continue;
 			ret = _ja_node_set_nth(new_type, new_node,
 					new_shadow_node,
@@ -903,6 +887,7 @@ end:
 
 fallback_toosmall:
 	/* fallback if next pool is too small */
+	assert(new_shadow_node);
 	ret = rcuja_shadow_clear(ja->ht, new_node, new_shadow_node,
 			RCUJA_SHADOW_CLEAR_FREE_NODE);
 	assert(!ret);
@@ -942,12 +927,12 @@ int ja_node_set_nth(struct cds_ja *ja,
 	case -ENOSPC:
 		/* Not enough space in node, need to recompact. */
 		ret = ja_node_recompact(JA_RECOMPACT_ADD, ja, type_index, type, node,
-				shadow_node, node_flag, n, child_node_flag);
+				shadow_node, node_flag, n, child_node_flag, NULL);
 		break;
 	case -ERANGE:
 		/* Node needs to be recompacted. */
 		ret = ja_node_recompact(JA_RECOMPACT, ja, type_index, type, node,
-				shadow_node, node_flag, n, child_node_flag);
+				shadow_node, node_flag, n, child_node_flag, NULL);
 		break;
 	}
 	return ret;
@@ -958,43 +943,47 @@ int ja_node_set_nth(struct cds_ja *ja,
  * error value otherwise.
  */
 static
-int ja_node_clear_nth(struct cds_ja *ja,
-		struct cds_ja_inode_flag **node_flag, uint8_t n,
-		struct cds_ja_shadow_node *shadow_node)
+int ja_node_clear_ptr(struct cds_ja *ja,
+		struct cds_ja_inode_flag **node_flag_ptr,	/* Pointer to location to nullify */
+		struct cds_ja_inode_flag **parent_node_flag_ptr,	/* Address of parent ptr in its parent */
+		struct cds_ja_shadow_node *shadow_node,		/* of parent */
+		uint8_t n)
 {
 	int ret;
 	unsigned int type_index;
 	const struct cds_ja_type *type;
 	struct cds_ja_inode *node;
 
-	dbg_printf("ja_node_clear_nth for n=%u, node %p, shadow %p\n",
-		(unsigned int) n, ja_node_ptr(*node_flag), shadow_node);
+	dbg_printf("ja_node_clear_ptr for node %p, shadow %p, target ptr %p\n",
+		ja_node_ptr(*parent_node_flag_ptr), shadow_node, node_flag_ptr);
 
-	node = ja_node_ptr(*node_flag);
-	type_index = ja_node_type(*node_flag);
+	node = ja_node_ptr(*parent_node_flag_ptr);
+	type_index = ja_node_type(*parent_node_flag_ptr);
 	type = &ja_types[type_index];
-	ret = _ja_node_clear_nth(type, node, shadow_node, n);
+	ret = _ja_node_clear_ptr(type, node, shadow_node, node_flag_ptr, n);
 	if (ret == -EFBIG) {
 		/* Should to try recompaction. */
 		ret = ja_node_recompact(JA_RECOMPACT_DEL, ja, type_index, type, node,
-				shadow_node, node_flag, n, NULL);
+				shadow_node, parent_node_flag_ptr, n, NULL,
+				node_flag_ptr);
 	}
 	return ret;
 }
 
-struct cds_hlist_head *cds_ja_lookup(struct cds_ja *ja, uint64_t key)
+struct cds_hlist_head cds_ja_lookup(struct cds_ja *ja, uint64_t key)
 {
 	unsigned int tree_depth, i;
 	struct cds_ja_inode_flag *node_flag;
+	struct cds_hlist_head head = { NULL };
 
 	if (caa_unlikely(key > ja->key_max))
-		return NULL;
+		return head;
 	tree_depth = ja->tree_depth;
 	node_flag = rcu_dereference(ja->root);
 
 	/* level 0: root node */
 	if (!ja_node_ptr(node_flag))
-		return NULL;
+		return head;
 
 	for (i = 1; i < tree_depth; i++) {
 		uint8_t iter_key;
@@ -1005,11 +994,12 @@ struct cds_hlist_head *cds_ja_lookup(struct cds_ja *ja, uint64_t key)
 		dbg_printf("cds_ja_lookup iter key lookup %u finds node_flag %p\n",
 				(unsigned int) iter_key, node_flag);
 		if (!ja_node_ptr(node_flag))
-			return NULL;
+			return head;
 	}
 
 	/* Last level lookup succeded. We got an actual match. */
-	return (struct cds_hlist_head *) node_flag;
+	head.next = (struct cds_hlist_node *) node_flag;
+	return head;
 }
 
 /*
@@ -1034,8 +1024,7 @@ int ja_attach_node(struct cds_ja *ja,
 		struct cds_ja_node *child_node)
 {
 	struct cds_ja_shadow_node *shadow_node = NULL,
-			*parent_shadow_node = NULL,
-			*iter_shadow_node;
+			*parent_shadow_node = NULL;
 	struct cds_ja_inode *node = ja_node_ptr(node_flag);
 	struct cds_ja_inode *parent_node = ja_node_ptr(parent_node_flag);
 	struct cds_hlist_head head;
@@ -1066,16 +1055,6 @@ int ja_attach_node(struct cds_ja *ja,
 	CDS_INIT_HLIST_HEAD(&head);
 	cds_hlist_add_head_rcu(&child_node->list, &head);
 	iter_node_flag = (struct cds_ja_inode_flag *) head.next;
-
-	/* Create shadow node for the leaf node */
-	dbg_printf("leaf shadow node creation\n");
-	iter_shadow_node = rcuja_shadow_set(ja->ht,
-			ja_node_ptr(iter_node_flag), NULL);
-	if (!iter_shadow_node) {
-		ret = -ENOMEM;
-		goto check_error;
-	}
-	created_nodes[nr_created_nodes++] = iter_node_flag;
 
 	for (i = ja->tree_depth; i > (int) level; i--) {
 		uint8_t iter_key;
@@ -1144,20 +1123,21 @@ end:
 }
 
 /*
- * Lock the hlist head shadow node mutex, and add node to list of
- * duplicates. Failure can happen if concurrent removal removes the last
- * node with same key before we get the lock.
+ * Lock the parent containing the hlist head pointer, and add node to list of
+ * duplicates. Failure can happen if concurrent update changes the
+ * parent before we get the lock. We return -EAGAIN in that case.
  * Return 0 on success, negative error value on failure.
  */
 static
 int ja_chain_node(struct cds_ja *ja,
+		struct cds_ja_inode_flag *parent_node_flag,
 		struct cds_hlist_head *head,
 		struct cds_ja_node *node)
 {
 	struct cds_ja_shadow_node *shadow_node;
 
 	shadow_node = rcuja_shadow_lookup_lock(ja->ht,
-		(struct cds_ja_inode *) head);
+		ja_node_ptr(parent_node_flag));
 	if (!shadow_node)
 		return -EAGAIN;
 	cds_hlist_add_head_rcu(&node->list, head);
@@ -1224,7 +1204,8 @@ retry:
 				parent2_node_flag, key, i, new_node);
 	} else {
 		ret = ja_chain_node(ja,
-			(struct cds_hlist_head *) ja_node_ptr(node_flag),
+			parent_node_flag,
+			(struct cds_hlist_head *) node_flag_ptr,
 			new_node);
 	}
 	if (ret == -EAGAIN)
@@ -1233,26 +1214,164 @@ end:
 	return ret;
 }
 
+/*
+ * Note: there is no need to lookup the pointer address associated with
+ * each node's nth item after taking the lock: it's already been done by
+ * cds_ja_del while holding the rcu read-side lock, and our node rules
+ * ensure that when a match value -> pointer is found in a node, it is
+ * _NEVER_ changed for that node without recompaction, and recompaction
+ * reallocates the node.
+ */
 static
 int ja_detach_node(struct cds_ja *ja,
 		struct cds_ja_inode_flag **snapshot,
+		struct cds_ja_inode_flag ***snapshot_ptr,
+		uint8_t *snapshot_n,
 		int nr_snapshot,
 		uint64_t key,
 		struct cds_ja_node *node)
 {
-	int ret;
+	struct cds_ja_shadow_node *shadow_nodes[JA_MAX_DEPTH];
+	struct cds_ja_inode_flag **node_flag_ptr = NULL,
+			*parent_node_flag = NULL,
+			**parent_node_flag_ptr = NULL;
+	struct cds_ja_inode_flag *iter_node_flag;
+	int ret, i, nr_shadow = 0, nr_clear = 0;
+	uint8_t n;
 
 	assert(nr_snapshot == ja->tree_depth - 1);
 
+	/*
+	 * From the last internal level node going up, get the node
+	 * lock, check if the node has only one child left. If it is the
+	 * case, we continue iterating upward. When we reach a node
+	 * which has more that one child left, we lock the parent, and
+	 * proceed to the node deletion (removing its children too).
+	 */
+	for (i = nr_snapshot - 1; i >= 1; i--) {
+		struct cds_ja_shadow_node *shadow_node;
+
+		shadow_node = rcuja_shadow_lookup_lock(ja->ht,
+					ja_node_ptr(snapshot[i]));
+		if (!shadow_node) {
+			ret = -EAGAIN;
+			goto end;
+		}
+		assert(shadow_node->nr_child > 0);
+		shadow_nodes[nr_shadow++] = shadow_node;
+		nr_clear++;
+		if (i == nr_snapshot - 1) {
+			/*
+			 * Re-check that last internal node level has
+			 * only one child, else trigger a retry.
+			 */
+			if (shadow_node->nr_child != 1) {
+				ret = -EAGAIN;
+				goto end;
+			}
+		}
+		if (shadow_node->nr_child > 1 || i == 1) {
+			/* Lock parent and break */
+			shadow_node = rcuja_shadow_lookup_lock(ja->ht,
+					ja_node_ptr(snapshot[i - 1]));
+			if (!shadow_node) {
+				ret = -EAGAIN;
+				goto end;
+			}
+			shadow_nodes[nr_shadow++] = shadow_node;
+			node_flag_ptr = snapshot_ptr[i];
+			n = snapshot_n[i];
+			parent_node_flag_ptr = snapshot_ptr[i - 1];
+			parent_node_flag = snapshot[i - 1];
+			if (i > 1) {
+				/*
+				 * Lock parent's parent, in case we need
+				 * to recompact parent.
+				 */
+				shadow_node = rcuja_shadow_lookup_lock(ja->ht,
+						ja_node_ptr(snapshot[i - 2]));
+				if (!shadow_node) {
+					ret = -EAGAIN;
+					goto end;
+				}
+				shadow_nodes[nr_shadow++] = shadow_node;
+			}
+			break;
+		}
+	}
+
+	/*
+	 * At this point, we want to delete all nodes in shadow_nodes
+	 * (except the last one, which is either the root or the parent
+	 * of the upmost node with 1 child). OK to as to free lock here,
+	 * because RCU read lock is held, and free only performed in
+	 * call_rcu.
+	 */
+
+	for (i = 0; i < nr_clear; i++) {
+		ret = rcuja_shadow_clear(ja->ht,
+				shadow_nodes[i]->node,
+				shadow_nodes[i],
+				RCUJA_SHADOW_CLEAR_FREE_NODE
+				| RCUJA_SHADOW_CLEAR_FREE_LOCK);
+		assert(!ret);
+	}
+
+	iter_node_flag = parent_node_flag;
+	/* Remove from parent */
+	ret = ja_node_clear_ptr(ja,
+		node_flag_ptr, 		/* Pointer to location to nullify */
+		&iter_node_flag,	/* Old new parent ptr in its parent */
+		shadow_nodes[nr_clear],	/* of parent */
+		n);
+
+	/* Update address of parent ptr in its parent */
+	rcu_assign_pointer(*parent_node_flag_ptr, iter_node_flag);
+
+end:
+	for (i = 0; i < nr_shadow; i++)
+		rcuja_shadow_unlock(shadow_nodes[i]);
 	return ret;
 }
 
+static
+int ja_unchain_node(struct cds_ja *ja,
+		struct cds_ja_inode_flag *parent_node_flag,
+		struct cds_ja_node *node)
+{
+	struct cds_ja_shadow_node *shadow_node;
+	int ret = 0;
+
+	shadow_node = rcuja_shadow_lookup_lock(ja->ht,
+		ja_node_ptr(parent_node_flag));
+	if (!shadow_node)
+		return -EAGAIN;
+	/*
+	 * Retry if another thread removed all but one of duplicates
+	 * since check.
+	 */
+	if (shadow_node->nr_child == 1) {
+		ret = -EAGAIN;
+		goto end;
+	}
+	cds_hlist_del_rcu(&node->list);
+end:
+	rcuja_shadow_unlock(shadow_node);
+	return ret;
+}
+
+/*
+ * Called with RCU read lock held.
+ */
 int cds_ja_del(struct cds_ja *ja, uint64_t key,
 		struct cds_ja_node *node)
 {
 	unsigned int tree_depth, i;
 	struct cds_ja_inode_flag *snapshot[JA_MAX_DEPTH];
+	struct cds_ja_inode_flag **snapshot_ptr[JA_MAX_DEPTH];
+	uint8_t snapshot_n[JA_MAX_DEPTH];
 	struct cds_ja_inode_flag *node_flag;
+	struct cds_ja_inode_flag **prev_node_flag_ptr;
 	int nr_snapshot = 0;
 	int ret;
 
@@ -1265,8 +1384,11 @@ retry:
 		key, node);
 
 	/* snapshot for level 0 is only for shadow node lookup */
+	snapshot_n[nr_snapshot] = 0;
+	snapshot_ptr[nr_snapshot] = NULL;
 	snapshot[nr_snapshot++] = (struct cds_ja_inode_flag *) &ja->root;
 	node_flag = rcu_dereference(ja->root);
+	prev_node_flag_ptr = &ja->root;
 
 	/* Iterate on all internal levels */
 	for (i = 1; i < tree_depth; i++) {
@@ -1277,13 +1399,20 @@ retry:
 		if (!ja_node_ptr(node_flag)) {
 			return -ENOENT;
 		}
-		snapshot[nr_snapshot++] = node_flag;
 		iter_key = (uint8_t) (key >> (JA_BITS_PER_BYTE * (tree_depth - i - 1)));
+		if (nr_snapshot <= 1)
+			snapshot_n[nr_snapshot] = 0;
+		else
+			snapshot_n[nr_snapshot - 1] = iter_key;
+
+		snapshot_ptr[nr_snapshot] = prev_node_flag_ptr;
+		snapshot[nr_snapshot++] = node_flag;
 		node_flag = ja_node_get_nth(node_flag,
-			NULL,
+			&prev_node_flag_ptr,
 			iter_key);
-		dbg_printf("cds_ja_del iter key lookup %u finds node_flag %p\n",
-				(unsigned int) iter_key, node_flag);
+		dbg_printf("cds_ja_del iter key lookup %u finds node_flag %p, prev_node_flag_ptr %p\n",
+				(unsigned int) iter_key, node_flag,
+				prev_node_flag_ptr);
 	}
 
 	/*
@@ -1295,22 +1424,32 @@ retry:
 	} else {
 		struct cds_hlist_head *hlist_head;
 		struct cds_hlist_node *hlist_node;
-		struct cds_ja_node *entry;
-		int found;
+		struct cds_ja_node *entry, *match = NULL;
+		int count = 0;
 
 		hlist_head = (struct cds_hlist_head *) ja_node_ptr(node_flag);
-		cds_hlist_for_each_entry(entry,
+		cds_hlist_for_each_entry_rcu(entry,
 				hlist_node,
 				hlist_head,
 				list) {
-			if (entry == node) {
-				found = 1;
-				break;
-			}
+			if (entry == node)
+				match = entry;
+			count++;
 		}
-		if (!found)
+		if (!match)
 			return -ENOENT;
-		ret = ja_detach_node(ja, snapshot, nr_snapshot, key, node);
+		assert(count > 0);
+		if (count == 1) {
+			/*
+			 * Removing last of duplicates.
+			 */
+			snapshot_ptr[nr_snapshot] = prev_node_flag_ptr;
+			snapshot[nr_snapshot++] = node_flag;
+			ret = ja_detach_node(ja, snapshot, snapshot_ptr,
+					snapshot_n, nr_snapshot, key, node);
+		} else {
+			ret = ja_unchain_node(ja, node_flag, entry);
+		}
 	}
 	if (ret == -EAGAIN)
 		goto retry;

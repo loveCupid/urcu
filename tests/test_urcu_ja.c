@@ -207,11 +207,11 @@ int test_8bit_key(void)
 
 	printf("Test #2: successful key lookup (8-bit).\n");
 	for (key = 0; key < 200; key++) {
-		struct cds_hlist_head *head;
+		struct cds_hlist_head head;
 
 		rcu_read_lock();
 		head = cds_ja_lookup(test_ja, key);
-		if (!head) {
+		if (cds_hlist_empty(&head)) {
 			fprintf(stderr, "Error lookup node %" PRIu64 "\n", key);
 			assert(0);
 		}
@@ -220,11 +220,11 @@ int test_8bit_key(void)
 	printf("OK\n");
 	printf("Test #3: unsuccessful key lookup (8-bit).\n");
 	for (key = 200; key < 240; key++) {
-		struct cds_hlist_head *head;
+		struct cds_hlist_head head;
 
 		rcu_read_lock();
 		head = cds_ja_lookup(test_ja, key);
-		if (head) {
+		if (!cds_hlist_empty(&head)) {
 			fprintf(stderr,
 				"Error unexpected lookup node %" PRIu64 "\n",
 				key);
@@ -277,11 +277,11 @@ int test_16bit_key(void)
 	printf("Test #2: successful key lookup (16-bit).\n");
 	//for (key = 0; key < 10000; key++) {
 	for (key = 0; key < 65536; key+=256) {
-		struct cds_hlist_head *head;
+		struct cds_hlist_head head;
 
 		rcu_read_lock();
 		head = cds_ja_lookup(test_ja, key);
-		if (!head) {
+		if (cds_hlist_empty(&head)) {
 			fprintf(stderr, "Error lookup node %" PRIu64 "\n", key);
 			assert(0);
 		}
@@ -290,11 +290,11 @@ int test_16bit_key(void)
 	printf("OK\n");
 	printf("Test #3: unsuccessful key lookup (16-bit).\n");
 	for (key = 11000; key <= 11002; key++) {
-		struct cds_hlist_head *head;
+		struct cds_hlist_head head;
 
 		rcu_read_lock();
 		head = cds_ja_lookup(test_ja, key);
-		if (head) {
+		if (!cds_hlist_empty(&head)) {
 			fprintf(stderr,
 				"Error unexpected lookup node %" PRIu64 "\n",
 				key);
@@ -356,11 +356,11 @@ int test_sparse_key(unsigned int bits)
 	printf("Test #2: successful key lookup (%u-bit).\n", bits);
 	zerocount = 0;
 	for (key = 0; key <= max_key && (key != 0 || zerocount < 1); key += 1ULL << (bits - 8)) {
-		struct cds_hlist_head *head;
+		struct cds_hlist_head head;
 
 		rcu_read_lock();
 		head = cds_ja_lookup(test_ja, key);
-		if (!head) {
+		if (cds_hlist_empty(&head)) {
 			fprintf(stderr, "Error lookup node %" PRIu64 "\n", key);
 			assert(0);
 		}
@@ -373,11 +373,11 @@ int test_sparse_key(unsigned int bits)
 		printf("Test #3: unsuccessful key lookup (%u-bit).\n", bits);
 		zerocount = 0;
 		for (key = 0; key <= max_key && (key != 0 || zerocount < 1); key += 1ULL << (bits - 8)) {
-			struct cds_hlist_head *head;
+			struct cds_hlist_head head;
 
 			rcu_read_lock();
 			head = cds_ja_lookup(test_ja, key + 42);
-			if (head) {
+			if (!cds_hlist_empty(&head)) {
 				fprintf(stderr,
 					"Error unexpected lookup node %" PRIu64 "\n",
 					key + 42);

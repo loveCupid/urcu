@@ -39,6 +39,11 @@ static inline void  CDS_INIT_HLIST_HEAD(struct cds_hlist_head *ptr)
 #define cds_hlist_entry(ptr, type, member)					\
 	((type *) ((char *) (ptr) - (unsigned long) (&((type *) 0)->member)))
 
+static inline int cds_hlist_empty(struct cds_hlist_head *head)
+{
+	return !head->next;
+}
+
 /* Add new element at the head of the list.  */
 static inline void cds_hlist_add_head (struct cds_hlist_node *newp,
 				   struct cds_hlist_head *head)

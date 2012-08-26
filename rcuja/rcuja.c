@@ -1279,19 +1279,25 @@ end:
 static
 int ja_unchain_node(struct cds_ja *ja,
 		struct cds_ja_inode_flag *parent_node_flag,
+		struct cds_hlist_head *head,
 		struct cds_ja_node *node)
 {
 	struct cds_ja_shadow_node *shadow_node;
-	int ret = 0;
+	struct cds_hlist_node *hlist_node;
+	int ret = 0, count = 0;
 
 	shadow_node = rcuja_shadow_lookup_lock(ja->ht, parent_node_flag);
 	if (!shadow_node)
 		return -EAGAIN;
 	/*
 	 * Retry if another thread removed all but one of duplicates
-	 * since check.
+	 * since check (that was performed without lock).
 	 */
-	if (shadow_node->nr_child == 1) {
+	cds_hlist_for_each_rcu(hlist_node, head, list) {
+		count++;
+	}
+
+	if (count == 1) {
 		ret = -EAGAIN;
 		goto end;
 	}
@@ -1394,7 +1400,8 @@ retry:
 			ret = ja_detach_node(ja, snapshot, snapshot_ptr,
 					snapshot_n, nr_snapshot, key, node);
 		} else {
-			ret = ja_unchain_node(ja, node_flag, entry);
+			ret = ja_unchain_node(ja, snapshot[nr_snapshot - 1],
+				&hlist_head, match);
 		}
 	}
 	if (ret == -EAGAIN)

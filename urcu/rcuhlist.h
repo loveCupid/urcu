@@ -51,13 +51,31 @@ static inline void cds_hlist_del_rcu(struct cds_hlist_node *elem)
 }
 
 /*
+ * Get first element from a RCU hlist. Assumes the hlist is not empty.
+ * This must be done while rcu_read_lock() is held.
+ */
+#define cds_hlist_first_rcu(ptr, type, member)				\
+	rcu_dereference((ptr)->next)
+
+/*
  * Get first entry from a RCU hlist. Assumes the hlist is not empty.
  * This must be done while rcu_read_lock() is held.
  */
-#define cds_hlist_first_entry_rcu(ptr, type, member) \
+#define cds_hlist_first_entry_rcu(ptr, type, member)			\
 	cds_hlist_entry(rcu_dereference((ptr)->next), type, member)
 
-/* Iterate through elements of the list.
+/*
+ * Iterate through nodes of the list.
+ * This must be done while rcu_read_lock() is held.
+ */
+
+#define cds_hlist_for_each_rcu(pos, head, member)			\
+	for (pos = rcu_dereference((head)->next);			\
+	     pos != NULL;						\
+	     pos = rcu_dereference(pos->next))
+
+/*
+ * Iterate through elements of the list.
  * This must be done while rcu_read_lock() is held.
  */
 

@@ -251,6 +251,11 @@ int test_8bit_key(void)
 			assert(0);
 		}
 		call_rcu(&node->node.head, free_node_cb);
+		head = cds_ja_lookup(test_ja, key);
+		if (!cds_hlist_empty(&head)) {
+			fprintf(stderr, "Error lookup %" PRIu64 ": %p (after delete) failed. Node is not expected.\n", key, head.next);
+			assert(0);
+		}
 		rcu_read_unlock();
 	}
 	printf("OK\n");
@@ -278,8 +283,8 @@ int test_16bit_key(void)
 
 	/* Add keys */
 	printf("Test #1: add keys (16-bit).\n");
-	//for (key = 0; key < 10000; key++) {
-	for (key = 0; key < 65536; key+=256) {
+	for (key = 0; key < 10000; key++) {
+	//for (key = 0; key < 65536; key+=256) {
 		struct ja_test_node *node =
 			calloc(sizeof(*node), 1);
 
@@ -296,8 +301,8 @@ int test_16bit_key(void)
 	printf("OK\n");
 
 	printf("Test #2: successful key lookup (16-bit).\n");
-	//for (key = 0; key < 10000; key++) {
-	for (key = 0; key < 65536; key+=256) {
+	for (key = 0; key < 10000; key++) {
+	//for (key = 0; key < 65536; key+=256) {
 		struct cds_hlist_head head;
 
 		rcu_read_lock();
@@ -319,6 +324,33 @@ int test_16bit_key(void)
 			fprintf(stderr,
 				"Error unexpected lookup node %" PRIu64 "\n",
 				key);
+			assert(0);
+		}
+		rcu_read_unlock();
+	}
+	printf("OK\n");
+	printf("Test #4: remove keys (16-bit).\n");
+	for (key = 0; key < 10000; key++) {
+	//for (key = 0; key < 65536; key+=256) {
+		struct cds_hlist_head head;
+		struct ja_test_node *node;
+
+		rcu_read_lock();
+		head = cds_ja_lookup(test_ja, key);
+		node = cds_hlist_first_entry_rcu(&head, struct ja_test_node, node.list);
+		if (!node) {
+			fprintf(stderr, "Error lookup node %" PRIu64 "\n", key);
+			assert(0);
+		}
+		ret = cds_ja_del(test_ja, key, &node->node);
+		if (ret) {
+			fprintf(stderr, "Error (%d) removing node %" PRIu64 "\n", ret, key);
+			assert(0);
+		}
+		call_rcu(&node->node.head, free_node_cb);
+		head = cds_ja_lookup(test_ja, key);
+		if (!cds_hlist_empty(&head)) {
+			fprintf(stderr, "Error lookup %" PRIu64 ": %p (after delete) failed. Node is not expected.\n", key, head.next);
 			assert(0);
 		}
 		rcu_read_unlock();
@@ -410,6 +442,35 @@ int test_sparse_key(unsigned int bits)
 		}
 		printf("OK\n");
 	}
+	printf("Test #4: remove keys (16-bit).\n");
+	zerocount = 0;
+	for (key = 0; key <= max_key && (key != 0 || zerocount < 1); key += 1ULL << (bits - 8)) {
+		struct cds_hlist_head head;
+		struct ja_test_node *node;
+
+		rcu_read_lock();
+		head = cds_ja_lookup(test_ja, key);
+		node = cds_hlist_first_entry_rcu(&head, struct ja_test_node, node.list);
+		if (!node) {
+			fprintf(stderr, "Error lookup node %" PRIu64 "\n", key);
+			assert(0);
+		}
+		ret = cds_ja_del(test_ja, key, &node->node);
+		if (ret) {
+			fprintf(stderr, "Error (%d) removing node %" PRIu64 "\n", ret, key);
+			assert(0);
+		}
+		call_rcu(&node->node.head, free_node_cb);
+		head = cds_ja_lookup(test_ja, key);
+		if (!cds_hlist_empty(&head)) {
+			fprintf(stderr, "Error lookup %" PRIu64 ": %p (after delete) failed. Node is not expected.\n", key, head.next);
+			assert(0);
+		}
+		rcu_read_unlock();
+		if (key == 0)
+			zerocount++;
+	}
+	printf("OK\n");
 
 	ret = cds_ja_destroy(test_ja, free_node_cb);
 	if (ret) {

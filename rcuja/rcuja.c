@@ -599,6 +599,7 @@ int ja_pigeon_node_clear_ptr(const struct cds_ja_type *type,
 		struct cds_ja_inode_flag **node_flag_ptr)
 {
 	assert(type->type_class == RCU_JA_PIGEON);
+	dbg_printf("ja_pigeon_node_clear_ptr: clearing ptr: %p\n", *node_flag_ptr);
 	rcu_assign_pointer(*node_flag_ptr, NULL);
 	shadow_node->nr_child--;
 	return 0;
@@ -1183,10 +1184,10 @@ int ja_detach_node(struct cds_ja *ja,
 			*parent_node_flag = NULL,
 			**parent_node_flag_ptr = NULL;
 	struct cds_ja_inode_flag *iter_node_flag;
-	int ret, i, nr_shadow = 0, nr_clear = 0;
-	uint8_t n;
+	int ret, i, nr_shadow = 0, nr_clear = 0, nr_branch = 0;
+	uint8_t n = 0;
 
-	assert(nr_snapshot == ja->tree_depth - 1);
+	assert(nr_snapshot == ja->tree_depth + 1);
 
 	/*
 	 * From the last internal level node going up, get the node
@@ -1195,7 +1196,7 @@ int ja_detach_node(struct cds_ja *ja,
 	 * which has more that one child left, we lock the parent, and
 	 * proceed to the node deletion (removing its children too).
 	 */
-	for (i = nr_snapshot - 1; i >= 1; i--) {
+	for (i = nr_snapshot - 2; i >= 1; i--) {
 		struct cds_ja_shadow_node *shadow_node;
 
 		shadow_node = rcuja_shadow_lookup_lock(ja->ht,
@@ -1206,17 +1207,9 @@ int ja_detach_node(struct cds_ja *ja,
 		}
 		assert(shadow_node->nr_child > 0);
 		shadow_nodes[nr_shadow++] = shadow_node;
-		nr_clear++;
-		if (i == nr_snapshot - 1) {
-			/*
-			 * Re-check that last internal node level has
-			 * only one child, else trigger a retry.
-			 */
-			if (shadow_node->nr_child != 1) {
-				ret = -EAGAIN;
-				goto end;
-			}
-		}
+		if (shadow_node->nr_child == 1)
+			nr_clear++;
+		nr_branch++;
 		if (shadow_node->nr_child > 1 || i == 1) {
 			/* Lock parent and break */
 			shadow_node = rcuja_shadow_lookup_lock(ja->ht,
@@ -1226,10 +1219,10 @@ int ja_detach_node(struct cds_ja *ja,
 				goto end;
 			}
 			shadow_nodes[nr_shadow++] = shadow_node;
-			node_flag_ptr = snapshot_ptr[i];
-			n = snapshot_n[i];
-			parent_node_flag_ptr = snapshot_ptr[i - 1];
-			parent_node_flag = snapshot[i - 1];
+			node_flag_ptr = snapshot_ptr[i + 1];
+			n = snapshot_n[i + 1];
+			parent_node_flag_ptr = snapshot_ptr[i];
+			parent_node_flag = snapshot[i];
 			if (i > 1) {
 				/*
 				 * Lock parent's parent, in case we need
@@ -1248,11 +1241,11 @@ int ja_detach_node(struct cds_ja *ja,
 	}
 
 	/*
-	 * At this point, we want to delete all nodes in shadow_nodes
-	 * (except the last one, which is either the root or the parent
-	 * of the upmost node with 1 child). OK to as to free lock here,
-	 * because RCU read lock is held, and free only performed in
-	 * call_rcu.
+	 * At this point, we want to delete all nodes that are about to
+	 * be removed from shadow_nodes (except the last one, which is
+	 * either the root or the parent of the upmost node with 1
+	 * child). OK to as to free lock here, because RCU read lock is
+	 * held, and free only performed in call_rcu.
 	 */
 
 	for (i = 0; i < nr_clear; i++) {
@@ -1269,9 +1262,11 @@ int ja_detach_node(struct cds_ja *ja,
 	ret = ja_node_clear_ptr(ja,
 		node_flag_ptr, 		/* Pointer to location to nullify */
 		&iter_node_flag,	/* Old new parent ptr in its parent */
-		shadow_nodes[nr_clear],	/* of parent */
+		shadow_nodes[nr_branch - 1],	/* of parent */
 		n);
 
+	dbg_printf("ja_detach_node: publish %p instead of %p\n",
+		iter_node_flag, *parent_node_flag_ptr);
 	/* Update address of parent ptr in its parent */
 	rcu_assign_pointer(*parent_node_flag_ptr, iter_node_flag);
 
@@ -1318,7 +1313,7 @@ int cds_ja_del(struct cds_ja *ja, uint64_t key,
 	uint8_t snapshot_n[JA_MAX_DEPTH];
 	struct cds_ja_inode_flag *node_flag;
 	struct cds_ja_inode_flag **prev_node_flag_ptr;
-	int nr_snapshot = 0;
+	int nr_snapshot;
 	int ret;
 
 	if (caa_unlikely(key > ja->key_max))
@@ -1326,11 +1321,13 @@ int cds_ja_del(struct cds_ja *ja, uint64_t key,
 	tree_depth = ja->tree_depth;
 
 retry:
+	nr_snapshot = 0;
 	dbg_printf("cds_ja_del attempt: key %" PRIu64 ", node %p\n",
 		key, node);
 
 	/* snapshot for level 0 is only for shadow node lookup */
-	snapshot_n[nr_snapshot] = 0;
+	snapshot_n[0] = 0;
+	snapshot_n[1] = 0;
 	snapshot_ptr[nr_snapshot] = NULL;
 	snapshot[nr_snapshot++] = (struct cds_ja_inode_flag *) &ja->root;
 	node_flag = rcu_dereference(ja->root);
@@ -1346,11 +1343,7 @@ retry:
 			return -ENOENT;
 		}
 		iter_key = (uint8_t) (key >> (JA_BITS_PER_BYTE * (tree_depth - i - 1)));
-		if (nr_snapshot <= 1)
-			snapshot_n[nr_snapshot] = 0;
-		else
-			snapshot_n[nr_snapshot - 1] = iter_key;
-
+		snapshot_n[nr_snapshot + 1] = iter_key;
 		snapshot_ptr[nr_snapshot] = prev_node_flag_ptr;
 		snapshot[nr_snapshot++] = node_flag;
 		node_flag = ja_node_get_nth(node_flag,
@@ -1366,28 +1359,35 @@ retry:
 	 * to remove. Fail if we cannot find it.
 	 */
 	if (!ja_node_ptr(node_flag)) {
+		dbg_printf("cds_ja_del: no node found for key %" PRIu64 "\n",
+				key);
 		return -ENOENT;
 	} else {
-		struct cds_hlist_head *hlist_head;
+		struct cds_hlist_head hlist_head;
 		struct cds_hlist_node *hlist_node;
 		struct cds_ja_node *entry, *match = NULL;
 		int count = 0;
 
-		hlist_head = (struct cds_hlist_head *) ja_node_ptr(node_flag);
+		hlist_head.next =
+			(struct cds_hlist_node *) ja_node_ptr(node_flag);
 		cds_hlist_for_each_entry_rcu(entry,
 				hlist_node,
-				hlist_head,
+				&hlist_head,
 				list) {
+			dbg_printf("cds_ja_del: compare %p with entry %p\n", node, entry);
 			if (entry == node)
 				match = entry;
 			count++;
 		}
-		if (!match)
+		if (!match) {
+			dbg_printf("cds_ja_del: no node match for node %p key %" PRIu64 "\n", node, key);
 			return -ENOENT;
+		}
 		assert(count > 0);
 		if (count == 1) {
 			/*
-			 * Removing last of duplicates.
+			 * Removing last of duplicates. Last snapshot
+			 * does not have a shadow node (external leafs).
 			 */
 			snapshot_ptr[nr_snapshot] = prev_node_flag_ptr;
 			snapshot[nr_snapshot++] = node_flag;

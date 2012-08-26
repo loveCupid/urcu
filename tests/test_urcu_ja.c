@@ -365,12 +365,14 @@ int test_16bit_key(void)
 	return 0;
 }
 
+/*
+ * nr_dup is number of nodes per key.
+ */
 static
-int test_sparse_key(unsigned int bits)
+int test_sparse_key(unsigned int bits, int nr_dup)
 {
-	int ret;
 	uint64_t key, max_key;
-	int zerocount;
+	int zerocount, i, ret;
 
 	if (bits == 64)
 		max_key = UINT64_MAX;
@@ -387,22 +389,24 @@ int test_sparse_key(unsigned int bits)
 
 	/* Add keys */
 	printf("Test #1: add keys (%u-bit).\n", bits);
-	zerocount = 0;
-	for (key = 0; key <= max_key && (key != 0 || zerocount < 1); key += 1ULL << (bits - 8)) {
-		struct ja_test_node *node =
-			calloc(sizeof(*node), 1);
+	for (i = 0; i < nr_dup; i++) {
+		zerocount = 0;
+		for (key = 0; key <= max_key && (key != 0 || zerocount < 1); key += 1ULL << (bits - 8)) {
+			struct ja_test_node *node =
+				calloc(sizeof(*node), 1);
 
-		ja_test_node_init(node, key);
-		rcu_read_lock();
-		ret = cds_ja_add(test_ja, key, &node->node);
-		rcu_read_unlock();
-		if (ret) {
-			fprintf(stderr, "Error (%d) adding node %" PRIu64 "\n",
-				ret, key);
-			assert(0);
+			ja_test_node_init(node, key);
+			rcu_read_lock();
+			ret = cds_ja_add(test_ja, key, &node->node);
+			rcu_read_unlock();
+			if (ret) {
+				fprintf(stderr, "Error (%d) adding node %" PRIu64 "\n",
+					ret, key);
+				assert(0);
+			}
+			if (key == 0)
+				zerocount++;
 		}
-		if (key == 0)
-			zerocount++;
 	}
 	printf("OK\n");
 
@@ -410,12 +414,21 @@ int test_sparse_key(unsigned int bits)
 	zerocount = 0;
 	for (key = 0; key <= max_key && (key != 0 || zerocount < 1); key += 1ULL << (bits - 8)) {
 		struct cds_hlist_head head;
+		struct ja_test_node *node;
+		struct cds_hlist_node *pos;
+		int count = 0;
 
 		rcu_read_lock();
 		head = cds_ja_lookup(test_ja, key);
 		if (cds_hlist_empty(&head)) {
 			fprintf(stderr, "Error lookup node %" PRIu64 "\n", key);
 			assert(0);
+		}
+		cds_hlist_for_each_entry_rcu(node, pos, &head, node.list) {
+			count++;
+		}
+		if (count != nr_dup) {
+			fprintf(stderr, "Unexpected number of match for key %" PRIu64 ", expected %d, got %d.\n", key, nr_dup, count);
 		}
 		rcu_read_unlock();
 		if (key == 0)
@@ -447,20 +460,33 @@ int test_sparse_key(unsigned int bits)
 	for (key = 0; key <= max_key && (key != 0 || zerocount < 1); key += 1ULL << (bits - 8)) {
 		struct cds_hlist_head head;
 		struct ja_test_node *node;
+		struct cds_hlist_node *pos;
+		int count = 0;
 
 		rcu_read_lock();
 		head = cds_ja_lookup(test_ja, key);
-		node = cds_hlist_first_entry_rcu(&head, struct ja_test_node, node.list);
-		if (!node) {
-			fprintf(stderr, "Error lookup node %" PRIu64 "\n", key);
-			assert(0);
+
+
+		cds_hlist_for_each_entry_rcu(node, pos, &head, node.list) {
+			struct cds_hlist_head testhead;
+
+			count++;
+			if (!node) {
+				fprintf(stderr, "Error lookup node %" PRIu64 "\n", key);
+				assert(0);
+			}
+			ret = cds_ja_del(test_ja, key, &node->node);
+			if (ret) {
+				fprintf(stderr, "Error (%d) removing node %" PRIu64 "\n", ret, key);
+				assert(0);
+			}
+			call_rcu(&node->node.head, free_node_cb);
+			testhead = cds_ja_lookup(test_ja, key);
+			if (count < nr_dup && cds_hlist_empty(&testhead)) {
+				fprintf(stderr, "Error: no node found after deletion of some nodes of a key\n");
+				assert(0);
+			}
 		}
-		ret = cds_ja_del(test_ja, key, &node->node);
-		if (ret) {
-			fprintf(stderr, "Error (%d) removing node %" PRIu64 "\n", ret, key);
-			assert(0);
-		}
-		call_rcu(&node->node.head, free_node_cb);
 		head = cds_ja_lookup(test_ja, key);
 		if (!cds_hlist_empty(&head)) {
 			fprintf(stderr, "Error lookup %" PRIu64 ": %p (after delete) failed. Node is not expected.\n", key, head.next);
@@ -492,7 +518,7 @@ int main(int argc, char **argv)
 	struct wr_count *count_writer;
 	unsigned long long tot_reads = 0, tot_writes = 0,
 		tot_add = 0, tot_add_exist = 0, tot_remove = 0;
-	int i, a, ret;
+	int i, j, a, ret;
 	unsigned int remain;
 	uint64_t key;
 
@@ -630,29 +656,17 @@ int main(int argc, char **argv)
 	}
 	rcu_quiescent_state();
 
-	ret = test_sparse_key(8);
-	if (ret) {
-		return ret;
+	/* key bits */
+	for (i = 8; i <= 64; i *= 2) {
+		/* nr of nodes per key */
+		for (j = 1; j < 4; j++) {
+			ret = test_sparse_key(i, j);
+			if (ret) {
+				return ret;
+			}
+			rcu_quiescent_state();
+		}
 	}
-	rcu_quiescent_state();
-
-	ret = test_sparse_key(16);
-	if (ret) {
-		return ret;
-	}
-	rcu_quiescent_state();
-
-	ret = test_sparse_key(32);
-	if (ret) {
-		return ret;
-	}
-	rcu_quiescent_state();
-
-	ret = test_sparse_key(64);
-	if (ret) {
-		return ret;
-	}
-	rcu_quiescent_state();
 
 	printf("Test end.\n");
 	rcu_unregister_thread();

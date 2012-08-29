@@ -805,7 +805,7 @@ retry:		/* for fallback */
 	}
 skip_copy:
 
-	if (JA_RECOMPACT_ADD) {
+	if (mode == JA_RECOMPACT_ADD) {
 		/* add node */
 		ret = _ja_node_set_nth(new_type, new_node,
 				new_shadow_node,

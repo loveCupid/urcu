@@ -159,7 +159,7 @@ struct cds_lfht *rcuja_create_ht(const struct rcu_flavor_struct *flavor);
 __attribute__((visibility("protected")))
 int rcuja_delete_ht(struct cds_lfht *ht);
 
-#define DEBUG
+//#define DEBUG
 
 #ifdef DEBUG
 #define dbg_printf(fmt, args...)     printf("[debug rcuja] " fmt, ## args)

@@ -1422,13 +1422,13 @@ struct cds_ja *_cds_ja_new(unsigned int key_bits,
 
 	switch (key_bits) {
 	case 8:
-		ja->key_max = UINT8_MAX;
-		break;
 	case 16:
-		ja->key_max = UINT16_MAX;
-		break;
+	case 24:
 	case 32:
-		ja->key_max = UINT32_MAX;
+	case 40:
+	case 48:
+	case 56:
+		ja->key_max = (1ULL << key_bits) - 1;
 		break;
 	case 64:
 		ja->key_max = UINT64_MAX;

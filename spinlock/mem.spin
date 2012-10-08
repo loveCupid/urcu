@@ -21,17 +21,7 @@ byte refcount = 0;
 
 inline spin_lock(lock)
 {
-	do
-	:: 1 ->	atomic {
-			if
-			:: (lock) ->
-				skip;
-			:: else ->
-				lock = 1;
-				break;
-			fi;
-		}
-	od;
+	atomic{ !lock -> lock = 1}
 }
 
 inline spin_unlock(lock)
@@ -42,8 +32,7 @@ inline spin_unlock(lock)
 proctype proc_X()
 {
 	do
-	:: 1 ->
-		spin_lock(lock);
+	::	spin_lock(lock);
 		refcount = refcount + 1;
 		refcount = refcount - 1;
 		spin_unlock(lock);

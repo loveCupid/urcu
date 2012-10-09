@@ -21,7 +21,7 @@ byte refcount = 0;
 
 inline spin_lock(lock)
 {
-	atomic { !lock -> lock = 1 }
+	atomic{ !lock -> lock = 1}
 }
 
 inline spin_unlock(lock)

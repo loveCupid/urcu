@@ -44,8 +44,15 @@ inline spin_lock(lock, ticket)
 		lock = lock + HIGH_HALF_INC;	/* overflow expected */
 	}
 
-	/* busy-wait */
-	LOW_HALF(lock) == ticket -> 1;
+	do
+	:: 1 ->
+		if
+		:: (LOW_HALF(lock) == ticket) ->
+			break;
+		:: else ->
+			skip;
+		fi;
+	od;
 }
 
 inline spin_unlock(lock)
@@ -58,7 +65,8 @@ proctype proc_X()
 	byte ticket;
 
 	do
-	::	spin_lock(lock, ticket);
+	:: 1->
+		spin_lock(lock, ticket);
 		refcount = refcount + 1;
 		refcount = refcount - 1;
 		spin_unlock(lock);

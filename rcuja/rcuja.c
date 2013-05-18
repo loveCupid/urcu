@@ -1000,6 +1000,16 @@ int ja_attach_node(struct cds_ja *ja,
 		}
 	}
 
+	if (*node_flag_ptr != NULL) {
+		/*
+		 * Attach point is non-NULL: it has been updated between
+		 * RCU lookup and lock acquisition. We need to re-try
+		 * lookup and attach.
+		 */
+		ret = -EAGAIN;
+		goto unlock_parent;
+	}
+
 	/* Create new branch, starting from bottom */
 	CDS_INIT_HLIST_HEAD(&head);
 	cds_hlist_add_head_rcu(&child_node->list, &head);
@@ -1062,6 +1072,7 @@ check_error:
 			assert(!tmpret);
 		}
 	}
+unlock_parent:
 	if (parent_shadow_node)
 		rcuja_shadow_unlock(parent_shadow_node);
 unlock_shadow:
@@ -1086,8 +1097,10 @@ int ja_chain_node(struct cds_ja *ja,
 	struct cds_ja_shadow_node *shadow_node;
 
 	shadow_node = rcuja_shadow_lookup_lock(ja->ht, parent_node_flag);
-	if (!shadow_node)
+	if (!shadow_node) {
+		dbg_printf("AGAIN3\n");
 		return -EAGAIN;
+	}
 	cds_hlist_add_head_rcu(&node->list, head);
 	rcuja_shadow_unlock(shadow_node);
 	return 0;
@@ -1103,8 +1116,9 @@ int cds_ja_add(struct cds_ja *ja, uint64_t key,
 		*parent2_node_flag;
 	int ret;
 
-	if (caa_unlikely(key > ja->key_max))
+	if (caa_unlikely(key > ja->key_max)) {
 		return -EINVAL;
+	}
 	tree_depth = ja->tree_depth;
 
 retry:
@@ -1156,7 +1170,7 @@ retry:
 			(struct cds_hlist_head *) node_flag_ptr,
 			new_node);
 	}
-	if (ret == -EAGAIN)
+	if (ret == -EAGAIN || ret == -EEXIST)
 		goto retry;
 end:
 	return ret;
@@ -1169,6 +1183,9 @@ end:
  * ensure that when a match value -> pointer is found in a node, it is
  * _NEVER_ changed for that node without recompaction, and recompaction
  * reallocates the node.
+ * However, when a child is removed from "linear" nodes, its pointer
+ * is set to NULL. We therefore check, while holding the locks, if this
+ * pointer is NULL, and return -ENOENT to the caller if it is the case.
  */
 static
 int ja_detach_node(struct cds_ja *ja,
@@ -1241,6 +1258,15 @@ int ja_detach_node(struct cds_ja *ja,
 	}
 
 	/*
+	 * Check if node has been removed between RCU lookup and lock
+	 * acquisition.
+	 */
+	if (!*node_flag_ptr) {
+		ret = -ENOENT;
+		goto end;
+	}
+
+	/*
 	 * At this point, we want to delete all nodes that are about to
 	 * be removed from shadow_nodes (except the last one, which is
 	 * either the root or the parent of the upmost node with 1
@@ -1264,6 +1290,8 @@ int ja_detach_node(struct cds_ja *ja,
 		&iter_node_flag,	/* Old new parent ptr in its parent */
 		shadow_nodes[nr_branch - 1],	/* of parent */
 		n);
+	if (ret)
+		goto end;
 
 	dbg_printf("ja_detach_node: publish %p instead of %p\n",
 		iter_node_flag, *parent_node_flag_ptr);
@@ -1404,7 +1432,12 @@ retry:
 				&hlist_head, match);
 		}
 	}
-	if (ret == -EAGAIN)
+	/*
+	 * Explanation of -ENOENT handling: caused by concurrent delete
+	 * between RCU lookup and actual removal. Need to re-do the
+	 * lookup and removal attempt.
+	 */
+	if (ret == -EAGAIN || ret == -ENOENT)
 		goto retry;
 	return ret;
 }

@@ -23,9 +23,11 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#define _GNU_SOURCE
 #include <pthread.h>
 #include <stdio.h>
 #include <inttypes.h>
+#include <unistd.h>
 #include <urcu/rculfhash.h>
 
 /*
@@ -161,14 +163,38 @@ int rcuja_delete_ht(struct cds_lfht *ht);
 
 //#define DEBUG
 
+#ifdef __linux__
+#include <syscall.h>
+#endif
+
+#if defined(_syscall0)
+_syscall0(pid_t, gettid)
+#elif defined(__NR_gettid)
+static inline pid_t gettid(void)
+{
+	return syscall(__NR_gettid);
+}
+#else
+#warning "use pid as tid"
+static inline pid_t gettid(void)
+{
+	return getpid();
+}
+#endif
+
 #ifdef DEBUG
-#define dbg_printf(fmt, args...)     printf("[debug rcuja] " fmt, ## args)
+#define dbg_printf(fmt, args...)				\
+	fprintf(stderr, "[debug rcuja %lu %s()@%s:%u] " fmt,	\
+		(unsigned long) gettid(), __func__,		\
+		__FILE__, __LINE__, ## args)
 #else
 #define dbg_printf(fmt, args...)				\
 do {								\
 	/* do nothing but check printf format */		\
 	if (0)							\
-		printf("[debug rcuja] " fmt, ## args);	\
+		fprintf(stderr, "[debug rcuja %lu %s()@%s:%u] " fmt, \
+			(unsigned long) gettid(), __func__,	\
+			__FILE__, __LINE__, ## args);		\
 } while (0)
 #endif
 

@@ -1336,29 +1336,35 @@ static
 int ja_unchain_node(struct cds_ja *ja,
 		struct cds_ja_inode_flag *parent_node_flag,
 		struct cds_ja_inode_flag **node_flag_ptr,
-		struct cds_hlist_head *head,
+		struct cds_ja_inode_flag *node_flag,
 		struct cds_ja_node *node)
 {
 	struct cds_ja_shadow_node *shadow_node;
 	struct cds_hlist_node *hlist_node;
-	int ret = 0, count = 0;
+	struct cds_hlist_head hlist_head;
+	int ret = 0, count = 0, found = 0;
 
 	shadow_node = rcuja_shadow_lookup_lock(ja->ht, parent_node_flag);
 	if (!shadow_node)
 		return -EAGAIN;
-	if (!ja_node_ptr(*node_flag_ptr)) {
+	if (ja_node_ptr(*node_flag_ptr) != ja_node_ptr(node_flag)) {
 		ret = -EAGAIN;
 		goto end;
 	}
+	hlist_head.next = (struct cds_hlist_node *) ja_node_ptr(node_flag);
 	/*
 	 * Retry if another thread removed all but one of duplicates
 	 * since check (this check was performed without lock).
+	 * Ensure that the node we are about to remove is still in the
+	 * list (while holding lock).
 	 */
-	cds_hlist_for_each_rcu(hlist_node, head, list) {
+	cds_hlist_for_each_rcu(hlist_node, &hlist_head) {
 		count++;
+		if (hlist_node == &node->list)
+			found++;
 	}
-
-	if (count == 1) {
+	assert(found <= 1);
+	if (!found || count == 1) {
 		ret = -EAGAIN;
 		goto end;
 	}
@@ -1465,7 +1471,7 @@ retry:
 					snapshot_n, nr_snapshot, key, node);
 		} else {
 			ret = ja_unchain_node(ja, snapshot[nr_snapshot - 1],
-				node_flag_ptr, &hlist_head, match);
+				node_flag_ptr, node_flag, match);
 		}
 	}
 	/*

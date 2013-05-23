@@ -1013,11 +1013,23 @@ int ja_attach_node(struct cds_ja *ja,
 		}
 	}
 
-	if (node_flag_ptr && ja_node_ptr(*node_flag_ptr)) {
+	if (node_flag_ptr && ja_node_ptr(*node_flag_ptr) !=
+			ja_node_ptr(parent_node_flag)) {
 		/*
-		 * Target node is non-NULL: it has been updated between
-		 * RCU lookup and lock acquisition. We need to re-try
-		 * lookup and attach.
+		 * Target node has been updated between RCU lookup and
+		 * lock acquisition. We need to re-try lookup and
+		 * attach.
+		 */
+		ret = -EAGAIN;
+		goto unlock_parent;
+	}
+
+	if (attach_node_flag_ptr && ja_node_ptr(*attach_node_flag_ptr) !=
+			ja_node_ptr(parent_node_flag)) {
+		/*
+		 * Target node has been updated between RCU lookup and
+		 * lock acquisition. We need to re-try lookup and
+		 * attach.
 		 */
 		ret = -EAGAIN;
 		goto unlock_parent;
@@ -1105,6 +1117,7 @@ static
 int ja_chain_node(struct cds_ja *ja,
 		struct cds_ja_inode_flag *parent_node_flag,
 		struct cds_ja_inode_flag **node_flag_ptr,
+		struct cds_ja_inode_flag *node_flag,
 		struct cds_hlist_head *head,
 		struct cds_ja_node *node)
 {
@@ -1115,7 +1128,7 @@ int ja_chain_node(struct cds_ja *ja,
 	if (!shadow_node) {
 		return -EAGAIN;
 	}
-	if (!ja_node_ptr(*node_flag_ptr)) {
+	if (ja_node_ptr(*node_flag_ptr) != ja_node_ptr(node_flag)) {
 		ret = -EAGAIN;
 		goto end;
 	}
@@ -1156,11 +1169,12 @@ retry:
 		uint8_t iter_key;
 
 		dbg_printf("cds_ja_add iter attach_node_flag_ptr %p node_flag_ptr %p node_flag %p\n",
-				*attach_node_flag_ptr, *node_flag_ptr, node_flag);
+				attach_node_flag_ptr, node_flag_ptr, node_flag);
 		if (!ja_node_ptr(node_flag)) {
 			ret = ja_attach_node(ja, attach_node_flag_ptr,
 					node_flag_ptr,
-					parent_node_flag, parent2_node_flag,
+					parent_node_flag,
+					parent2_node_flag,
 					key, i, new_node);
 			if (ret == -EAGAIN || ret == -EEXIST)
 				goto retry;
@@ -1176,8 +1190,8 @@ retry:
 			iter_key);
 		dbg_printf("cds_ja_add iter key lookup %u finds node_flag %p attach_node_flag_ptr %p node_flag_ptr %p\n",
 				(unsigned int) iter_key, node_flag,
-				*attach_node_flag_ptr,
-				*node_flag_ptr);
+				attach_node_flag_ptr,
+				node_flag_ptr);
 	}
 
 	/*
@@ -1185,8 +1199,8 @@ retry:
 	 * level, or chain it if key is already present.
 	 */
 	if (!ja_node_ptr(node_flag)) {
-		dbg_printf("cds_ja_add last attach_node_flag_ptr %p node_flag_ptr %p node_flag %p\n",
-				*attach_node_flag_ptr, *node_flag_ptr, node_flag);
+		dbg_printf("cds_ja_add attach_node_flag_ptr %p node_flag_ptr %p node_flag %p\n",
+				attach_node_flag_ptr, node_flag_ptr, node_flag);
 		ret = ja_attach_node(ja, attach_node_flag_ptr,
 				node_flag_ptr, parent_node_flag,
 				parent2_node_flag, key, i, new_node);
@@ -1194,6 +1208,7 @@ retry:
 		ret = ja_chain_node(ja,
 			parent_node_flag,
 			node_flag_ptr,
+			node_flag,
 			(struct cds_hlist_head *) attach_node_flag_ptr,
 			new_node);
 	}
@@ -1227,7 +1242,7 @@ int ja_detach_node(struct cds_ja *ja,
 	struct cds_ja_inode_flag **node_flag_ptr = NULL,
 			*parent_node_flag = NULL,
 			**parent_node_flag_ptr = NULL;
-	struct cds_ja_inode_flag *iter_node_flag;
+	struct cds_ja_inode_flag *iter_node_flag, *node_flag = NULL;
 	int ret, i, nr_shadow = 0, nr_clear = 0, nr_branch = 0;
 	uint8_t n = 0;
 
@@ -1264,9 +1279,32 @@ int ja_detach_node(struct cds_ja *ja,
 			}
 			shadow_nodes[nr_shadow++] = shadow_node;
 			node_flag_ptr = snapshot_ptr[i + 1];
+			node_flag = snapshot[i + 1];
+			/*
+			 * Check if node has been removed between RCU
+			 * lookup and lock acquisition.
+			 */
+			assert(node_flag_ptr);
+			if (ja_node_ptr(*node_flag_ptr)
+					!= ja_node_ptr(node_flag)) {
+				ret = -ENOENT;
+				goto end;
+			}
+
 			n = snapshot_n[i + 1];
 			parent_node_flag_ptr = snapshot_ptr[i];
 			parent_node_flag = snapshot[i];
+			/*
+			 * Check if node has been removed between RCU
+			 * lookup and lock acquisition.
+			 */
+			assert(parent_node_flag_ptr);
+			if (ja_node_ptr(*parent_node_flag_ptr)
+					!= ja_node_ptr(parent_node_flag)) {
+				ret = -ENOENT;
+				goto end;
+			}
+
 			if (i > 1) {
 				/*
 				 * Lock parent's parent, in case we need
@@ -1282,16 +1320,6 @@ int ja_detach_node(struct cds_ja *ja,
 			}
 			break;
 		}
-	}
-
-	/*
-	 * Check if node has been removed between RCU lookup and lock
-	 * acquisition.
-	 */
-	assert(node_flag_ptr);
-	if (!ja_node_ptr(*node_flag_ptr)) {
-		ret = -ENOENT;
-		goto end;
 	}
 
 	/*

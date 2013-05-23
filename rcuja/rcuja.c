@@ -1015,7 +1015,7 @@ int ja_attach_node(struct cds_ja *ja,
 
 	if (node_flag_ptr && ja_node_ptr(*node_flag_ptr) != NULL) {
 		/*
-		 * Attach point is non-NULL: it has been updated between
+		 * Target node is non-NULL: it has been updated between
 		 * RCU lookup and lock acquisition. We need to re-try
 		 * lookup and attach.
 		 */
@@ -1243,7 +1243,7 @@ int ja_detach_node(struct cds_ja *ja,
 		}
 		assert(shadow_node->nr_child > 0);
 		shadow_nodes[nr_shadow++] = shadow_node;
-		if (shadow_node->nr_child == 1)
+		if (shadow_node->nr_child == 1 && i > 1)
 			nr_clear++;
 		nr_branch++;
 		if (shadow_node->nr_child > 1 || i == 1) {

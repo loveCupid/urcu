@@ -681,11 +681,11 @@ void *test_ja_rw_thr_writer(void *_count)
 			node = cds_hlist_first_entry_rcu(&head, struct ja_test_node, node.list);
 			if (node) {
 				ret = cds_ja_del(test_ja, key, &node->node);
-				if (ret) {
+				if (!ret) {
 					call_rcu(&node->node.head, free_node_cb);
-					URCU_TLS(nr_delnoent)++;
-				} else {
 					URCU_TLS(nr_del)++;
+				} else {
+					URCU_TLS(nr_delnoent)++;
 				}
 			} else {
 				URCU_TLS(nr_delnoent)++;

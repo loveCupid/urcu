@@ -965,6 +965,7 @@ int main(int argc, char **argv)
 	printf_verbose("Writer delay : %lu loops.\n", wdelay);
 	printf_verbose("Reader duration : %lu loops.\n", rduration);
 	printf_verbose("Add ratio: %u%%.\n", add_ratio);
+	printf_verbose("Key multiplication factor: %" PRIu64 ".\n", key_mul);
 	printf_verbose("Init pool size offset %lu size %lu.\n",
 		init_pool_offset, init_pool_size);
 	printf_verbose("Lookup pool size offset %lu size %lu.\n",

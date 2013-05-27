@@ -71,6 +71,8 @@ DEFINE_URCU_TLS(unsigned long long, nr_reads);
 unsigned int nr_readers;
 unsigned int nr_writers;
 
+static unsigned int add_ratio = 50;
+
 static pthread_mutex_t rcu_copy_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 void set_affinity(void)
@@ -163,7 +165,7 @@ void show_usage(int argc, char **argv)
 	printf("        [-v] (verbose output)\n");
 	printf("        [-a cpu#] [-a cpu#]... (affinity)\n");
 printf("        [not -u nor -s] Add entries (supports redundant keys).\n");
-	printf("        [-i] Add only (no removal).\n");
+	printf("        [-r] Add ratio (in %% of add+removal).\n");
 	printf("        [-k nr_nodes] Number of nodes to insert initially.\n");
 	printf("        [-R offset] Lookup pool offset.\n");
 	printf("        [-S offset] Write pool offset.\n");
@@ -632,6 +634,12 @@ void *test_ja_rw_thr_reader(void *_count)
 }
 
 static
+int is_add(void)
+{
+	return ((unsigned int) rand_r(&URCU_TLS(rand_lookup)) % 100) < add_ratio;
+}
+
+static
 void *test_ja_rw_thr_writer(void *_count)
 {
 	struct wr_count *count = _count;
@@ -652,8 +660,8 @@ void *test_ja_rw_thr_writer(void *_count)
 	cmm_smp_mb();
 
 	for (;;) {
-		if ((addremove == AR_ADD || add_only)
-				|| (addremove == AR_RANDOM && rand_r(&URCU_TLS(rand_lookup)) & 1)) {
+		if ((addremove == AR_ADD)
+				|| (addremove == AR_RANDOM && is_add())) {
 			struct ja_test_node *node = malloc(sizeof(*node));
 
 			/* note: only inserting ulong keys */
@@ -906,8 +914,8 @@ int main(int argc, char **argv)
 		case 'v':
 			verbose_mode = 1;
 			break;
-		case 'i':
-			add_only = 1;
+		case 'r':
+			add_ratio = atoi(argv[++i]);
 			break;
 		case 'k':
 			init_populate = atol(argv[++i]);
@@ -946,8 +954,7 @@ int main(int argc, char **argv)
 		duration, nr_readers, nr_writers);
 	printf_verbose("Writer delay : %lu loops.\n", wdelay);
 	printf_verbose("Reader duration : %lu loops.\n", rduration);
-	printf_verbose("Mode:%s.\n",
-		add_only ? " add only" : " add/delete");
+	printf_verbose("Add ratio: %u%%.\n", add_ratio);
 	printf_verbose("Init pool size offset %lu size %lu.\n",
 		init_pool_offset, init_pool_size);
 	printf_verbose("Lookup pool size offset %lu size %lu.\n",

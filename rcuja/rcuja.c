@@ -1419,6 +1419,10 @@ int ja_unchain_node(struct cds_ja *ja,
 	 * list (while holding lock).
 	 */
 	cds_hlist_for_each_rcu(hlist_node, &hlist_head) {
+		if (count == 0) {
+			/* FIXME: currently a work-around */
+			hlist_node->prev = (struct cds_hlist_node *) node_flag_ptr;
+		}
 		count++;
 		if (hlist_node == &node->list)
 			found++;
@@ -1429,6 +1433,10 @@ int ja_unchain_node(struct cds_ja *ja,
 		goto end;
 	}
 	cds_hlist_del_rcu(&node->list);
+	/*
+	 * Validate that we indeed removed the node from linked list.
+	 */
+	assert(ja_node_ptr(*node_flag_ptr) != (struct cds_ja_inode *) node);
 end:
 	rcuja_shadow_unlock(shadow_node);
 	return ret;

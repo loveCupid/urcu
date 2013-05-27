@@ -72,6 +72,7 @@ unsigned int nr_readers;
 unsigned int nr_writers;
 
 static unsigned int add_ratio = 50;
+static uint64_t key_mul = 1ULL;
 
 static pthread_mutex_t rcu_copy_mutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -165,7 +166,7 @@ void show_usage(int argc, char **argv)
 	printf("        [-v] (verbose output)\n");
 	printf("        [-a cpu#] [-a cpu#]... (affinity)\n");
 printf("        [not -u nor -s] Add entries (supports redundant keys).\n");
-	printf("        [-r] Add ratio (in %% of add+removal).\n");
+	printf("        [-r ratio] Add ratio (in %% of add+removal).\n");
 	printf("        [-k nr_nodes] Number of nodes to insert initially.\n");
 	printf("        [-R offset] Lookup pool offset.\n");
 	printf("        [-S offset] Write pool offset.\n");
@@ -176,6 +177,7 @@ printf("        [not -u nor -s] Add entries (supports redundant keys).\n");
 	printf("        [-V] Validate lookups of init values (use with filled init pool, same lookup range, with different write range).\n");
 	printf("        [-s] Do sanity test.\n");
 	printf("        [-B] Key bits for multithread test (default: 32).\n");
+	printf("        [-m factor] Key multiplication factor.\n");
 	printf("\n\n");
 }
 
@@ -601,6 +603,7 @@ void *test_ja_rw_thr_reader(void *_count)
 
 		/* note: only looking up ulong keys */
 		key = ((unsigned long) rand_r(&URCU_TLS(rand_lookup)) % lookup_pool_size) + lookup_pool_offset;
+		key *= key_mul;
 		head = cds_ja_lookup(test_ja, key);
 		if (cds_hlist_empty(&head)) {
 			if (validate_lookup) {
@@ -666,6 +669,7 @@ void *test_ja_rw_thr_writer(void *_count)
 
 			/* note: only inserting ulong keys */
 			key = ((unsigned long) rand_r(&URCU_TLS(rand_lookup)) % write_pool_size) + write_pool_offset;
+			key *= key_mul;
 			ja_test_node_init(node, key);
 			rcu_read_lock();
 			ret = cds_ja_add(test_ja, key, &node->node);
@@ -682,6 +686,7 @@ void *test_ja_rw_thr_writer(void *_count)
 			/* May delete */
 			/* note: only deleting ulong keys */
 			key = ((unsigned long) rand_r(&URCU_TLS(rand_lookup)) % write_pool_size) + write_pool_offset;
+			key *= key_mul;
 
 			rcu_read_lock();
 
@@ -729,7 +734,7 @@ static
 int do_mt_populate_ja(void)
 {
 	struct cds_hlist_head head;
-	uint64_t key;
+	uint64_t iter;
 	int ret;
 
 	if (!init_populate)
@@ -737,11 +742,13 @@ int do_mt_populate_ja(void)
 
 	printf("Starting rw test\n");
 
-	for (key = init_pool_offset; key < init_pool_offset + init_pool_size; key++) {
+	for (iter = init_pool_offset; iter < init_pool_offset + init_pool_size; iter++) {
 		struct ja_test_node *node = malloc(sizeof(*node));
+		uint64_t key;
 
 		/* note: only inserting ulong keys */
-		key = (unsigned long) key;
+		key = (unsigned long) iter;
+		key *= key_mul;
 		ja_test_node_init(node, key);
 		rcu_read_lock();
 		ret = cds_ja_add(test_ja, key, &node->node);
@@ -946,6 +953,9 @@ int main(int argc, char **argv)
 			break;
 		case 'B':
 			key_bits = atol(argv[++i]);
+			break;
+		case 'm':
+			key_mul = atoll(argv[++i]);
 			break;
 		}
 	}

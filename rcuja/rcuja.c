@@ -277,6 +277,7 @@ static
 struct cds_ja_inode_flag *ja_linear_node_get_nth(const struct cds_ja_type *type,
 		struct cds_ja_inode *node,
 		struct cds_ja_inode_flag ***child_node_flag_ptr,
+		struct cds_ja_inode_flag **child_node_flag_v,
 		struct cds_ja_inode_flag ***node_flag_ptr,
 		uint8_t n)
 {
@@ -307,6 +308,8 @@ struct cds_ja_inode_flag *ja_linear_node_get_nth(const struct cds_ja_type *type,
 	ptr = rcu_dereference(pointers[i]);
 	if (caa_unlikely(child_node_flag_ptr) && ptr)
 		*child_node_flag_ptr = &pointers[i];
+	if (caa_unlikely(child_node_flag_v) && ptr)
+		*child_node_flag_v = ptr;
 	if (caa_unlikely(node_flag_ptr))
 		*node_flag_ptr = &pointers[i];
 	return ptr;
@@ -335,6 +338,7 @@ static
 struct cds_ja_inode_flag *ja_pool_node_get_nth(const struct cds_ja_type *type,
 		struct cds_ja_inode *node,
 		struct cds_ja_inode_flag ***child_node_flag_ptr,
+		struct cds_ja_inode_flag **child_node_flag_v,
 		struct cds_ja_inode_flag ***node_flag_ptr,
 		uint8_t n)
 {
@@ -348,7 +352,7 @@ struct cds_ja_inode_flag *ja_pool_node_get_nth(const struct cds_ja_type *type,
 	linear = (struct cds_ja_inode *)
 		&node->u.data[((unsigned long) n >> (CHAR_BIT - type->nr_pool_order)) << type->pool_size_order];
 	return ja_linear_node_get_nth(type, linear, child_node_flag_ptr,
-		node_flag_ptr, n);
+		child_node_flag_v, node_flag_ptr, n);
 }
 
 static
@@ -365,20 +369,25 @@ static
 struct cds_ja_inode_flag *ja_pigeon_node_get_nth(const struct cds_ja_type *type,
 		struct cds_ja_inode *node,
 		struct cds_ja_inode_flag ***child_node_flag_ptr,
+		struct cds_ja_inode_flag **child_node_flag_v,
 		struct cds_ja_inode_flag ***node_flag_ptr,
 		uint8_t n)
 {
 	struct cds_ja_inode_flag **child_node_flag;
+	struct cds_ja_inode_flag *child_node_flag_read;
 
 	assert(type->type_class == RCU_JA_PIGEON);
 	child_node_flag = &((struct cds_ja_inode_flag **) node->u.data)[n];
+	child_node_flag_read = rcu_dereference(*child_node_flag);
 	dbg_printf("ja_pigeon_node_get_nth child_node_flag_ptr %p\n",
 		child_node_flag);
-	if (caa_unlikely(child_node_flag_ptr) && *child_node_flag)
+	if (caa_unlikely(child_node_flag_ptr) && child_node_flag_read)
 		*child_node_flag_ptr = child_node_flag;
+	if (caa_unlikely(child_node_flag_v) && child_node_flag_read)
+		*child_node_flag_v = child_node_flag_read;
 	if (caa_unlikely(node_flag_ptr))
 		*node_flag_ptr = child_node_flag;
-	return rcu_dereference(*child_node_flag);
+	return child_node_flag_read;
 }
 
 static
@@ -386,7 +395,7 @@ struct cds_ja_inode_flag *ja_pigeon_node_get_ith_pos(const struct cds_ja_type *t
 		struct cds_ja_inode *node,
 		uint8_t i)
 {
-	return ja_pigeon_node_get_nth(type, node, NULL, NULL, i);
+	return ja_pigeon_node_get_nth(type, node, NULL, NULL, NULL, i);
 }
 
 /*
@@ -394,8 +403,9 @@ struct cds_ja_inode_flag *ja_pigeon_node_get_ith_pos(const struct cds_ja_type *t
  * node_flag is already rcu_dereference'd.
  */
 static
-struct cds_ja_inode_flag * ja_node_get_nth(struct cds_ja_inode_flag *node_flag,
+struct cds_ja_inode_flag *ja_node_get_nth(struct cds_ja_inode_flag *node_flag,
 		struct cds_ja_inode_flag ***child_node_flag_ptr,
+		struct cds_ja_inode_flag **child_node_flag,
 		struct cds_ja_inode_flag ***node_flag_ptr,
 		uint8_t n)
 {
@@ -411,13 +421,16 @@ struct cds_ja_inode_flag * ja_node_get_nth(struct cds_ja_inode_flag *node_flag,
 	switch (type->type_class) {
 	case RCU_JA_LINEAR:
 		return ja_linear_node_get_nth(type, node,
-				child_node_flag_ptr, node_flag_ptr, n);
+				child_node_flag_ptr, child_node_flag,
+				node_flag_ptr, n);
 	case RCU_JA_POOL:
 		return ja_pool_node_get_nth(type, node,
-				child_node_flag_ptr, node_flag_ptr, n);
+				child_node_flag_ptr, child_node_flag,
+				node_flag_ptr, n);
 	case RCU_JA_PIGEON:
 		return ja_pigeon_node_get_nth(type, node,
-				child_node_flag_ptr, node_flag_ptr, n);
+				child_node_flag_ptr, child_node_flag,
+				node_flag_ptr, n);
 	default:
 		assert(0);
 		return (void *) -1UL;
@@ -950,7 +963,7 @@ struct cds_hlist_head cds_ja_lookup(struct cds_ja *ja, uint64_t key)
 		uint8_t iter_key;
 
 		iter_key = (uint8_t) (key >> (JA_BITS_PER_BYTE * (tree_depth - i - 1)));
-		node_flag = ja_node_get_nth(node_flag, NULL, NULL,
+		node_flag = ja_node_get_nth(node_flag, NULL, NULL, NULL,
 			iter_key);
 		dbg_printf("cds_ja_lookup iter key lookup %u finds node_flag %p\n",
 				(unsigned int) iter_key, node_flag);
@@ -978,6 +991,7 @@ struct cds_hlist_head cds_ja_lookup(struct cds_ja *ja, uint64_t key)
 static
 int ja_attach_node(struct cds_ja *ja,
 		struct cds_ja_inode_flag **attach_node_flag_ptr,
+		struct cds_ja_inode_flag *attach_node_flag,
 		struct cds_ja_inode_flag **node_flag_ptr,
 		struct cds_ja_inode_flag *node_flag,
 		struct cds_ja_inode_flag *parent_node_flag,
@@ -1013,8 +1027,7 @@ int ja_attach_node(struct cds_ja *ja,
 		}
 	}
 
-	if (node_flag_ptr && ja_node_ptr(*node_flag_ptr) !=
-			ja_node_ptr(parent_node_flag)) {
+	if (node_flag_ptr && ja_node_ptr(*node_flag_ptr)) {
 		/*
 		 * Target node has been updated between RCU lookup and
 		 * lock acquisition. We need to re-try lookup and
@@ -1025,7 +1038,7 @@ int ja_attach_node(struct cds_ja *ja,
 	}
 
 	if (attach_node_flag_ptr && ja_node_ptr(*attach_node_flag_ptr) !=
-			ja_node_ptr(parent_node_flag)) {
+			ja_node_ptr(attach_node_flag)) {
 		/*
 		 * Target node has been updated between RCU lookup and
 		 * lock acquisition. We need to re-try lookup and
@@ -1146,7 +1159,8 @@ int cds_ja_add(struct cds_ja *ja, uint64_t key,
 		**node_flag_ptr;
 	struct cds_ja_inode_flag *node_flag,
 		*parent_node_flag,
-		*parent2_node_flag;
+		*parent2_node_flag,
+		*attach_node_flag;
 	int ret;
 
 	if (caa_unlikely(key > ja->key_max)) {
@@ -1161,6 +1175,7 @@ retry:
 	parent_node_flag =
 		(struct cds_ja_inode_flag *) &ja->root;	/* Use root ptr address as key for mutex */
 	attach_node_flag_ptr = &ja->root;
+	attach_node_flag = rcu_dereference(ja->root);
 	node_flag_ptr = &ja->root;
 	node_flag = rcu_dereference(ja->root);
 
@@ -1172,6 +1187,7 @@ retry:
 				attach_node_flag_ptr, node_flag_ptr, node_flag);
 		if (!ja_node_ptr(node_flag)) {
 			ret = ja_attach_node(ja, attach_node_flag_ptr,
+					attach_node_flag,
 					node_flag_ptr,
 					parent_node_flag,
 					parent2_node_flag,
@@ -1186,6 +1202,7 @@ retry:
 		parent_node_flag = node_flag;
 		node_flag = ja_node_get_nth(node_flag,
 			&attach_node_flag_ptr,
+			&attach_node_flag,
 			&node_flag_ptr,
 			iter_key);
 		dbg_printf("cds_ja_add iter key lookup %u finds node_flag %p attach_node_flag_ptr %p node_flag_ptr %p\n",
@@ -1202,6 +1219,7 @@ retry:
 		dbg_printf("cds_ja_add attach_node_flag_ptr %p node_flag_ptr %p node_flag %p\n",
 				attach_node_flag_ptr, node_flag_ptr, node_flag);
 		ret = ja_attach_node(ja, attach_node_flag_ptr,
+				attach_node_flag,
 				node_flag_ptr, parent_node_flag,
 				parent2_node_flag, key, i, new_node);
 	} else {
@@ -1242,7 +1260,7 @@ int ja_detach_node(struct cds_ja *ja,
 	struct cds_ja_inode_flag **node_flag_ptr = NULL,
 			*parent_node_flag = NULL,
 			**parent_node_flag_ptr = NULL;
-	struct cds_ja_inode_flag *iter_node_flag, *node_flag = NULL;
+	struct cds_ja_inode_flag *iter_node_flag;
 	int ret, i, nr_shadow = 0, nr_clear = 0, nr_branch = 0;
 	uint8_t n = 0;
 
@@ -1264,8 +1282,20 @@ int ja_detach_node(struct cds_ja *ja,
 			ret = -EAGAIN;
 			goto end;
 		}
-		assert(shadow_node->nr_child > 0);
 		shadow_nodes[nr_shadow++] = shadow_node;
+
+		/*
+		 * Check if node has been removed between RCU
+		 * lookup and lock acquisition.
+		 */
+		assert(snapshot_ptr[i + 1]);
+		if (ja_node_ptr(*snapshot_ptr[i + 1])
+				!= ja_node_ptr(snapshot[i + 1])) {
+			ret = -ENOENT;
+			goto end;
+		}
+
+		assert(shadow_node->nr_child > 0);
 		if (shadow_node->nr_child == 1 && i > 1)
 			nr_clear++;
 		nr_branch++;
@@ -1278,32 +1308,22 @@ int ja_detach_node(struct cds_ja *ja,
 				goto end;
 			}
 			shadow_nodes[nr_shadow++] = shadow_node;
-			node_flag_ptr = snapshot_ptr[i + 1];
-			node_flag = snapshot[i + 1];
+
 			/*
 			 * Check if node has been removed between RCU
 			 * lookup and lock acquisition.
 			 */
-			assert(node_flag_ptr);
-			if (ja_node_ptr(*node_flag_ptr)
-					!= ja_node_ptr(node_flag)) {
+			assert(snapshot_ptr[i]);
+			if (ja_node_ptr(*snapshot_ptr[i])
+					!= ja_node_ptr(snapshot[i])) {
 				ret = -ENOENT;
 				goto end;
 			}
 
+			node_flag_ptr = snapshot_ptr[i + 1];
 			n = snapshot_n[i + 1];
 			parent_node_flag_ptr = snapshot_ptr[i];
 			parent_node_flag = snapshot[i];
-			/*
-			 * Check if node has been removed between RCU
-			 * lookup and lock acquisition.
-			 */
-			assert(parent_node_flag_ptr);
-			if (ja_node_ptr(*parent_node_flag_ptr)
-					!= ja_node_ptr(parent_node_flag)) {
-				ret = -ENOENT;
-				goto end;
-			}
 
 			if (i > 1) {
 				/*
@@ -1317,7 +1337,19 @@ int ja_detach_node(struct cds_ja *ja,
 					goto end;
 				}
 				shadow_nodes[nr_shadow++] = shadow_node;
+
+				/*
+				 * Check if node has been removed between RCU
+				 * lookup and lock acquisition.
+				 */
+				assert(snapshot_ptr[i - 1]);
+				if (ja_node_ptr(*snapshot_ptr[i - 1])
+						!= ja_node_ptr(snapshot[i - 1])) {
+					ret = -ENOENT;
+					goto end;
+				}
 			}
+
 			break;
 		}
 	}
@@ -1326,8 +1358,8 @@ int ja_detach_node(struct cds_ja *ja,
 	 * At this point, we want to delete all nodes that are about to
 	 * be removed from shadow_nodes (except the last one, which is
 	 * either the root or the parent of the upmost node with 1
-	 * child). OK to as to free lock here, because RCU read lock is
-	 * held, and free only performed in call_rcu.
+	 * child). OK to free lock here, because RCU read lock is held,
+	 * and free only performed in call_rcu.
 	 */
 
 	for (i = 0; i < nr_clear; i++) {
@@ -1451,13 +1483,13 @@ retry:
 		snapshot[nr_snapshot++] = node_flag;
 		node_flag = ja_node_get_nth(node_flag,
 			&prev_node_flag_ptr,
+			NULL,
 			&node_flag_ptr,
 			iter_key);
 		dbg_printf("cds_ja_del iter key lookup %u finds node_flag %p, prev_node_flag_ptr %p\n",
 				(unsigned int) iter_key, node_flag,
 				prev_node_flag_ptr);
 	}
-
 	/*
 	 * We reached bottom of tree, try to find the node we are trying
 	 * to remove. Fail if we cannot find it.

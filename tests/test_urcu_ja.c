@@ -129,7 +129,7 @@ void free_node_cb(struct rcu_head *head)
 {
 	struct ja_test_node *node =
 		caa_container_of(head, struct ja_test_node, node.head);
-	free(node);
+	poison_free(node);
 }
 
 #if 0

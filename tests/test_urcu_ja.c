@@ -690,6 +690,7 @@ void *test_ja_rw_thr_writer(void *_count)
 			} else {
 				URCU_TLS(nr_delnoent)++;
 			}
+			rcu_read_unlock();
 		}
 
 		URCU_TLS(nr_writes)++;

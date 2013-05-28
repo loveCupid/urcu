@@ -43,6 +43,9 @@
 #define JA_LOG2_BITS_PER_BYTE	3U
 #define JA_BITS_PER_BYTE	(1U << JA_LOG2_BITS_PER_BYTE)
 
+#define JA_POOL_1D_MASK	((JA_BITS_PER_BYTE - 1) << JA_TYPE_BITS)
+#define JA_POOL_2D_MASK	(JA_POOL_1D_MASK << JA_LOG2_BITS_PER_BYTE)
+
 #define JA_MAX_DEPTH	9	/* Maximum depth, including leafs */
 
 /*
@@ -102,23 +105,32 @@ struct cds_ja_inode_flag *ja_node_flag(struct cds_ja_inode *node,
 }
 
 static inline
-struct cds_ja_inode *ja_node_ptr(struct cds_ja_inode_flag *node)
+struct cds_ja_inode_flag *ja_node_flag_pool_1d(struct cds_ja_inode *node,
+		unsigned long type, unsigned long bitsel)
 {
-	return (struct cds_ja_inode *) (((unsigned long) node) & JA_PTR_MASK);
+	assert(type < (1UL << JA_TYPE_BITS));
+	assert(bitsel < JA_BITS_PER_BYTE);
+	return (struct cds_ja_inode_flag *) (((unsigned long) node) | (bitsel << JA_TYPE_BITS) | type);
 }
 
 static inline
-unsigned long ja_node_type(struct cds_ja_inode_flag *node)
+unsigned long ja_node_pool_1d_bitsel(struct cds_ja_inode_flag *node)
 {
-	unsigned long type;
-
-	if (ja_node_ptr(node) == NULL) {
-		return NODE_INDEX_NULL;
-	}
-	type = (unsigned int) ((unsigned long) node & JA_TYPE_MASK);
-	assert(type < (1UL << JA_TYPE_BITS));
-	return type;
+	return ((unsigned long) node & JA_POOL_1D_MASK) >> JA_TYPE_BITS;
 }
+
+static inline
+void ja_node_pool_2d_bitsel(struct cds_ja_inode_flag *node, unsigned long *bits)
+{
+	bits[0] = ((unsigned long) node & JA_POOL_2D_MASK) >> (JA_TYPE_BITS + JA_LOG2_BITS_PER_BYTE);
+	bits[1] = ((unsigned long) node & JA_POOL_1D_MASK) >> JA_TYPE_BITS;
+}
+
+__attribute__((visibility("protected")))
+unsigned long ja_node_type(struct cds_ja_inode_flag *node);
+
+__attribute__((visibility("protected")))
+struct cds_ja_inode *ja_node_ptr(struct cds_ja_inode_flag *node);
 
 __attribute__((visibility("protected")))
 void rcuja_free_all_children(struct cds_ja_shadow_node *shadow_node,

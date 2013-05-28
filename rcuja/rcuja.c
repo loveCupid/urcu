@@ -835,6 +835,9 @@ skip_copy:
 		ret = _ja_node_set_nth(new_type, new_node,
 				new_shadow_node,
 				n, child_node_flag);
+		if (new_type->type_class == RCU_JA_POOL && ret) {
+			goto fallback_toosmall;
+		}
 		assert(!ret);
 	}
 	/* Return pointer to new recompacted node through old_node_flag_ptr */

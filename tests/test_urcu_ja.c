@@ -167,7 +167,7 @@ void show_usage(int argc, char **argv)
 	printf("        [-a cpu#] [-a cpu#]... (affinity)\n");
 printf("        [not -u nor -s] Add entries (supports redundant keys).\n");
 	printf("        [-r ratio] Add ratio (in %% of add+removal).\n");
-	printf("        [-k nr_nodes] Number of nodes to insert initially.\n");
+	printf("        [-k] Populate init nodes.\n");
 	printf("        [-R offset] Lookup pool offset.\n");
 	printf("        [-S offset] Write pool offset.\n");
 	printf("        [-T offset] Init pool offset.\n");
@@ -925,7 +925,7 @@ int main(int argc, char **argv)
 			add_ratio = atoi(argv[++i]);
 			break;
 		case 'k':
-			init_populate = atol(argv[++i]);
+			init_populate = 1;
 			break;
 		case 'R':
 			lookup_pool_offset = atol(argv[++i]);

@@ -793,7 +793,6 @@ unsigned int ja_node_sum_distribution_1d(enum ja_recompact mode,
 
 		for (i = 0; i < nr_child; i++) {
 			struct cds_ja_inode_flag *iter;
-			unsigned int bit;
 			uint8_t v;
 
 			ja_linear_node_get_ith_pos(type, node, i, &v, &iter);
@@ -801,9 +800,9 @@ unsigned int ja_node_sum_distribution_1d(enum ja_recompact mode,
 				continue;
 			if (mode == JA_RECOMPACT_DEL && *nullify_node_flag_ptr == iter)
 				continue;
-			for (bit = 0; bit < JA_BITS_PER_BYTE; bit++) {
-				if (v & (1U << bit))
-					nr_one[bit]++;
+			for (bit_i = 0; bit_i < JA_BITS_PER_BYTE; bit_i++) {
+				if (v & (1U << bit_i))
+					nr_one[bit_i]++;
 			}
 			distrib_nr_child++;
 		}
@@ -823,7 +822,6 @@ unsigned int ja_node_sum_distribution_1d(enum ja_recompact mode,
 
 			for (j = 0; j < nr_child; j++) {
 				struct cds_ja_inode_flag *iter;
-				unsigned int bit;
 				uint8_t v;
 
 				ja_linear_node_get_ith_pos(type, pool,
@@ -832,9 +830,9 @@ unsigned int ja_node_sum_distribution_1d(enum ja_recompact mode,
 					continue;
 				if (mode == JA_RECOMPACT_DEL && *nullify_node_flag_ptr == iter)
 					continue;
-				for (bit = 0; bit < JA_BITS_PER_BYTE; bit++) {
-					if (v & (1U << bit))
-						nr_one[bit]++;
+				for (bit_i = 0; bit_i < JA_BITS_PER_BYTE; bit_i++) {
+					if (v & (1U << bit_i))
+						nr_one[bit_i]++;
 				}
 				distrib_nr_child++;
 			}
@@ -850,16 +848,15 @@ unsigned int ja_node_sum_distribution_1d(enum ja_recompact mode,
 		nr_child = shadow_node->nr_child;
 		for (i = 0; i < nr_child; i++) {
 			struct cds_ja_inode_flag *iter;
-			unsigned int bit;
 
 			iter = ja_pigeon_node_get_ith_pos(type, node, i);
 			if (!iter)
 				continue;
 			if (mode == JA_RECOMPACT_DEL && *nullify_node_flag_ptr == iter)
 				continue;
-			for (bit = 0; bit < JA_BITS_PER_BYTE; bit++) {
-				if (i & (1U << bit))
-					nr_one[bit]++;
+			for (bit_i = 0; bit_i < JA_BITS_PER_BYTE; bit_i++) {
+				if (i & (1U << bit_i))
+					nr_one[bit_i]++;
 			}
 			distrib_nr_child++;
 		}
@@ -874,11 +871,9 @@ unsigned int ja_node_sum_distribution_1d(enum ja_recompact mode,
 	}
 
 	if (mode == JA_RECOMPACT_ADD) {
-		unsigned int bit;
-
-		for (bit = 0; bit < JA_BITS_PER_BYTE; bit++) {
-			if (n & (1U << bit))
-				nr_one[bit]++;
+		for (bit_i = 0; bit_i < JA_BITS_PER_BYTE; bit_i++) {
+			if (n & (1U << bit_i))
+				nr_one[bit_i]++;
 		}
 		distrib_nr_child++;
 	}
@@ -886,12 +881,13 @@ unsigned int ja_node_sum_distribution_1d(enum ja_recompact mode,
 	/*
 	 * The best bit selector is that for which the number of ones is
 	 * closest to half of the number of children in the
-	 * distribution.
+	 * distribution. We calculate the distance using the double of
+	 * the sub-distribution sizes to eliminate truncation error.
 	 */
 	for (bit_i = 0; bit_i < JA_BITS_PER_BYTE; bit_i++) {
 		unsigned int distance_to_best;
 
-		distance_to_best = abs_int(nr_one[bit_i] - (distrib_nr_child >> 1U));
+		distance_to_best = abs_int((nr_one[bit_i] << 1U) - distrib_nr_child);
 		if (distance_to_best < overall_best_distance) {
 			overall_best_distance = distance_to_best;
 			bitsel = bit_i;

@@ -977,11 +977,14 @@ void ja_node_sum_distribution_2d(enum ja_recompact mode,
 		nr_2d_01[JA_BITS_PER_BYTE][JA_BITS_PER_BYTE],
 		nr_2d_00[JA_BITS_PER_BYTE][JA_BITS_PER_BYTE];
 	unsigned int bitsel[2] = { 0, 1 };
-	unsigned int bit_i, bit_j, overall_best_distance = UINT_MAX;
+	unsigned int bit_i, bit_j;
+	int overall_best_distance = INT_MAX;
 	unsigned int distrib_nr_child = 0;
 
 	memset(nr_2d_11, 0, sizeof(nr_2d_11));
 	memset(nr_2d_10, 0, sizeof(nr_2d_10));
+	memset(nr_2d_01, 0, sizeof(nr_2d_01));
+	memset(nr_2d_00, 0, sizeof(nr_2d_00));
 
 	switch (type->type_class) {
 	case RCU_JA_LINEAR:
@@ -1134,20 +1137,21 @@ void ja_node_sum_distribution_2d(enum ja_recompact mode,
 	 */
 	for (bit_i = 0; bit_i < JA_BITS_PER_BYTE; bit_i++) {
 		for (bit_j = 0; bit_j < bit_i; bit_j++) {
-			unsigned int distance_to_best[4];
+			int distance_to_best[4];
 
-			distance_to_best[0] = abs_int((nr_2d_11[bit_i][bit_j] << 2U) - distrib_nr_child);
-			distance_to_best[1] = abs_int((nr_2d_10[bit_i][bit_j] << 2U) - distrib_nr_child);
-			distance_to_best[2] = abs_int((nr_2d_01[bit_i][bit_j] << 2U) - distrib_nr_child);
-			distance_to_best[3] = abs_int((nr_2d_00[bit_i][bit_j] << 2U) - distrib_nr_child);
+			distance_to_best[0] = (nr_2d_11[bit_i][bit_j] << 2U) - distrib_nr_child;
+			distance_to_best[1] = (nr_2d_10[bit_i][bit_j] << 2U) - distrib_nr_child;
+			distance_to_best[2] = (nr_2d_01[bit_i][bit_j] << 2U) - distrib_nr_child;
+			distance_to_best[3] = (nr_2d_00[bit_i][bit_j] << 2U) - distrib_nr_child;
 
-			/* Consider worse distance to best */
-			if (distance_to_best[1] > distance_to_best[0])
+			/* Consider worse distance above best */
+			if (distance_to_best[1] > 0 && distance_to_best[1] > distance_to_best[0])
 				distance_to_best[0] = distance_to_best[1];
-			if (distance_to_best[2] > distance_to_best[0])
+			if (distance_to_best[2] > 0 && distance_to_best[2] > distance_to_best[0])
 				distance_to_best[0] = distance_to_best[2];
-			if (distance_to_best[3] > distance_to_best[0])
+			if (distance_to_best[3] > 0 && distance_to_best[3] > distance_to_best[0])
 				distance_to_best[0] = distance_to_best[3];
+
 			/*
 			 * If our worse distance is better than overall,
 			 * we become new best candidate.
@@ -1473,7 +1477,7 @@ fallback_toosmall:
 		 * node within a pool has unused entries. It should
 		 * therefore _never_ be too small.
 		 */
-		//TODO assert(0);
+		assert(0);
 
 		/* Fall-through */
 	case JA_RECOMPACT_ADD_NEXT:

@@ -1136,10 +1136,10 @@ void ja_node_sum_distribution_2d(enum ja_recompact mode,
 		for (bit_j = 0; bit_j < bit_i; bit_j++) {
 			unsigned int distance_to_best[4];
 
-			distance_to_best[0] = nr_2d_11[bit_i][bit_j];
-			distance_to_best[1] = nr_2d_10[bit_i][bit_j];
-			distance_to_best[2] = nr_2d_01[bit_i][bit_j];
-			distance_to_best[3] = nr_2d_00[bit_i][bit_j];
+			distance_to_best[0] = abs_int((nr_2d_11[bit_i][bit_j] << 2U) - distrib_nr_child);
+			distance_to_best[1] = abs_int((nr_2d_10[bit_i][bit_j] << 2U) - distrib_nr_child);
+			distance_to_best[2] = abs_int((nr_2d_01[bit_i][bit_j] << 2U) - distrib_nr_child);
+			distance_to_best[3] = abs_int((nr_2d_00[bit_i][bit_j] << 2U) - distrib_nr_child);
 
 			/* Consider worse distance to best */
 			if (distance_to_best[1] > distance_to_best[0])

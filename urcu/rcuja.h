@@ -62,6 +62,9 @@ struct cds_hlist_head cds_ja_lookup(struct cds_ja *ja, uint64_t key);
 int cds_ja_add(struct cds_ja *ja, uint64_t key,
 		struct cds_ja_node *new_node);
 
+struct cds_ja_node *cds_ja_add_unique(struct cds_ja *ja, uint64_t key,
+		struct cds_ja_node *new_node);
+
 int cds_ja_del(struct cds_ja *ja, uint64_t key,
 		struct cds_ja_node *node);
 

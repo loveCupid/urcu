@@ -1793,8 +1793,10 @@ end:
 	return ret;
 }
 
-int cds_ja_add(struct cds_ja *ja, uint64_t key,
-		struct cds_ja_node *new_node)
+static
+int _cds_ja_add(struct cds_ja *ja, uint64_t key,
+		struct cds_ja_node *new_node,
+		struct cds_ja_node **unique_node_ret)
 {
 	unsigned int tree_depth, i;
 	struct cds_ja_inode_flag *attach_node_flag,
@@ -1847,6 +1849,7 @@ retry:
 	if (!ja_node_ptr(node_flag)) {
 		dbg_printf("cds_ja_add NULL parent2_node_flag %p parent_node_flag %p node_flag_ptr %p node_flag %p\n",
 				parent2_node_flag, parent_node_flag, node_flag_ptr, node_flag);
+
 		attach_node_flag = parent_node_flag;
 		attach_node_flag_ptr = parent_node_flag_ptr;
 		parent_attach_node_flag = parent2_node_flag;
@@ -1858,8 +1861,14 @@ retry:
 				node_flag,
 				key, i, new_node);
 	} else {
+		if (unique_node_ret) {
+			*unique_node_ret = (struct cds_ja_node *) ja_node_ptr(node_flag);
+			return -EEXIST;
+		}
+
 		dbg_printf("cds_ja_add duplicate parent2_node_flag %p parent_node_flag %p node_flag_ptr %p node_flag %p\n",
 				parent2_node_flag, parent_node_flag, node_flag_ptr, node_flag);
+
 		attach_node_flag = node_flag;
 		attach_node_flag_ptr = node_flag_ptr;
 		parent_attach_node_flag = parent_node_flag;
@@ -1874,6 +1883,25 @@ retry:
 		goto retry;
 
 	return ret;
+}
+
+int cds_ja_add(struct cds_ja *ja, uint64_t key,
+		struct cds_ja_node *new_node)
+{
+	return _cds_ja_add(ja, key, new_node, NULL);
+}
+
+struct cds_ja_node *cds_ja_add_unique(struct cds_ja *ja, uint64_t key,
+		struct cds_ja_node *new_node)
+{
+	int ret;
+	struct cds_ja_node *ret_node;
+
+	ret = _cds_ja_add(ja, key, new_node, &ret_node);
+	if (ret == -EEXIST)
+		return ret_node;
+	else
+		return new_node;
 }
 
 /*
@@ -2312,7 +2340,7 @@ void rcuja_free_all_children(struct cds_ja_shadow_node *shadow_node,
 				struct cds_hlist_node *pos, *tmp;
 				uint8_t v;
 
-				ja_linear_node_get_ith_pos(type, node, j, &v, &iter);
+				ja_linear_node_get_ith_pos(type, pool, j, &v, &iter);
 				if (!iter)
 					continue;
 				head.next = (struct cds_hlist_node *) iter;

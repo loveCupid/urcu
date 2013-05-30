@@ -666,19 +666,20 @@ void *test_ja_rw_thr_writer(void *_count)
 		if ((addremove == AR_ADD)
 				|| (addremove == AR_RANDOM && is_add())) {
 			struct ja_test_node *node = malloc(sizeof(*node));
+			struct cds_ja_node *ret_node;
 
 			/* note: only inserting ulong keys */
 			key = ((unsigned long) rand_r(&URCU_TLS(rand_lookup)) % write_pool_size) + write_pool_offset;
 			key *= key_mul;
 			ja_test_node_init(node, key);
 			rcu_read_lock();
-			ret = cds_ja_add(test_ja, key, &node->node);
-			URCU_TLS(nr_add)++;
+			ret_node = cds_ja_add_unique(test_ja, key, &node->node);
 			rcu_read_unlock();
-			if (ret) {
-				fprintf(stderr, "Error (%d) adding node %" PRIu64 "\n",
-					ret, key);
-				assert(0);
+			if (ret_node != &node->node) {
+				free(node);
+				URCU_TLS(nr_addexist)++;
+			} else {
+				URCU_TLS(nr_add)++;
 			}
 		} else {
 			struct ja_test_node *node;

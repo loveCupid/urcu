@@ -836,13 +836,13 @@ int do_mt_test(void)
 		tot_add_exist += count_writer[i].add_exist;
 		tot_remove += count_writer[i].remove;
 	}
+	rcu_thread_online_qsbr();
 
 	ret = cds_ja_destroy(test_ja, free_node_cb);
 	if (ret) {
 		fprintf(stderr, "Error destroying judy array\n");
 		goto end;
 	}
-	rcu_thread_online_qsbr();
 
 	free(tid_reader);
 	free(tid_writer);

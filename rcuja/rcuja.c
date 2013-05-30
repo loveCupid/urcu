@@ -1474,7 +1474,8 @@ fallback_toosmall:
 		 * therefore _never_ be too small.
 		 */
 		//TODO assert(0);
-		break;
+
+		/* Fall-through */
 	case JA_RECOMPACT_ADD_NEXT:
 	{
 		const struct cds_ja_type *next_type;

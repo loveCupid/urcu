@@ -158,7 +158,7 @@ __attribute__((visibility("protected")))
 struct cds_ja_shadow_node *rcuja_shadow_set(struct cds_lfht *ht,
 		struct cds_ja_inode_flag *new_node_flag,
 		struct cds_ja_shadow_node *inherit_from,
-		struct cds_ja *ja);
+		struct cds_ja *ja, int level);
 
 /* rcuja_shadow_clear flags */
 enum {
@@ -182,6 +182,9 @@ struct cds_lfht *rcuja_create_ht(const struct rcu_flavor_struct *flavor);
 
 __attribute__((visibility("protected")))
 int rcuja_delete_ht(struct cds_lfht *ht);
+
+__attribute__((visibility("protected")))
+void free_cds_ja_node(struct cds_ja_inode *node);
 
 //#define DEBUG
 

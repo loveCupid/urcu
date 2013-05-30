@@ -223,7 +223,7 @@ __attribute__((visibility("protected")))
 struct cds_ja_shadow_node *rcuja_shadow_set(struct cds_lfht *ht,
 		struct cds_ja_inode_flag *new_node_flag,
 		struct cds_ja_shadow_node *inherit_from,
-		struct cds_ja *ja)
+		struct cds_ja *ja, int level)
 {
 	struct cds_ja_shadow_node *shadow_node;
 	struct cds_lfht_node *ret_node;
@@ -240,6 +240,7 @@ struct cds_ja_shadow_node *rcuja_shadow_set(struct cds_lfht *ht,
 	 */
 	if (inherit_from) {
 		shadow_node->lock = inherit_from->lock;
+		shadow_node->level = inherit_from->level;
 	} else {
 		shadow_node->lock = calloc(sizeof(*shadow_node->lock), 1);
 		if (!shadow_node->lock) {
@@ -247,6 +248,7 @@ struct cds_ja_shadow_node *rcuja_shadow_set(struct cds_lfht *ht,
 			return NULL;
 		}
 		pthread_mutex_init(shadow_node->lock, NULL);
+		shadow_node->level = level;
 	}
 
 	flavor = cds_lfht_rcu_flavor(ht);
@@ -278,7 +280,7 @@ void free_shadow_node_and_node(struct rcu_head *head)
 {
 	struct cds_ja_shadow_node *shadow_node =
 		caa_container_of(head, struct cds_ja_shadow_node, head);
-	free(ja_node_ptr(shadow_node->node_flag));
+	free_cds_ja_node(ja_node_ptr(shadow_node->node_flag));
 	free(shadow_node);
 }
 
@@ -297,7 +299,7 @@ void free_shadow_node_and_node_and_lock(struct rcu_head *head)
 	struct cds_ja_shadow_node *shadow_node =
 		caa_container_of(head, struct cds_ja_shadow_node, head);
 	assert(shadow_node->level);
-	free(ja_node_ptr(shadow_node->node_flag));
+	free_cds_ja_node(ja_node_ptr(shadow_node->node_flag));
 	free(shadow_node->lock);
 	free(shadow_node);
 }

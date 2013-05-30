@@ -246,6 +246,8 @@ enum ja_recompact {
 
 static
 unsigned long node_fallback_count_distribution[JA_ENTRY_PER_NODE];
+static
+unsigned long nr_nodes_allocated, nr_nodes_freed;
 
 static
 struct cds_ja_inode *_ja_node_mask_ptr(struct cds_ja_inode_flag *node)
@@ -300,12 +302,14 @@ struct cds_ja_inode *alloc_cds_ja_node(const struct cds_ja_type *ja_type)
 		return NULL;
 	}
 	memset(p, 0, len);
+	uatomic_inc(&nr_nodes_allocated);
 	return p;
 }
 
 void free_cds_ja_node(struct cds_ja_inode *node)
 {
 	free(node);
+	uatomic_inc(&nr_nodes_freed);
 }
 
 #define __JA_ALIGN_MASK(v, mask)	(((v) + (mask)) & ~(mask))
@@ -2412,6 +2416,10 @@ int cds_ja_destroy(struct cds_ja *ja,
 		fprintf(stderr,
 			"[warning] RCU Judy Array used %lu fallback node(s)\n",
 			uatomic_read(&ja->nr_fallback));
+	fprintf(stderr, "Nodes allocated: %lu, Nodes freed: %lu. Fallback ratio: %g\n",
+		uatomic_read(&nr_nodes_allocated),
+		uatomic_read(&nr_nodes_freed),
+		(double) uatomic_read(&ja->nr_fallback) / (double) uatomic_read(&nr_nodes_allocated));
 	print_debug_fallback_distribution();
 	free(ja);
 	return 0;

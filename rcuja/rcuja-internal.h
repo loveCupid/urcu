@@ -114,6 +114,16 @@ struct cds_ja_inode_flag *ja_node_flag_pool_1d(struct cds_ja_inode *node,
 }
 
 static inline
+struct cds_ja_inode_flag *ja_node_flag_pool_2d(struct cds_ja_inode *node,
+		unsigned long type, unsigned int bitsel[2])
+{
+	assert(type < (1UL << JA_TYPE_BITS));
+	assert(bitsel[0] < JA_BITS_PER_BYTE);
+	assert(bitsel[1] < JA_BITS_PER_BYTE);
+	return (struct cds_ja_inode_flag *) (((unsigned long) node) | (bitsel[0] << (JA_TYPE_BITS + JA_LOG2_BITS_PER_BYTE)) | (bitsel[1] << JA_TYPE_BITS) | type);
+}
+
+static inline
 unsigned long ja_node_pool_1d_bitsel(struct cds_ja_inode_flag *node)
 {
 	return ((unsigned long) node & JA_POOL_1D_MASK) >> JA_TYPE_BITS;

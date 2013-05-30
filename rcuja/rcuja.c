@@ -239,10 +239,13 @@ struct cds_ja_inode {
 };
 
 enum ja_recompact {
-	JA_RECOMPACT,
-	JA_RECOMPACT_ADD,
+	JA_RECOMPACT_ADD_SAME,
+	JA_RECOMPACT_ADD_NEXT,
 	JA_RECOMPACT_DEL,
 };
+
+static
+unsigned long node_fallback_count_distribution[JA_ENTRY_PER_NODE];
 
 static
 struct cds_ja_inode *_ja_node_mask_ptr(struct cds_ja_inode_flag *node)
@@ -410,18 +413,22 @@ struct cds_ja_inode_flag *ja_pool_node_get_nth(const struct cds_ja_type *type,
 
 		bitsel = ja_node_pool_1d_bitsel(node_flag);
 		assert(bitsel < CHAR_BIT);
-		index = ((unsigned long) n >> bitsel) & type->nr_pool_order;
+		index = ((unsigned long) n >> bitsel) & 0x1;
 		linear = (struct cds_ja_inode *) &node->u.data[index << type->pool_size_order];
 		break;
 	}
 	case 2:
 	{
-		/*
-		 * TODO: currently, we select the pool by highest bits. We
-		 * should support various encodings.
-		 */
-		linear = (struct cds_ja_inode *)
-			&node->u.data[((unsigned long) n >> (CHAR_BIT - type->nr_pool_order)) << type->pool_size_order];
+		unsigned long bitsel[2], index[2], rindex;
+
+		ja_node_pool_2d_bitsel(node_flag, bitsel);
+		assert(bitsel[0] < CHAR_BIT);
+		assert(bitsel[1] < CHAR_BIT);
+		index[0] = ((unsigned long) n >> bitsel[0]) & 0x1;
+		index[0] <<= 1;
+		index[1] = ((unsigned long) n >> bitsel[1]) & 0x1;
+		rindex = index[0] | index[1];
+		linear = (struct cds_ja_inode *) &node->u.data[rindex << type->pool_size_order];
 		break;
 	}
 	default:
@@ -591,18 +598,22 @@ int ja_pool_node_set_nth(const struct cds_ja_type *type,
 
 		bitsel = ja_node_pool_1d_bitsel(node_flag);
 		assert(bitsel < CHAR_BIT);
-		index = ((unsigned long) n >> bitsel) & type->nr_pool_order;
+		index = ((unsigned long) n >> bitsel) & 0x1;
 		linear = (struct cds_ja_inode *) &node->u.data[index << type->pool_size_order];
 		break;
 	}
 	case 2:
 	{
-		/*
-		 * TODO: currently, we select the pool by highest bits. We
-		 * should support various encodings.
-		 */
-		linear = (struct cds_ja_inode *)
-			&node->u.data[((unsigned long) n >> (CHAR_BIT - type->nr_pool_order)) << type->pool_size_order];
+		unsigned long bitsel[2], index[2], rindex;
+
+		ja_node_pool_2d_bitsel(node_flag, bitsel);
+		assert(bitsel[0] < CHAR_BIT);
+		assert(bitsel[1] < CHAR_BIT);
+		index[0] = ((unsigned long) n >> bitsel[0]) & 0x1;
+		index[0] <<= 1;
+		index[1] = ((unsigned long) n >> bitsel[1]) & 0x1;
+		rindex = index[0] | index[1];
+		linear = (struct cds_ja_inode *) &node->u.data[rindex << type->pool_size_order];
 		break;
 	}
 	default:
@@ -676,18 +687,19 @@ int ja_linear_node_clear_ptr(const struct cds_ja_type *type,
 	assert(type->type_class == RCU_JA_LINEAR || type->type_class == RCU_JA_POOL);
 
 	nr_child_ptr = &node->u.data[0];
-	dbg_printf("linear clear ptr: nr_child_ptr %p\n", nr_child_ptr);
 	nr_child = *nr_child_ptr;
 	assert(nr_child <= type->max_linear_child);
 
 	if (shadow_node->fallback_removal_count) {
 		shadow_node->fallback_removal_count--;
 	} else {
-		if (shadow_node->nr_child <= type->min_child) {
+		if (type->type_class == RCU_JA_LINEAR
+				&& shadow_node->nr_child <= type->min_child) {
 			/* We need to try recompacting the node */
 			return -EFBIG;
 		}
 	}
+	dbg_printf("linear clear ptr: nr_child_ptr %p\n", nr_child_ptr);
 	assert(*node_flag_ptr != NULL);
 	rcu_assign_pointer(*node_flag_ptr, NULL);
 	/*
@@ -702,13 +714,13 @@ int ja_linear_node_clear_ptr(const struct cds_ja_type *type,
 		(unsigned int) CMM_LOAD_SHARED(*nr_child_ptr),
 		(unsigned int) shadow_node->nr_child,
 		node, shadow_node);
-
 	return 0;
 }
 
 static
 int ja_pool_node_clear_ptr(const struct cds_ja_type *type,
 		struct cds_ja_inode *node,
+		struct cds_ja_inode_flag *node_flag,
 		struct cds_ja_shadow_node *shadow_node,
 		struct cds_ja_inode_flag **node_flag_ptr,
 		uint8_t n)
@@ -716,8 +728,45 @@ int ja_pool_node_clear_ptr(const struct cds_ja_type *type,
 	struct cds_ja_inode *linear;
 
 	assert(type->type_class == RCU_JA_POOL);
-	linear = (struct cds_ja_inode *)
-		&node->u.data[((unsigned long) n >> (CHAR_BIT - type->nr_pool_order)) << type->pool_size_order];
+
+	if (shadow_node->fallback_removal_count) {
+		shadow_node->fallback_removal_count--;
+	} else {
+		/* We should try recompacting the node */
+		if (shadow_node->nr_child <= type->min_child)
+			return -EFBIG;
+	}
+
+	switch (type->nr_pool_order) {
+	case 1:
+	{
+		unsigned long bitsel, index;
+
+		bitsel = ja_node_pool_1d_bitsel(node_flag);
+		assert(bitsel < CHAR_BIT);
+		index = ((unsigned long) n >> bitsel) & type->nr_pool_order;
+		linear = (struct cds_ja_inode *) &node->u.data[index << type->pool_size_order];
+		break;
+	}
+	case 2:
+	{
+		unsigned long bitsel[2], index[2], rindex;
+
+		ja_node_pool_2d_bitsel(node_flag, bitsel);
+		assert(bitsel[0] < CHAR_BIT);
+		assert(bitsel[1] < CHAR_BIT);
+		index[0] = ((unsigned long) n >> bitsel[0]) & 0x1;
+		index[0] <<= 1;
+		index[1] = ((unsigned long) n >> bitsel[1]) & 0x1;
+		rindex = index[0] | index[1];
+		linear = (struct cds_ja_inode *) &node->u.data[rindex << type->pool_size_order];
+		break;
+	}
+	default:
+		linear = NULL;
+		assert(0);
+	}
+
 	return ja_linear_node_clear_ptr(type, linear, shadow_node, node_flag_ptr);
 }
 
@@ -728,6 +777,14 @@ int ja_pigeon_node_clear_ptr(const struct cds_ja_type *type,
 		struct cds_ja_inode_flag **node_flag_ptr)
 {
 	assert(type->type_class == RCU_JA_PIGEON);
+
+	if (shadow_node->fallback_removal_count) {
+		shadow_node->fallback_removal_count--;
+	} else {
+		/* We should try recompacting the node */
+		if (shadow_node->nr_child <= type->min_child)
+			return -EFBIG;
+	}
 	dbg_printf("ja_pigeon_node_clear_ptr: clearing ptr: %p\n", *node_flag_ptr);
 	rcu_assign_pointer(*node_flag_ptr, NULL);
 	shadow_node->nr_child--;
@@ -741,6 +798,7 @@ int ja_pigeon_node_clear_ptr(const struct cds_ja_type *type,
 static
 int _ja_node_clear_ptr(const struct cds_ja_type *type,
 		struct cds_ja_inode *node,
+		struct cds_ja_inode_flag *node_flag,
 		struct cds_ja_shadow_node *shadow_node,
 		struct cds_ja_inode_flag **node_flag_ptr,
 		uint8_t n)
@@ -749,7 +807,7 @@ int _ja_node_clear_ptr(const struct cds_ja_type *type,
 	case RCU_JA_LINEAR:
 		return ja_linear_node_clear_ptr(type, node, shadow_node, node_flag_ptr);
 	case RCU_JA_POOL:
-		return ja_pool_node_clear_ptr(type, node, shadow_node, node_flag_ptr, n);
+		return ja_pool_node_clear_ptr(type, node, node_flag, shadow_node, node_flag_ptr, n);
 	case RCU_JA_PIGEON:
 		return ja_pigeon_node_clear_ptr(type, node, shadow_node, node_flag_ptr);
 	case RCU_JA_NULL:
@@ -863,14 +921,14 @@ unsigned int ja_node_sum_distribution_1d(enum ja_recompact mode,
 		break;
 	}
 	case RCU_JA_NULL:
-		assert(mode == JA_RECOMPACT_ADD);
+		assert(mode == JA_RECOMPACT_ADD_NEXT);
 		break;
 	default:
 		assert(0);
 		break;
 	}
 
-	if (mode == JA_RECOMPACT_ADD) {
+	if (mode == JA_RECOMPACT_ADD_NEXT || mode == JA_RECOMPACT_ADD_SAME) {
 		for (bit_i = 0; bit_i < JA_BITS_PER_BYTE; bit_i++) {
 			if (n & (1U << bit_i))
 				nr_one[bit_i]++;
@@ -895,6 +953,218 @@ unsigned int ja_node_sum_distribution_1d(enum ja_recompact mode,
 	}
 	dbg_printf("1 dimension pool bit selection: (%u)\n", bitsel);
 	return bitsel;
+}
+
+/*
+ * Calculate bit distribution in two dimensions. Returns the two bits
+ * (each 0 to 7) that splits the distribution in four sub-distributions
+ * containing as much elements one compared to the other.
+ */
+static
+void ja_node_sum_distribution_2d(enum ja_recompact mode,
+		struct cds_ja *ja,
+		unsigned int type_index,
+		const struct cds_ja_type *type,
+		struct cds_ja_inode *node,
+		struct cds_ja_shadow_node *shadow_node,
+		uint8_t n,
+		struct cds_ja_inode_flag *child_node_flag,
+		struct cds_ja_inode_flag **nullify_node_flag_ptr,
+		unsigned int *_bitsel)
+{
+	uint8_t nr_2d_11[JA_BITS_PER_BYTE][JA_BITS_PER_BYTE],
+		nr_2d_10[JA_BITS_PER_BYTE][JA_BITS_PER_BYTE],
+		nr_2d_01[JA_BITS_PER_BYTE][JA_BITS_PER_BYTE],
+		nr_2d_00[JA_BITS_PER_BYTE][JA_BITS_PER_BYTE];
+	unsigned int bitsel[2] = { 0, 1 };
+	unsigned int bit_i, bit_j, overall_best_distance = UINT_MAX;
+	unsigned int distrib_nr_child = 0;
+
+	memset(nr_2d_11, 0, sizeof(nr_2d_11));
+	memset(nr_2d_10, 0, sizeof(nr_2d_10));
+
+	switch (type->type_class) {
+	case RCU_JA_LINEAR:
+	{
+		uint8_t nr_child =
+			ja_linear_node_get_nr_child(type, node);
+		unsigned int i;
+
+		for (i = 0; i < nr_child; i++) {
+			struct cds_ja_inode_flag *iter;
+			uint8_t v;
+
+			ja_linear_node_get_ith_pos(type, node, i, &v, &iter);
+			if (!iter)
+				continue;
+			if (mode == JA_RECOMPACT_DEL && *nullify_node_flag_ptr == iter)
+				continue;
+			for (bit_i = 0; bit_i < JA_BITS_PER_BYTE; bit_i++) {
+				for (bit_j = 0; bit_j < bit_i; bit_j++) {
+					if ((v & (1U << bit_i)) && (v & (1U << bit_j))) {
+						nr_2d_11[bit_i][bit_j]++;
+					}
+					if ((v & (1U << bit_i)) && !(v & (1U << bit_j))) {
+						nr_2d_10[bit_i][bit_j]++;
+					}
+					if (!(v & (1U << bit_i)) && (v & (1U << bit_j))) {
+						nr_2d_01[bit_i][bit_j]++;
+					}
+					if (!(v & (1U << bit_i)) && !(v & (1U << bit_j))) {
+						nr_2d_00[bit_i][bit_j]++;
+					}
+				}
+			}
+			distrib_nr_child++;
+		}
+		break;
+	}
+	case RCU_JA_POOL:
+	{
+		unsigned int pool_nr;
+
+		for (pool_nr = 0; pool_nr < (1U << type->nr_pool_order); pool_nr++) {
+			struct cds_ja_inode *pool =
+				ja_pool_node_get_ith_pool(type,
+					node, pool_nr);
+			uint8_t nr_child =
+				ja_linear_node_get_nr_child(type, pool);
+			unsigned int j;
+
+			for (j = 0; j < nr_child; j++) {
+				struct cds_ja_inode_flag *iter;
+				uint8_t v;
+
+				ja_linear_node_get_ith_pos(type, pool,
+						j, &v, &iter);
+				if (!iter)
+					continue;
+				if (mode == JA_RECOMPACT_DEL && *nullify_node_flag_ptr == iter)
+					continue;
+				for (bit_i = 0; bit_i < JA_BITS_PER_BYTE; bit_i++) {
+					for (bit_j = 0; bit_j < bit_i; bit_j++) {
+						if ((v & (1U << bit_i)) && (v & (1U << bit_j))) {
+							nr_2d_11[bit_i][bit_j]++;
+						}
+						if ((v & (1U << bit_i)) && !(v & (1U << bit_j))) {
+							nr_2d_10[bit_i][bit_j]++;
+						}
+						if (!(v & (1U << bit_i)) && (v & (1U << bit_j))) {
+							nr_2d_01[bit_i][bit_j]++;
+						}
+						if (!(v & (1U << bit_i)) && !(v & (1U << bit_j))) {
+							nr_2d_00[bit_i][bit_j]++;
+						}
+					}
+				}
+				distrib_nr_child++;
+			}
+		}
+		break;
+	}
+	case RCU_JA_PIGEON:
+	{
+		uint8_t nr_child;
+		unsigned int i;
+
+		assert(mode == JA_RECOMPACT_DEL);
+		nr_child = shadow_node->nr_child;
+		for (i = 0; i < nr_child; i++) {
+			struct cds_ja_inode_flag *iter;
+
+			iter = ja_pigeon_node_get_ith_pos(type, node, i);
+			if (!iter)
+				continue;
+			if (mode == JA_RECOMPACT_DEL && *nullify_node_flag_ptr == iter)
+				continue;
+			for (bit_i = 0; bit_i < JA_BITS_PER_BYTE; bit_i++) {
+				for (bit_j = 0; bit_j < bit_i; bit_j++) {
+					if ((i & (1U << bit_i)) && (i & (1U << bit_j))) {
+						nr_2d_11[bit_i][bit_j]++;
+					}
+					if ((i & (1U << bit_i)) && !(i & (1U << bit_j))) {
+						nr_2d_10[bit_i][bit_j]++;
+					}
+					if (!(i & (1U << bit_i)) && (i & (1U << bit_j))) {
+						nr_2d_01[bit_i][bit_j]++;
+					}
+					if (!(i & (1U << bit_i)) && !(i & (1U << bit_j))) {
+						nr_2d_00[bit_i][bit_j]++;
+					}
+				}
+			}
+			distrib_nr_child++;
+		}
+		break;
+	}
+	case RCU_JA_NULL:
+		assert(mode == JA_RECOMPACT_ADD_NEXT);
+		break;
+	default:
+		assert(0);
+		break;
+	}
+
+	if (mode == JA_RECOMPACT_ADD_NEXT || mode == JA_RECOMPACT_ADD_SAME) {
+		for (bit_i = 0; bit_i < JA_BITS_PER_BYTE; bit_i++) {
+			for (bit_j = 0; bit_j < bit_i; bit_j++) {
+				if ((n & (1U << bit_i)) && (n & (1U << bit_j))) {
+					nr_2d_11[bit_i][bit_j]++;
+				}
+				if ((n & (1U << bit_i)) && !(n & (1U << bit_j))) {
+					nr_2d_10[bit_i][bit_j]++;
+				}
+				if (!(n & (1U << bit_i)) && (n & (1U << bit_j))) {
+					nr_2d_01[bit_i][bit_j]++;
+				}
+				if (!(n & (1U << bit_i)) && !(n & (1U << bit_j))) {
+					nr_2d_00[bit_i][bit_j]++;
+				}
+			}
+		}
+		distrib_nr_child++;
+	}
+
+	/*
+	 * The best bit selector is that for which the number of nodes
+	 * in each sub-class is closest to one-fourth of the number of
+	 * children in the distribution. We calculate the distance using
+	 * 4 times the size of the sub-distribution to eliminate
+	 * truncation error.
+	 */
+	for (bit_i = 0; bit_i < JA_BITS_PER_BYTE; bit_i++) {
+		for (bit_j = 0; bit_j < bit_i; bit_j++) {
+			unsigned int distance_to_best[4];
+
+			distance_to_best[0] = nr_2d_11[bit_i][bit_j];
+			distance_to_best[1] = nr_2d_10[bit_i][bit_j];
+			distance_to_best[2] = nr_2d_01[bit_i][bit_j];
+			distance_to_best[3] = nr_2d_00[bit_i][bit_j];
+
+			/* Consider worse distance to best */
+			if (distance_to_best[1] > distance_to_best[0])
+				distance_to_best[0] = distance_to_best[1];
+			if (distance_to_best[2] > distance_to_best[0])
+				distance_to_best[0] = distance_to_best[2];
+			if (distance_to_best[3] > distance_to_best[0])
+				distance_to_best[0] = distance_to_best[3];
+			/*
+			 * If our worse distance is better than overall,
+			 * we become new best candidate.
+			 */
+			if (distance_to_best[0] < overall_best_distance) {
+				overall_best_distance = distance_to_best[0];
+				bitsel[0] = bit_i;
+				bitsel[1] = bit_j;
+			}
+		}
+	}
+
+	dbg_printf("2 dimensions pool bit selection: (%u,%u)\n", bitsel[0], bitsel[1]);
+
+	/* Return our bit selection */
+	_bitsel[0] = bitsel[0];
+	_bitsel[1] = bitsel[1];
 }
 
 /*
@@ -924,21 +1194,62 @@ int ja_node_recompact(enum ja_recompact mode,
 	old_node_flag = *old_node_flag_ptr;
 
 	switch (mode) {
-	case JA_RECOMPACT:
-		new_type_index = old_type_index;
+	case JA_RECOMPACT_ADD_SAME:
+		if (old_type->type_class == RCU_JA_POOL) {
+			/*
+			 * For pool type, try redistributing
+			 * into a different distribution of same
+			 * size if we have not reached limits.
+			 */
+			if (shadow_node->nr_child + 1 > old_type->max_child) {
+				new_type_index = old_type_index + 1;
+			} else if (shadow_node->nr_child + 1 < old_type->min_child) {
+				new_type_index = old_type_index - 1;
+			} else {
+				new_type_index = old_type_index;
+			}
+		} else {
+			new_type_index = old_type_index;
+		}
 		break;
-	case JA_RECOMPACT_ADD:
+	case JA_RECOMPACT_ADD_NEXT:
 		if (!shadow_node || old_type_index == NODE_INDEX_NULL) {
 			new_type_index = 0;
 		} else {
-			new_type_index = old_type_index + 1;
+			if (old_type->type_class == RCU_JA_POOL) {
+				/*
+				 * For pool type, try redistributing
+				 * into a different distribution of same
+				 * size if we have not reached limits.
+				 */
+				if (shadow_node->nr_child + 1 > old_type->max_child) {
+					new_type_index = old_type_index + 1;
+				} else {
+					new_type_index = old_type_index;
+				}
+			} else {
+				new_type_index = old_type_index + 1;
+			}
 		}
 		break;
 	case JA_RECOMPACT_DEL:
 		if (old_type_index == 0) {
 			new_type_index = NODE_INDEX_NULL;
 		} else {
-			new_type_index = old_type_index - 1;
+			if (old_type->type_class == RCU_JA_POOL) {
+				/*
+				 * For pool type, try redistributing
+				 * into a different distribution of same
+				 * size if we have not reached limits.
+				 */
+				if (shadow_node->nr_child - 1 < old_type->min_child) {
+					new_type_index = old_type_index - 1;
+				} else {
+					new_type_index = old_type_index;
+				}
+			} else {
+				new_type_index = old_type_index - 1;
+			}
 		}
 		break;
 	default:
@@ -958,7 +1269,8 @@ retry:		/* for fallback */
 			switch (new_type->nr_pool_order) {
 			case 1:
 			{
-				unsigned int node_distrib_bitsel = 0;
+				unsigned int node_distrib_bitsel;
+
 				node_distrib_bitsel =
 					ja_node_sum_distribution_1d(mode, ja,
 						old_type_index, old_type,
@@ -972,10 +1284,18 @@ retry:		/* for fallback */
 			}
 			case 2:
 			{
-				/* TODO: pool order 2 in 2d */
+				unsigned int node_distrib_bitsel[2];
+
+				ja_node_sum_distribution_2d(mode, ja,
+					old_type_index, old_type,
+					old_node, shadow_node,
+					n, child_node_flag,
+					nullify_node_flag_ptr,
+					node_distrib_bitsel);
 				assert(!((unsigned long) new_node & JA_POOL_1D_MASK));
 				assert(!((unsigned long) new_node & JA_POOL_2D_MASK));
-				new_node_flag = ja_node_flag(new_node, new_type_index);
+				new_node_flag = ja_node_flag_pool_2d(new_node,
+					new_type_index, node_distrib_bitsel);
 				break;
 			}
 			default:
@@ -999,7 +1319,7 @@ retry:		/* for fallback */
 		new_node_flag = NULL;
 	}
 
-	assert(mode != JA_RECOMPACT_ADD || old_type->type_class != RCU_JA_PIGEON);
+	assert(mode != JA_RECOMPACT_ADD_NEXT || old_type->type_class != RCU_JA_PIGEON);
 
 	if (new_type_index == NODE_INDEX_NULL)
 		goto skip_copy;
@@ -1065,7 +1385,7 @@ retry:		/* for fallback */
 		break;
 	}
 	case RCU_JA_NULL:
-		assert(mode == JA_RECOMPACT_ADD);
+		assert(mode == JA_RECOMPACT_ADD_NEXT);
 		break;
 	case RCU_JA_PIGEON:
 	{
@@ -1099,7 +1419,7 @@ retry:		/* for fallback */
 	}
 skip_copy:
 
-	if (mode == JA_RECOMPACT_ADD) {
+	if (mode == JA_RECOMPACT_ADD_NEXT || mode == JA_RECOMPACT_ADD_SAME) {
 		/* add node */
 		ret = _ja_node_set_nth(new_type, new_node, new_node_flag,
 				new_shadow_node,
@@ -1109,6 +1429,14 @@ skip_copy:
 		}
 		assert(!ret);
 	}
+
+	if (fallback) {
+		dbg_printf("Using fallback for %u children, node type index: %u, mode %s\n",
+			new_shadow_node->nr_child, old_type_index, mode == JA_RECOMPACT_ADD_NEXT ? "add_next" :
+				(mode == JA_RECOMPACT_DEL ? "del" : "add_same"));
+		uatomic_inc(&node_fallback_count_distribution[new_shadow_node->nr_child]);
+	}
+
 	/* Return pointer to new recompacted node through old_node_flag_ptr */
 	*old_node_flag_ptr = new_node_flag;
 	if (old_node) {
@@ -1138,7 +1466,68 @@ fallback_toosmall:
 			RCUJA_SHADOW_CLEAR_FREE_NODE);
 	assert(!ret);
 
-	/* Choose fallback type: pigeon */
+	switch (mode) {
+	case JA_RECOMPACT_ADD_SAME:
+		/*
+		 * JA_RECOMPACT_ADD_SAME is only triggered if a linear
+		 * node within a pool has unused entries. It should
+		 * therefore _never_ be too small.
+		 */
+		//TODO assert(0);
+		break;
+	case JA_RECOMPACT_ADD_NEXT:
+	{
+		const struct cds_ja_type *next_type;
+
+		/*
+		 * Recompaction attempt on add failed. Should only
+		 * happen if target node type is pool. Caused by
+		 * hard-to-split distribution. Recompact using the next
+		 * distribution size.
+		 */
+		assert(new_type->type_class == RCU_JA_POOL);
+		next_type = &ja_types[new_type_index + 1];
+		/*
+		 * Try going to the next pool size if our population
+		 * fits within its range. This is not flagged as a
+		 * fallback.
+		 */
+		if (shadow_node->nr_child + 1 >= next_type->min_child
+				&& shadow_node->nr_child + 1 <= next_type->max_child) {
+			new_type_index++;
+			goto retry;
+		} else {
+			new_type_index++;
+			dbg_printf("Add fallback to type %d\n", new_type_index);
+			uatomic_inc(&ja->nr_fallback);
+			fallback = 1;
+			goto retry;
+		}
+		break;
+	}
+	case JA_RECOMPACT_DEL:
+		/*
+		 * Recompaction attempt on delete failed. Should only
+		 * happen if target node type is pool. This is caused by
+		 * a hard-to-split distribution. Recompact on same node
+		 * size, but flag current node as "fallback" to ensure
+		 * we don't attempt recompaction before some activity
+		 * has reshuffled our node.
+		 */
+		assert(new_type->type_class == RCU_JA_POOL);
+		new_type_index = old_type_index;
+		dbg_printf("Delete fallback keeping type %d\n", new_type_index);
+		uatomic_inc(&ja->nr_fallback);
+		fallback = 1;
+		goto retry;
+	default:
+		assert(0);
+		return -EINVAL;
+	}
+
+	/*
+	 * Last resort fallback: pigeon.
+	 */
 	new_type_index = (1UL << JA_TYPE_BITS) - 1;
 	dbg_printf("Fallback to type %d\n", new_type_index);
 	uatomic_inc(&ja->nr_fallback);
@@ -1171,13 +1560,13 @@ int ja_node_set_nth(struct cds_ja *ja,
 			n, child_node_flag);
 	switch (ret) {
 	case -ENOSPC:
-		/* Not enough space in node, need to recompact. */
-		ret = ja_node_recompact(JA_RECOMPACT_ADD, ja, type_index, type, node,
+		/* Not enough space in node, need to recompact to next type. */
+		ret = ja_node_recompact(JA_RECOMPACT_ADD_NEXT, ja, type_index, type, node,
 				shadow_node, node_flag, n, child_node_flag, NULL);
 		break;
 	case -ERANGE:
 		/* Node needs to be recompacted. */
-		ret = ja_node_recompact(JA_RECOMPACT, ja, type_index, type, node,
+		ret = ja_node_recompact(JA_RECOMPACT_ADD_SAME, ja, type_index, type, node,
 				shadow_node, node_flag, n, child_node_flag, NULL);
 		break;
 	}
@@ -1206,9 +1595,9 @@ int ja_node_clear_ptr(struct cds_ja *ja,
 	node = ja_node_ptr(*parent_node_flag_ptr);
 	type_index = ja_node_type(*parent_node_flag_ptr);
 	type = &ja_types[type_index];
-	ret = _ja_node_clear_ptr(type, node, shadow_node, node_flag_ptr, n);
+	ret = _ja_node_clear_ptr(type, node, *parent_node_flag_ptr, shadow_node, node_flag_ptr, n);
 	if (ret == -EFBIG) {
-		/* Should to try recompaction. */
+		/* Should try recompaction. */
 		ret = ja_node_recompact(JA_RECOMPACT_DEL, ja, type_index, type, node,
 				shadow_node, parent_node_flag_ptr, n, NULL,
 				node_flag_ptr);
@@ -1985,6 +2374,20 @@ void rcuja_free_all_children(struct cds_ja_shadow_node *shadow_node,
 	}
 }
 
+static
+void print_debug_fallback_distribution(void)
+{
+	int i;
+
+	fprintf(stderr, "Fallback node distribution:\n");
+	for (i = 0; i < JA_ENTRY_PER_NODE; i++) {
+		if (!node_fallback_count_distribution[i])
+			continue;
+		fprintf(stderr, "	%3u: %4lu\n",
+			i, node_fallback_count_distribution[i]);
+	}
+}
+
 /*
  * There should be no more concurrent add to the judy array while it is
  * being destroyed (ensured by the caller).
@@ -2004,6 +2407,7 @@ int cds_ja_destroy(struct cds_ja *ja,
 		fprintf(stderr,
 			"[warning] RCU Judy Array used %lu fallback node(s)\n",
 			uatomic_read(&ja->nr_fallback));
+	print_debug_fallback_distribution();
 	free(ja);
 	return 0;
 }

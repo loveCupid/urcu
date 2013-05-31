@@ -1674,6 +1674,27 @@ int ja_attach_node(struct cds_ja *ja,
 		goto unlock_parent;
 	}
 
+	/*
+	 * Perform a lookup query to handle the case where
+	 * old_node_flag_ptr is NULL. We cannot use it to check if the
+	 * node has been populated between RCU lookup and mutex
+	 * acquisition.
+	 */
+	if (!old_node_flag_ptr) {
+		uint8_t iter_key;
+		struct cds_ja_inode_flag *lookup_node_flag;
+		struct cds_ja_inode_flag **lookup_node_flag_ptr;
+
+		iter_key = (uint8_t) (key >> (JA_BITS_PER_BYTE * (ja->tree_depth - level)));
+		lookup_node_flag = ja_node_get_nth(attach_node_flag,
+			&lookup_node_flag_ptr,
+			iter_key);
+		if (lookup_node_flag) {
+			ret = -EEXIST;
+			goto unlock_parent;
+		}
+	}
+
 	if (attach_node_flag_ptr && ja_node_ptr(*attach_node_flag_ptr) !=
 			ja_node_ptr(attach_node_flag)) {
 		/*
@@ -1701,8 +1722,10 @@ int ja_attach_node(struct cds_ja *ja,
 			iter_key,
 			iter_node_flag,
 			NULL, i);
-		if (ret)
+		if (ret) {
+			dbg_printf("branch creation error %d\n", ret);
 			goto check_error;
+		}
 		created_nodes[nr_created_nodes++] = iter_dest_node_flag;
 		iter_node_flag = iter_dest_node_flag;
 	}
@@ -1726,8 +1749,10 @@ int ja_attach_node(struct cds_ja *ja,
 			iter_key,
 			iter_node_flag,
 			shadow_node, level - 1);
-		if (ret)
+		if (ret) {
+			dbg_printf("branch publish error %d\n", ret);
 			goto check_error;
+		}
 		/*
 		 * Attach branch
 		 */

@@ -63,6 +63,10 @@ ${TESTPROG} $((2*${THREAD_MUL})) $((2*${THREAD_MUL})) ${TIME_UNITS} -B 32 ${EXTR
 
 ${TESTPROG} $((2*${THREAD_MUL})) $((2*${THREAD_MUL})) ${TIME_UNITS} -B 64 ${EXTRA_PARAMS} || exit 1
 
+# with node leak detection
+${TESTPROG} $((2*${THREAD_MUL})) $((2*${THREAD_MUL})) ${TIME_UNITS} -l -B 32 ${EXTRA_PARAMS} || exit 1
+
+
 # add unique
 
 ${TESTPROG} $((2*${THREAD_MUL})) $((2*${THREAD_MUL})) ${TIME_UNITS} -u -B 8 -M 10 -N 10 -O 10 ${EXTRA_PARAMS} || exit 1
@@ -97,16 +101,18 @@ ${TESTPROG} $((2*${THREAD_MUL})) $((2*${THREAD_MUL})) ${TIME_UNITS} -u -B 32 ${E
 
 ${TESTPROG} $((2*${THREAD_MUL})) $((2*${THREAD_MUL})) ${TIME_UNITS} -u -B 64 ${EXTRA_PARAMS} || exit 1
 
+# with node leak detection
+${TESTPROG} $((2*${THREAD_MUL})) $((2*${THREAD_MUL})) ${TIME_UNITS} -u -l -B 32 ${EXTRA_PARAMS} || exit 1
 
-# removal (0% add)
+# removal (0% add), leak detection
 
-${TESTPROG} $((2*${THREAD_MUL})) $((2*${THREAD_MUL})) ${TIME_UNITS} -u -B 32 -k 10000 -M 10000 -N 10000 -O 10000 -r 0 ${EXTRA_PARAMS} || exit 1
+${TESTPROG} $((2*${THREAD_MUL})) $((2*${THREAD_MUL})) ${TIME_UNITS} -u -l -B 32 -k 10000 -M 10000 -N 10000 -O 10000 -r 0 ${EXTRA_PARAMS} || exit 1
 
-# vary add ratio
+# vary add ratio, leak detection
 
-${TESTPROG} $((2*${THREAD_MUL})) $((2*${THREAD_MUL})) ${TIME_UNITS} -u -B 32 -k 10000 -M 10000 -N 10000 -O 10000 -r 5 ${EXTRA_PARAMS} || exit 1
+${TESTPROG} $((2*${THREAD_MUL})) $((2*${THREAD_MUL})) ${TIME_UNITS} -u -l -B 32 -k 10000 -M 10000 -N 10000 -O 10000 -r 5 ${EXTRA_PARAMS} || exit 1
 
-${TESTPROG} $((2*${THREAD_MUL})) $((2*${THREAD_MUL})) ${TIME_UNITS} -u -B 32 -k 10000 -M 10000 -N 10000 -O 10000 -r 95 ${EXTRA_PARAMS} || exit 1
+${TESTPROG} $((2*${THREAD_MUL})) $((2*${THREAD_MUL})) ${TIME_UNITS} -u -l -B 32 -k 10000 -M 10000 -N 10000 -O 10000 -r 95 ${EXTRA_PARAMS} || exit 1
 
 
 # validate lookup of init values

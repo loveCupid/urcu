@@ -74,6 +74,8 @@ unsigned int nr_writers;
 static unsigned int add_ratio = 50;
 static uint64_t key_mul = 1ULL;
 
+static int add_unique, add_replace;
+
 static pthread_mutex_t rcu_copy_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 void set_affinity(void)
@@ -165,6 +167,8 @@ void show_usage(int argc, char **argv)
 	printf("        [-c duration] (reader C.S. duration (in loops))\n");
 	printf("        [-v] (verbose output)\n");
 	printf("        [-a cpu#] [-a cpu#]... (affinity)\n");
+	printf("        [-u] Add unique keys.\n");
+	printf("        [-s] Replace existing keys.\n");
 printf("        [not -u nor -s] Add entries (supports redundant keys).\n");
 	printf("        [-r ratio] Add ratio (in %% of add+removal).\n");
 	printf("        [-k] Populate init nodes.\n");
@@ -175,7 +179,7 @@ printf("        [not -u nor -s] Add entries (supports redundant keys).\n");
 	printf("        [-N size] Write pool size.\n");
 	printf("        [-O size] Init pool size.\n");
 	printf("        [-V] Validate lookups of init values (use with filled init pool, same lookup range, with different write range).\n");
-	printf("        [-s] Do sanity test.\n");
+	printf("        [-t] Do sanity test.\n");
 	printf("        [-B] Key bits for multithread test (default: 32).\n");
 	printf("        [-m factor] Key multiplication factor.\n");
 	printf("\n\n");
@@ -673,14 +677,26 @@ void *test_ja_rw_thr_writer(void *_count)
 			key *= key_mul;
 			ja_test_node_init(node, key);
 			rcu_read_lock();
-			ret_node = cds_ja_add_unique(test_ja, key, &node->node);
-			rcu_read_unlock();
-			if (ret_node != &node->node) {
-				free(node);
-				URCU_TLS(nr_addexist)++;
+			if (add_unique) {
+				ret_node = cds_ja_add_unique(test_ja, key, &node->node);
+				if (ret_node != &node->node) {
+					free(node);
+					URCU_TLS(nr_addexist)++;
+				} else {
+					URCU_TLS(nr_add)++;
+				}
+			} else if (add_replace) {
+				assert(0);	/* not implemented yet. */
 			} else {
-				URCU_TLS(nr_add)++;
+				ret = cds_ja_add(test_ja, key, &node->node);
+				if (ret) {
+					fprintf(stderr, "Error in cds_ja_add: %d\n", ret);
+					free(node);
+				} else {
+					URCU_TLS(nr_add)++;
+				}
 			}
+			rcu_read_unlock();
 		} else {
 			struct ja_test_node *node;
 
@@ -949,7 +965,7 @@ int main(int argc, char **argv)
 		case 'V':
 			validate_lookup = 1;
 			break;
-		case 's':
+		case 't':
 			sanity_test = 1;
 			break;
 		case 'B':
@@ -957,6 +973,12 @@ int main(int argc, char **argv)
 			break;
 		case 'm':
 			key_mul = atoll(argv[++i]);
+			break;
+		case 'u':
+			add_unique = 1;
+			break;
+		case 's':
+			add_replace = 1;
 			break;
 		}
 	}
@@ -966,6 +988,9 @@ int main(int argc, char **argv)
 	printf_verbose("Writer delay : %lu loops.\n", wdelay);
 	printf_verbose("Reader duration : %lu loops.\n", rduration);
 	printf_verbose("Add ratio: %u%%.\n", add_ratio);
+	printf_verbose("Mode:%s%s.\n",
+		" add/remove",
+		add_unique ? " uniquify" : ( add_replace ? " replace" : " insert"));
 	printf_verbose("Key multiplication factor: %" PRIu64 ".\n", key_mul);
 	printf_verbose("Init pool size offset %lu size %lu.\n",
 		init_pool_offset, init_pool_size);

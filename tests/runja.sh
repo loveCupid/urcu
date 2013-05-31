@@ -18,7 +18,7 @@ EXTRA_PARAMS=-v
 # ** test update coherency with single-value table
 
 # sanity test
-${TESTPROG} 0 $((4*${THREAD_MUL})) ${TIME_UNITS} -s ${EXTRA_PARAMS} || exit 1
+${TESTPROG} 0 $((4*${THREAD_MUL})) ${TIME_UNITS} -t ${EXTRA_PARAMS} || exit 1
 
 # rw test, single key, add and del randomly, 4 threads
 # key range: init, lookup, and update: 0 to 0

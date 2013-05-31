@@ -998,6 +998,8 @@ int main(int argc, char **argv)
 		lookup_pool_offset, lookup_pool_size);
 	printf_verbose("Update pool size offset %lu size %lu.\n",
 		write_pool_offset, write_pool_size);
+	if (validate_lookup)
+		printf_verbose("Validating lookups.\n");
 	printf_verbose("thread %-6s, thread id : %lx, tid %lu\n",
 			"main", pthread_self(), (unsigned long)gettid());
 

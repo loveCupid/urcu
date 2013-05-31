@@ -145,13 +145,19 @@ struct ja_test_node *node_alloc(void)
 }
 
 static
+void free_node(struct ja_test_node *node)
+{
+	poison_free(node);
+	if (leak_detection)
+		uatomic_inc(&test_nodes_freed);
+}
+
+static
 void free_node_cb(struct rcu_head *head)
 {
 	struct ja_test_node *node =
 		caa_container_of(head, struct ja_test_node, node.head);
-	poison_free(node);
-	if (leak_detection)
-		uatomic_inc(&test_nodes_freed);
+	free_node(node);
 }
 
 #if 0
@@ -695,7 +701,7 @@ void *test_ja_rw_thr_writer(void *_count)
 			if (add_unique) {
 				ret_node = cds_ja_add_unique(test_ja, key, &node->node);
 				if (ret_node != &node->node) {
-					free(node);
+					free_node(node);
 					URCU_TLS(nr_addexist)++;
 				} else {
 					URCU_TLS(nr_add)++;
@@ -706,7 +712,7 @@ void *test_ja_rw_thr_writer(void *_count)
 				ret = cds_ja_add(test_ja, key, &node->node);
 				if (ret) {
 					fprintf(stderr, "Error in cds_ja_add: %d\n", ret);
-					free(node);
+					free_node(node);
 				} else {
 					URCU_TLS(nr_add)++;
 				}

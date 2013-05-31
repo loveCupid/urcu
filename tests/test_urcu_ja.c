@@ -78,6 +78,9 @@ static int add_unique, add_replace;
 
 static pthread_mutex_t rcu_copy_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+static int leak_detection;
+static unsigned long test_nodes_allocated, test_nodes_freed;
+
 void set_affinity(void)
 {
 	cpu_set_t mask;
@@ -130,11 +133,25 @@ void rcu_copy_mutex_unlock(void)
 	}
 }
 
+static
+struct ja_test_node *node_alloc(void)
+{
+	struct ja_test_node *node;
+
+	node = calloc(sizeof(*node), 1);
+	if (leak_detection && node)
+		uatomic_inc(&test_nodes_allocated);
+	return node;
+}
+
+static
 void free_node_cb(struct rcu_head *head)
 {
 	struct ja_test_node *node =
 		caa_container_of(head, struct ja_test_node, node.head);
 	poison_free(node);
+	if (leak_detection)
+		uatomic_inc(&test_nodes_freed);
 }
 
 #if 0
@@ -182,6 +199,7 @@ printf("        [not -u nor -s] Add entries (supports redundant keys).\n");
 	printf("        [-t] Do sanity test.\n");
 	printf("        [-B] Key bits for multithread test (default: 32).\n");
 	printf("        [-m factor] Key multiplication factor.\n");
+	printf("	[-l] Memory leak detection.\n");
 	printf("\n\n");
 }
 
@@ -202,8 +220,7 @@ int test_8bit_key(void)
 	/* Add keys */
 	printf("Test #1: add keys (8-bit).\n");
 	for (key = 0; key < 200; key++) {
-		struct ja_test_node *node =
-			calloc(sizeof(*node), 1);
+		struct ja_test_node *node = node_alloc();
 
 		ja_test_node_init(node, key);
 		rcu_read_lock();
@@ -297,8 +314,7 @@ int test_16bit_key(void)
 	printf("Test #1: add keys (16-bit).\n");
 	for (key = 0; key < 10000; key++) {
 	//for (key = 0; key < 65536; key+=256) {
-		struct ja_test_node *node =
-			calloc(sizeof(*node), 1);
+		struct ja_test_node *node = node_alloc();
 
 		ja_test_node_init(node, key);
 		rcu_read_lock();
@@ -404,8 +420,7 @@ int test_sparse_key(unsigned int bits, int nr_dup)
 	for (i = 0; i < nr_dup; i++) {
 		zerocount = 0;
 		for (key = 0; key <= max_key && (key != 0 || zerocount < 1); key += 1ULL << (bits - 8)) {
-			struct ja_test_node *node =
-				calloc(sizeof(*node), 1);
+			struct ja_test_node *node = node_alloc();
 
 			ja_test_node_init(node, key);
 			rcu_read_lock();
@@ -669,7 +684,7 @@ void *test_ja_rw_thr_writer(void *_count)
 	for (;;) {
 		if ((addremove == AR_ADD)
 				|| (addremove == AR_RANDOM && is_add())) {
-			struct ja_test_node *node = malloc(sizeof(*node));
+			struct ja_test_node *node = node_alloc();
 			struct cds_ja_node *ret_node;
 
 			/* note: only inserting ulong keys */
@@ -760,7 +775,7 @@ int do_mt_populate_ja(void)
 	printf("Starting rw test\n");
 
 	for (iter = init_pool_offset; iter < init_pool_offset + init_pool_size; iter++) {
-		struct ja_test_node *node = malloc(sizeof(*node));
+		struct ja_test_node *node = node_alloc();
 		uint64_t key;
 
 		/* note: only inserting ulong keys */
@@ -868,6 +883,21 @@ int do_mt_test(void)
 	ret = 0;
 end:
 	return ret;
+}
+
+static
+int check_memory_leaks(void)
+{
+	unsigned long na, nf;
+
+	na = uatomic_read(&test_nodes_allocated);
+	nf = uatomic_read(&test_nodes_freed);
+	if (na != nf) {
+		fprintf(stderr, "Memory leak of %ld test nodes detected. Allocated: %lu, freed: %lu\n",
+			na - nf, na, nf);
+		return -1;
+	}
+	return 0;
 }
 
 int main(int argc, char **argv)
@@ -980,6 +1010,9 @@ int main(int argc, char **argv)
 		case 's':
 			add_replace = 1;
 			break;
+		case 'l':
+			leak_detection = 1;
+			break;
 		}
 	}
 
@@ -1000,6 +1033,8 @@ int main(int argc, char **argv)
 		write_pool_offset, write_pool_size);
 	if (validate_lookup)
 		printf_verbose("Validating lookups.\n");
+	if (leak_detection)
+		printf_verbose("Memory leak dection activated.\n");
 	printf_verbose("thread %-6s, thread id : %lx, tid %lu\n",
 			"main", pthread_self(), (unsigned long)gettid());
 
@@ -1029,6 +1064,11 @@ int main(int argc, char **argv)
 	} else {
 		ret = do_mt_test();
 	}
+
+	/* Wait for in-flight call_rcu free to complete for leak detection */
+	rcu_barrier();
+
+	ret |= check_memory_leaks();
 
 	rcu_unregister_thread();
 	free_all_cpu_call_rcu_data();

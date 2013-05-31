@@ -280,7 +280,7 @@ void free_shadow_node_and_node(struct rcu_head *head)
 {
 	struct cds_ja_shadow_node *shadow_node =
 		caa_container_of(head, struct cds_ja_shadow_node, head);
-	free_cds_ja_node(ja_node_ptr(shadow_node->node_flag));
+	free_cds_ja_node(shadow_node->ja, ja_node_ptr(shadow_node->node_flag));
 	free(shadow_node);
 }
 
@@ -299,7 +299,7 @@ void free_shadow_node_and_node_and_lock(struct rcu_head *head)
 	struct cds_ja_shadow_node *shadow_node =
 		caa_container_of(head, struct cds_ja_shadow_node, head);
 	assert(shadow_node->level);
-	free_cds_ja_node(ja_node_ptr(shadow_node->node_flag));
+	free_cds_ja_node(shadow_node->ja, ja_node_ptr(shadow_node->node_flag));
 	free(shadow_node->lock);
 	free(shadow_node);
 }

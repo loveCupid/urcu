@@ -245,11 +245,6 @@ enum ja_recompact {
 };
 
 static
-unsigned long node_fallback_count_distribution[JA_ENTRY_PER_NODE];
-static
-unsigned long nr_nodes_allocated, nr_nodes_freed;
-
-static
 struct cds_ja_inode *_ja_node_mask_ptr(struct cds_ja_inode_flag *node)
 {
 	return (struct cds_ja_inode *) (((unsigned long) node) & JA_PTR_MASK);
@@ -291,7 +286,9 @@ struct cds_ja_inode *ja_node_ptr(struct cds_ja_inode_flag *node)
 	}
 }
 
-struct cds_ja_inode *alloc_cds_ja_node(const struct cds_ja_type *ja_type)
+static
+struct cds_ja_inode *alloc_cds_ja_node(struct cds_ja *ja,
+		const struct cds_ja_type *ja_type)
 {
 	size_t len = 1U << ja_type->order;
 	void *p;
@@ -302,15 +299,15 @@ struct cds_ja_inode *alloc_cds_ja_node(const struct cds_ja_type *ja_type)
 		return NULL;
 	}
 	memset(p, 0, len);
-	uatomic_inc(&nr_nodes_allocated);
+	uatomic_inc(&ja->nr_nodes_allocated);
 	return p;
 }
 
-void free_cds_ja_node(struct cds_ja_inode *node)
+void free_cds_ja_node(struct cds_ja *ja, struct cds_ja_inode *node)
 {
 	free(node);
 	if (node)
-		uatomic_inc(&nr_nodes_freed);
+		uatomic_inc(&ja->nr_nodes_freed);
 }
 
 #define __JA_ALIGN_MASK(v, mask)	(((v) + (mask)) & ~(mask))
@@ -1238,7 +1235,7 @@ retry:		/* for fallback */
 			old_type_index, new_type_index);
 	new_type = &ja_types[new_type_index];
 	if (new_type_index != NODE_INDEX_NULL) {
-		new_node = alloc_cds_ja_node(new_type);
+		new_node = alloc_cds_ja_node(ja, new_type);
 		if (!new_node)
 			return -ENOMEM;
 
@@ -1285,7 +1282,7 @@ retry:		/* for fallback */
 		dbg_printf("Recompact inherit lock from %p\n", shadow_node);
 		new_shadow_node = rcuja_shadow_set(ja->ht, new_node_flag, shadow_node, ja, level);
 		if (!new_shadow_node) {
-			free_cds_ja_node(new_node);
+			free_cds_ja_node(ja, new_node);
 			return -ENOMEM;
 		}
 		if (fallback)
@@ -1409,7 +1406,7 @@ skip_copy:
 		dbg_printf("Using fallback for %u children, node type index: %u, mode %s\n",
 			new_shadow_node->nr_child, old_type_index, mode == JA_RECOMPACT_ADD_NEXT ? "add_next" :
 				(mode == JA_RECOMPACT_DEL ? "del" : "add_same"));
-		uatomic_inc(&node_fallback_count_distribution[new_shadow_node->nr_child]);
+		uatomic_inc(&ja->node_fallback_count_distribution[new_shadow_node->nr_child]);
 	}
 
 	/* Return pointer to new recompacted node through old_node_flag_ptr */
@@ -2404,16 +2401,16 @@ void rcuja_free_all_children(struct cds_ja_shadow_node *shadow_node,
 }
 
 static
-void print_debug_fallback_distribution(void)
+void print_debug_fallback_distribution(struct cds_ja *ja)
 {
 	int i;
 
 	fprintf(stderr, "Fallback node distribution:\n");
 	for (i = 0; i < JA_ENTRY_PER_NODE; i++) {
-		if (!node_fallback_count_distribution[i])
+		if (!ja->node_fallback_count_distribution[i])
 			continue;
 		fprintf(stderr, "	%3u: %4lu\n",
-			i, node_fallback_count_distribution[i]);
+			i, ja->node_fallback_count_distribution[i]);
 	}
 }
 
@@ -2445,10 +2442,10 @@ int cds_ja_destroy(struct cds_ja *ja,
 			"[warning] RCU Judy Array used %lu fallback node(s)\n",
 			uatomic_read(&ja->nr_fallback));
 	fprintf(stderr, "Nodes allocated: %lu, Nodes freed: %lu. Fallback ratio: %g\n",
-		uatomic_read(&nr_nodes_allocated),
-		uatomic_read(&nr_nodes_freed),
-		(double) uatomic_read(&ja->nr_fallback) / (double) uatomic_read(&nr_nodes_allocated));
-	print_debug_fallback_distribution();
+		uatomic_read(&ja->nr_nodes_allocated),
+		uatomic_read(&ja->nr_nodes_freed),
+		(double) uatomic_read(&ja->nr_fallback) / (double) uatomic_read(&ja->nr_nodes_allocated));
+	print_debug_fallback_distribution(ja);
 	free(ja);
 	return 0;
 }

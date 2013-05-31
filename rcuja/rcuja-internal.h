@@ -94,6 +94,10 @@ struct cds_ja {
 	 */
 	struct cds_lfht *ht;
 	unsigned long nr_fallback;	/* Number of fallback nodes used */
+
+	/* For debugging */
+	unsigned long node_fallback_count_distribution[JA_ENTRY_PER_NODE];
+	unsigned long nr_nodes_allocated, nr_nodes_freed;
 };
 
 static inline
@@ -184,7 +188,7 @@ __attribute__((visibility("protected")))
 int rcuja_delete_ht(struct cds_lfht *ht);
 
 __attribute__((visibility("protected")))
-void free_cds_ja_node(struct cds_ja_inode *node);
+void free_cds_ja_node(struct cds_ja *ja, struct cds_ja_inode *node);
 
 //#define DEBUG
 

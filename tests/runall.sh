@@ -106,3 +106,6 @@ echo Executing multi-flavor RCU test
 
 echo Executing Hash table test
 ./runhash.sh || exit 1
+
+echo Executing Judy array test
+./runja.sh || exit 1

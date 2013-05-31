@@ -2414,6 +2414,32 @@ void print_debug_fallback_distribution(struct cds_ja *ja)
 	}
 }
 
+static
+void print_ja_debug_info(struct cds_ja *ja)
+{
+	double fallback_ratio;
+	unsigned long na, nf, nr_fallback;
+
+	fallback_ratio = (double) uatomic_read(&ja->nr_fallback);
+	fallback_ratio /= (double) uatomic_read(&ja->nr_nodes_allocated);
+	nr_fallback = uatomic_read(&ja->nr_fallback);
+	if (nr_fallback)
+		fprintf(stderr,
+			"[warning] RCU Judy Array used %lu fallback node(s) (ratio: %g)\n",
+			uatomic_read(&ja->nr_fallback),
+			fallback_ratio);
+
+	na = uatomic_read(&ja->nr_nodes_allocated);
+	nf = uatomic_read(&ja->nr_nodes_freed);
+	if (na != nf) {
+		fprintf(stderr, "[error] Judy array leaked %ld nodes. Allocated: %lu, freed: %lu.\n",
+			(long) na - nf, na, nf);
+	}
+	dbg_printf("Nodes allocated: %lu, Nodes freed: %lu.\n", na, nf);
+	if (nr_fallback)
+		print_debug_fallback_distribution(ja);
+}
+
 /*
  * There should be no more concurrent add to the judy array while it is
  * being destroyed (ensured by the caller).
@@ -2437,15 +2463,7 @@ int cds_ja_destroy(struct cds_ja *ja,
 	flavor->barrier();
 
 	flavor->thread_online();
-	if (uatomic_read(&ja->nr_fallback))
-		fprintf(stderr,
-			"[warning] RCU Judy Array used %lu fallback node(s)\n",
-			uatomic_read(&ja->nr_fallback));
-	fprintf(stderr, "Nodes allocated: %lu, Nodes freed: %lu. Fallback ratio: %g\n",
-		uatomic_read(&ja->nr_nodes_allocated),
-		uatomic_read(&ja->nr_nodes_freed),
-		(double) uatomic_read(&ja->nr_fallback) / (double) uatomic_read(&ja->nr_nodes_allocated));
-	print_debug_fallback_distribution(ja);
+	print_ja_debug_info(ja);
 	free(ja);
 	return 0;
 }

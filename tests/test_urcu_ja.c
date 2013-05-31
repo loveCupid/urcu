@@ -999,16 +999,17 @@ int main(int argc, char **argv)
 
 	if (sanity_test) {
 		ret = do_sanity_test();
-		if (ret) {
-			fprintf(stderr, "Error in sanity test\n");
-		}
 	} else {
-		do_mt_test();
+		ret = do_mt_test();
 	}
 
 	rcu_unregister_thread();
 	free_all_cpu_call_rcu_data();
-	return 0;
+
+	if (ret) {
+		printf("Test ended with error: %d\n", ret);
+	}
+	return ret;
 
 #if 0
 	/*

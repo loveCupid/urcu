@@ -2435,6 +2435,8 @@ int cds_ja_destroy(struct cds_ja *ja,
 	ret = rcuja_delete_ht(ja->ht);
 	if (ret)
 		return ret;
+	fprintf(stderr, "Waiting arbitrary time for node free accounting...\n");
+	sleep(10);	//wait for free TEST XXX
 	flavor->thread_online();
 	if (uatomic_read(&ja->nr_fallback))
 		fprintf(stderr,

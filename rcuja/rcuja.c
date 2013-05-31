@@ -176,7 +176,7 @@ const struct cds_ja_type ja_types[] = {
 	 * Upon node removal below min_child, if child pool is filled
 	 * beyond capacity, we roll back to pigeon.
 	 */
-	{ .type_class = RCU_JA_PIGEON, .min_child = 101, .max_child = ja_type_7_max_child, .order = 11, },
+	{ .type_class = RCU_JA_PIGEON, .min_child = 95, .max_child = ja_type_7_max_child, .order = 11, },
 
 	{ .type_class = RCU_JA_NULL, .min_child = 0, .max_child = ja_type_8_max_child, },
 };

@@ -1738,6 +1738,10 @@ struct cds_hlist_head cds_ja_lookup(struct cds_ja *ja, uint64_t key)
 	return head;
 }
 
+/*
+ * cds_ja_lookup_lower_equal() may need to retry if a concurrent removal
+ * causes failure to find the previous node.
+ */
 struct cds_hlist_head cds_ja_lookup_lower_equal(struct cds_ja *ja, uint64_t key)
 {
 	int tree_depth, level;
@@ -1747,6 +1751,7 @@ struct cds_hlist_head cds_ja_lookup_lower_equal(struct cds_ja *ja, uint64_t key)
 	if (caa_unlikely(key > ja->key_max || !key))
 		return head;
 
+retry:
 	memset(cur_node_depth, 0, sizeof(cur_node_depth));
 	tree_depth = ja->tree_depth;
 	node_flag = rcu_dereference(ja->root);
@@ -1799,6 +1804,18 @@ struct cds_hlist_head cds_ja_lookup_lower_equal(struct cds_ja *ja, uint64_t key)
 	}
 
 	level++;
+
+	/*
+	 * From this point, we should be able to find a "lower than"
+	 * match. The only reason why we could fail to find such a match
+	 * would be due to a concurrent removal of the branch that
+	 * contains the match. If this happens, we have no choice but to
+	 * retry the entire lookup. Indeed, just because we reached a
+	 * dead-end due to concurrent removal of the branch does not
+	 * mean that other match don't exist. However, this requires
+	 * going up into the tree, hence the retry.
+	 */
+
 	/* Find rightmost child of rightmost child (recursively). */
 	for (; level < tree_depth; level++) {
 		node_flag = ja_node_get_rightmost(node_flag);
@@ -1807,13 +1824,16 @@ struct cds_hlist_head cds_ja_lookup_lower_equal(struct cds_ja *ja, uint64_t key)
 			break;
 	}
 
-	if (level == tree_depth) {
-		/* Last level lookup succeded. We got a "lower than" match. */
-		head.next = (struct cds_hlist_node *) node_flag;
-		return head;
+	if (level != tree_depth) {
+		/*
+		 * We did not get a match. Caused by concurrent removal.
+		 * We need to retry the entire lookup.
+		 */
+		goto retry;
 	}
 
-	/* No match */
+	/* Last level lookup succeded. We got a "lower than" match. */
+	head.next = (struct cds_hlist_node *) node_flag;
 	return head;
 }
 

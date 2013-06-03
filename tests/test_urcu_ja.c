@@ -209,12 +209,13 @@ printf("        [not -u nor -s] Add entries (supports redundant keys).\n");
 	printf("\n\n");
 }
 
-
 static
 int test_8bit_key(void)
 {
-	int ret;
+	int ret, i;
 	uint64_t key;
+	uint64_t ka[] = { 4, 17, 100, 222 };
+	uint64_t ka_test_offset = 5;
 
 	/* Test with 8-bit key */
 	test_ja = cds_ja_new(8);
@@ -295,6 +296,67 @@ int test_8bit_key(void)
 	}
 	printf("OK\n");
 
+	printf("Test #5: lookup lower equal (8-bit).\n");
+
+	for (i = 0; i < CAA_ARRAY_SIZE(ka); i++) {
+		struct ja_test_node *node = node_alloc();
+
+		key = ka[i];
+		ja_test_node_init(node, key);
+		rcu_read_lock();
+		ret = cds_ja_add(test_ja, key, &node->node);
+		rcu_read_unlock();
+		if (ret) {
+			fprintf(stderr, "Error (%d) adding node %" PRIu64 "\n",
+				ret, key);
+			assert(0);
+		}
+	}
+
+	for (i = 0; i < CAA_ARRAY_SIZE(ka); i++) {
+		struct cds_hlist_head head;
+		struct ja_test_node *node;
+
+		key = ka[i] + ka_test_offset;
+		rcu_read_lock();
+		head = cds_ja_lookup_lower_equal(test_ja, key);
+		if (cds_hlist_empty(&head)) {
+			fprintf(stderr, "Error lookup lower equal. Cannot find expected key %" PRIu64" below or equal to %" PRIu64 ".\n",
+				ka[i], key);
+			assert(0);
+		}
+		node = cds_hlist_first_entry_rcu(&head, struct ja_test_node, node.list);
+		if (node->key != ka[i]) {
+			fprintf(stderr, "Error lookup lower equal. Expecting key %" PRIu64 " below or equal to %" PRIu64 ", but found %" PRIu64 " instead.\n",
+				ka[i], key, node->key);
+			assert(0);
+		}
+		rcu_read_unlock();
+	}
+
+	for (i = 0; i < CAA_ARRAY_SIZE(ka); i++) {
+		struct cds_hlist_head head;
+		struct ja_test_node *node;
+
+		key = ka[i];	/* without offset */
+		rcu_read_lock();
+		head = cds_ja_lookup_lower_equal(test_ja, key);
+		if (cds_hlist_empty(&head)) {
+			fprintf(stderr, "Error lookup lower equal. Cannot find expected key %" PRIu64" below or equal to %" PRIu64 ".\n",
+				ka[i], key);
+			assert(0);
+		}
+		node = cds_hlist_first_entry_rcu(&head, struct ja_test_node, node.list);
+		if (node->key != ka[i]) {
+			fprintf(stderr, "Error lookup lower equal. Expecting key %" PRIu64 " below or equal to %" PRIu64 ", but found %" PRIu64 " instead.\n",
+				ka[i], key, node->key);
+			assert(0);
+		}
+		rcu_read_unlock();
+	}
+
+	printf("OK\n");
+
 	ret = cds_ja_destroy(test_ja, free_node_cb);
 	if (ret) {
 		fprintf(stderr, "Error destroying judy array\n");
@@ -306,8 +368,10 @@ int test_8bit_key(void)
 static
 int test_16bit_key(void)
 {
-	int ret;
+	int ret, i;
 	uint64_t key;
+	uint64_t ka[] = { 4, 105, 222, 4000, 4111, 59990, 65435 };
+	uint64_t ka_test_offset = 100;
 
 	/* Test with 16-bit key */
 	test_ja = cds_ja_new(16);
@@ -389,6 +453,67 @@ int test_16bit_key(void)
 		}
 		rcu_read_unlock();
 	}
+	printf("OK\n");
+
+	printf("Test #5: lookup lower equal (16-bit).\n");
+
+	for (i = 0; i < CAA_ARRAY_SIZE(ka); i++) {
+		struct ja_test_node *node = node_alloc();
+
+		key = ka[i];
+		ja_test_node_init(node, key);
+		rcu_read_lock();
+		ret = cds_ja_add(test_ja, key, &node->node);
+		rcu_read_unlock();
+		if (ret) {
+			fprintf(stderr, "Error (%d) adding node %" PRIu64 "\n",
+				ret, key);
+			assert(0);
+		}
+	}
+
+	for (i = 0; i < CAA_ARRAY_SIZE(ka); i++) {
+		struct cds_hlist_head head;
+		struct ja_test_node *node;
+
+		key = ka[i] + ka_test_offset;
+		rcu_read_lock();
+		head = cds_ja_lookup_lower_equal(test_ja, key);
+		if (cds_hlist_empty(&head)) {
+			fprintf(stderr, "Error lookup lower equal. Cannot find expected key %" PRIu64" below or equal to %" PRIu64 ".\n",
+				ka[i], key);
+			assert(0);
+		}
+		node = cds_hlist_first_entry_rcu(&head, struct ja_test_node, node.list);
+		if (node->key != ka[i]) {
+			fprintf(stderr, "Error lookup lower equal. Expecting key %" PRIu64 " below or equal to %" PRIu64 ", but found %" PRIu64 " instead.\n",
+				ka[i], key, node->key);
+			assert(0);
+		}
+		rcu_read_unlock();
+	}
+
+	for (i = 0; i < CAA_ARRAY_SIZE(ka); i++) {
+		struct cds_hlist_head head;
+		struct ja_test_node *node;
+
+		key = ka[i];	/* without offset */
+		rcu_read_lock();
+		head = cds_ja_lookup_lower_equal(test_ja, key);
+		if (cds_hlist_empty(&head)) {
+			fprintf(stderr, "Error lookup lower equal. Cannot find expected key %" PRIu64" below or equal to %" PRIu64 ".\n",
+				ka[i], key);
+			assert(0);
+		}
+		node = cds_hlist_first_entry_rcu(&head, struct ja_test_node, node.list);
+		if (node->key != ka[i]) {
+			fprintf(stderr, "Error lookup lower equal. Expecting key %" PRIu64 " below or equal to %" PRIu64 ", but found %" PRIu64 " instead.\n",
+				ka[i], key, node->key);
+			assert(0);
+		}
+		rcu_read_unlock();
+	}
+
 	printf("OK\n");
 
 	ret = cds_ja_destroy(test_ja, free_node_cb);

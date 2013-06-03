@@ -49,6 +49,7 @@ int add_node(uint64_t v)
 		return -1;
 	node->value = v;
 	cds_list_add_rcu(&node->node, &mylist);
+	return 0;
 }
 
 static

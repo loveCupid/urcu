@@ -1802,8 +1802,9 @@ struct cds_hlist_head cds_ja_lookup_lower_equal(struct cds_ja *ja, uint64_t key)
 
 	/*
 	 * From this point, we are guaranteed to be able to find a
-	 * "lower than" match. ja_detach_node() guarantees that it is
-	 * not possible for a lookup to reach a dead-end.
+	 * "lower than" match. ja_attach_node() and ja_detach_node()
+	 * both guarantee that it is not possible for a lookup to reach
+	 * a dead-end.
 	 */
 
 	/* Find rightmost child of rightmost child (recursively). */
@@ -1831,6 +1832,12 @@ struct cds_hlist_head cds_ja_lookup_lower_equal(struct cds_ja *ja, uint64_t key)
  * parent lock (if needed).  Then we can proceed to create the new
  * branch. Publish the new branch, and release locks.
  * TODO: we currently always take the parent lock even when not needed.
+ *
+ * ja_attach_node() ensures that a lookup will _never_ see a branch that
+ * leads to a dead-end: before attaching a branch, the entire content of
+ * the new branch is populated, thus creating a cluster, before
+ * attaching the cluster to the rest of the tree, thus making it visible
+ * to lookups.
  */
 static
 int ja_attach_node(struct cds_ja *ja,

@@ -1738,10 +1738,6 @@ struct cds_hlist_head cds_ja_lookup(struct cds_ja *ja, uint64_t key)
 	return head;
 }
 
-/*
- * cds_ja_lookup_lower_equal() may need to retry if a concurrent removal
- * causes failure to find the previous node.
- */
 struct cds_hlist_head cds_ja_lookup_lower_equal(struct cds_ja *ja, uint64_t key)
 {
 	int tree_depth, level;
@@ -1751,7 +1747,6 @@ struct cds_hlist_head cds_ja_lookup_lower_equal(struct cds_ja *ja, uint64_t key)
 	if (caa_unlikely(key > ja->key_max || !key))
 		return head;
 
-retry:
 	memset(cur_node_depth, 0, sizeof(cur_node_depth));
 	tree_depth = ja->tree_depth;
 	node_flag = rcu_dereference(ja->root);
@@ -1806,14 +1801,9 @@ retry:
 	level++;
 
 	/*
-	 * From this point, we should be able to find a "lower than"
-	 * match. The only reason why we could fail to find such a match
-	 * would be due to a concurrent removal of the branch that
-	 * contains the match. If this happens, we have no choice but to
-	 * retry the entire lookup. Indeed, just because we reached a
-	 * dead-end due to concurrent removal of the branch does not
-	 * mean that other match don't exist. However, this requires
-	 * going up into the tree, hence the retry.
+	 * From this point, we are guaranteed to be able to find a
+	 * "lower than" match. ja_detach_node() guarantees that it is
+	 * not possible for a lookup to reach a dead-end.
 	 */
 
 	/* Find rightmost child of rightmost child (recursively). */
@@ -1824,15 +1814,8 @@ retry:
 			break;
 	}
 
-	if (level != tree_depth) {
-		/*
-		 * We did not get a match. Caused by concurrent removal.
-		 * We need to retry the entire lookup.
-		 */
-		goto retry;
-	}
+	assert(level == tree_depth);
 
-	/* Last level lookup succeded. We got a "lower than" match. */
 	head.next = (struct cds_hlist_node *) node_flag;
 	return head;
 }
@@ -2163,6 +2146,11 @@ struct cds_ja_node *cds_ja_add_unique(struct cds_ja *ja, uint64_t key,
  * However, when a child is removed from "linear" nodes, its pointer
  * is set to NULL. We therefore check, while holding the locks, if this
  * pointer is NULL, and return -ENOENT to the caller if it is the case.
+ *
+ * ja_detach_node() ensures that a lookup will _never_ see a branch that
+ * leads to a dead-end: when removing branch, it makes sure to perform
+ * the "cut" at the highest node that has only one child, effectively
+ * replacing it with a NULL pointer.
  */
 static
 int ja_detach_node(struct cds_ja *ja,

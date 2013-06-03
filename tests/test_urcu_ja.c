@@ -488,7 +488,7 @@ int test_sparse_key(unsigned int bits, int nr_dup)
 		}
 		printf("OK\n");
 	}
-	printf("Test #4: remove keys (16-bit).\n");
+	printf("Test #4: remove keys (%u-bit).\n", bits);
 	zerocount = 0;
 	for (key = 0; key <= max_key && (key != 0 || zerocount < 1); key += 1ULL << (bits - 8)) {
 		struct cds_hlist_head head;

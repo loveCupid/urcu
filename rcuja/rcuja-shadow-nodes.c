@@ -33,7 +33,6 @@
 #include <time.h>
 
 #include "rcuja-internal.h"
-#include "bitfield.h"
 
 static unsigned long hash_seed;
 

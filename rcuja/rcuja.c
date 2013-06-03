@@ -34,7 +34,6 @@
 #include <stdint.h>
 
 #include "rcuja-internal.h"
-#include "bitfield.h"
 
 #ifndef abs
 #define abs_int(a)	((int) (a) > 0 ? (int) (a) : -((int) (a)))

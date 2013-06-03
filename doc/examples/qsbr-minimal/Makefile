@@ -11,7 +11,7 @@
 
 CC = gcc
 LIBS = -lurcu-qsbr
-CFLAGS = -g -O2
+CFLAGS = -g -O2 -Wall
 
 # Only necessary when building from the source tree and userspace RCU is
 # not installed

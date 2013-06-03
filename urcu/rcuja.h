@@ -58,6 +58,8 @@ void cds_ja_node_init(struct cds_ja_node *node)
 }
 
 struct cds_hlist_head cds_ja_lookup(struct cds_ja *ja, uint64_t key);
+struct cds_hlist_head cds_ja_lookup_lower_equal(struct cds_ja *ja,
+		uint64_t key);
 
 int cds_ja_add(struct cds_ja *ja, uint64_t key,
 		struct cds_ja_node *new_node);

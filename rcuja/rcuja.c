@@ -1707,20 +1707,19 @@ int ja_node_clear_ptr(struct cds_ja *ja,
 	return ret;
 }
 
-struct cds_hlist_head cds_ja_lookup(struct cds_ja *ja, uint64_t key)
+struct cds_ja_node *cds_ja_lookup(struct cds_ja *ja, uint64_t key)
 {
 	unsigned int tree_depth, i;
 	struct cds_ja_inode_flag *node_flag;
-	struct cds_hlist_head head = { NULL };
 
 	if (caa_unlikely(key > ja->key_max))
-		return head;
+		return NULL;
 	tree_depth = ja->tree_depth;
 	node_flag = rcu_dereference(ja->root);
 
 	/* level 0: root node */
 	if (!ja_node_ptr(node_flag))
-		return head;
+		return NULL;
 
 	for (i = 1; i < tree_depth; i++) {
 		uint8_t iter_key;
@@ -1730,22 +1729,20 @@ struct cds_hlist_head cds_ja_lookup(struct cds_ja *ja, uint64_t key)
 		dbg_printf("cds_ja_lookup iter key lookup %u finds node_flag %p\n",
 				(unsigned int) iter_key, node_flag);
 		if (!ja_node_ptr(node_flag))
-			return head;
+			return NULL;
 	}
 
 	/* Last level lookup succeded. We got an actual match. */
-	head.next = (struct cds_hlist_node *) node_flag;
-	return head;
+	return (struct cds_ja_node *) node_flag;
 }
 
-struct cds_hlist_head cds_ja_lookup_lower_equal(struct cds_ja *ja, uint64_t key)
+struct cds_ja_node *cds_ja_lookup_lower_equal(struct cds_ja *ja, uint64_t key)
 {
 	int tree_depth, level;
 	struct cds_ja_inode_flag *node_flag, *cur_node_depth[JA_MAX_DEPTH];
-	struct cds_hlist_head head = { NULL };
 
 	if (caa_unlikely(key > ja->key_max || !key))
-		return head;
+		return NULL;
 
 	memset(cur_node_depth, 0, sizeof(cur_node_depth));
 	tree_depth = ja->tree_depth;
@@ -1754,7 +1751,7 @@ struct cds_hlist_head cds_ja_lookup_lower_equal(struct cds_ja *ja, uint64_t key)
 
 	/* level 0: root node */
 	if (!ja_node_ptr(node_flag))
-		return head;
+		return NULL;
 
 	for (level = 1; level < tree_depth; level++) {
 		uint8_t iter_key;
@@ -1770,8 +1767,7 @@ struct cds_hlist_head cds_ja_lookup_lower_equal(struct cds_ja *ja, uint64_t key)
 
 	if (level == tree_depth) {
 		/* Last level lookup succeded. We got an equal match. */
-		head.next = (struct cds_hlist_node *) node_flag;
-		return head;
+		return (struct cds_ja_node *) node_flag;
 	}
 
 	/*
@@ -1795,7 +1791,7 @@ struct cds_hlist_head cds_ja_lookup_lower_equal(struct cds_ja *ja, uint64_t key)
 
 	if (!level) {
 		/* Reached the root and could not find a left sibling. */
-		return head;
+		return NULL;
 	}
 
 	level++;
@@ -1817,8 +1813,7 @@ struct cds_hlist_head cds_ja_lookup_lower_equal(struct cds_ja *ja, uint64_t key)
 
 	assert(level == tree_depth);
 
-	head.next = (struct cds_hlist_node *) node_flag;
-	return head;
+	return (struct cds_ja_node *) node_flag;
 }
 
 /*
@@ -1852,7 +1847,6 @@ int ja_attach_node(struct cds_ja *ja,
 {
 	struct cds_ja_shadow_node *shadow_node = NULL,
 			*parent_shadow_node = NULL;
-	struct cds_hlist_head head;
 	struct cds_ja_inode_flag *iter_node_flag, *iter_dest_node_flag;
 	int ret, i;
 	struct cds_ja_inode_flag *created_nodes[JA_MAX_DEPTH];
@@ -1921,9 +1915,7 @@ int ja_attach_node(struct cds_ja *ja,
 	}
 
 	/* Create new branch, starting from bottom */
-	CDS_INIT_HLIST_HEAD(&head);
-	cds_hlist_add_head_rcu(&child_node->list, &head);
-	iter_node_flag = (struct cds_ja_inode_flag *) head.next;
+	iter_node_flag = (struct cds_ja_inode_flag *) child_node;
 
 	for (i = ja->tree_depth - 1; i >= (int) level; i--) {
 		uint8_t iter_key;
@@ -2003,9 +1995,9 @@ end:
 }
 
 /*
- * Lock the parent containing the hlist head pointer, and add node to list of
- * duplicates. Failure can happen if concurrent update changes the
- * parent before we get the lock. We return -EAGAIN in that case.
+ * Lock the parent containing the pointer to list of duplicates, and add
+ * node to this list. Failure can happen if concurrent update changes
+ * the parent before we get the lock. We return -EAGAIN in that case.
  * Return 0 on success, negative error value on failure.
  */
 static
@@ -2026,7 +2018,12 @@ int ja_chain_node(struct cds_ja *ja,
 		ret = -EAGAIN;
 		goto end;
 	}
-	cds_hlist_add_head_rcu(&node->list, (struct cds_hlist_head *) node_flag_ptr);
+	/*
+	 * Add node to head of list. Safe against concurrent RCU read
+	 * traversals.
+	 */
+	node->next = (struct cds_ja_node *) node_flag;
+	rcu_assign_pointer(*node_flag_ptr, (struct cds_ja_inode_flag *) node);
 end:
 	rcuja_shadow_unlock(shadow_node);
 	return ret;
@@ -2312,8 +2309,7 @@ int ja_unchain_node(struct cds_ja *ja,
 		struct cds_ja_node *node)
 {
 	struct cds_ja_shadow_node *shadow_node;
-	struct cds_hlist_node *hlist_node;
-	struct cds_hlist_head hlist_head;
+	struct cds_ja_node *iter_node, **iter_node_ptr, **prev_node_ptr = NULL;
 	int ret = 0, count = 0, found = 0;
 
 	shadow_node = rcuja_shadow_lookup_lock(ja->ht, parent_node_flag);
@@ -2323,28 +2319,30 @@ int ja_unchain_node(struct cds_ja *ja,
 		ret = -EAGAIN;
 		goto end;
 	}
-	hlist_head.next = (struct cds_hlist_node *) ja_node_ptr(node_flag);
 	/*
-	 * Retry if another thread removed all but one of duplicates
-	 * since check (this check was performed without lock).
-	 * Ensure that the node we are about to remove is still in the
-	 * list (while holding lock).
+	 * Find the previous node's next pointer pointing to our node,
+	 * so we can update it. Retry if another thread removed all but
+	 * one of duplicates since check (this check was performed
+	 * without lock). Ensure that the node we are about to remove is
+	 * still in the list (while holding lock). No need for RCU
+	 * traversal here since we hold the lock on the parent.
 	 */
-	cds_hlist_for_each_rcu(hlist_node, &hlist_head) {
-		if (count == 0) {
-			/* FIXME: currently a work-around */
-			hlist_node->prev = (struct cds_hlist_node *) node_flag_ptr;
-		}
+	iter_node_ptr = (struct cds_ja_node **) node_flag_ptr;
+	iter_node = (struct cds_ja_node *) ja_node_ptr(node_flag);
+	cds_ja_for_each_duplicate(iter_node) {
 		count++;
-		if (hlist_node == &node->list)
+		if (iter_node == node) {
+			prev_node_ptr = iter_node_ptr;
 			found++;
+		}
+		iter_node_ptr = &iter_node->next;
 	}
 	assert(found <= 1);
 	if (!found || count == 1) {
 		ret = -EAGAIN;
 		goto end;
 	}
-	cds_hlist_del_rcu(&node->list);
+	CMM_STORE_SHARED(*prev_node_ptr, node->next);
 	/*
 	 * Validate that we indeed removed the node from linked list.
 	 */
@@ -2419,22 +2417,17 @@ retry:
 				key);
 		return -ENOENT;
 	} else {
-		struct cds_hlist_head hlist_head;
-		struct cds_hlist_node *hlist_node;
-		struct cds_ja_node *entry, *match = NULL;
+		struct cds_ja_node *iter_node, *match = NULL;
 		int count = 0;
 
-		hlist_head.next =
-			(struct cds_hlist_node *) ja_node_ptr(node_flag);
-		cds_hlist_for_each_entry_rcu(entry,
-				hlist_node,
-				&hlist_head,
-				list) {
-			dbg_printf("cds_ja_del: compare %p with entry %p\n", node, entry);
-			if (entry == node)
-				match = entry;
+		iter_node = (struct cds_ja_node *) ja_node_ptr(node_flag);
+		cds_ja_for_each_duplicate_rcu(iter_node) {
+			dbg_printf("cds_ja_del: compare %p with iter_node %p\n", node, iter_node);
+			if (iter_node == node)
+				match = iter_node;
 			count++;
 		}
+
 		if (!match) {
 			dbg_printf("cds_ja_del: no node match for node %p key %" PRIu64 "\n", node, key);
 			return -ENOENT;
@@ -2549,17 +2542,13 @@ void rcuja_free_all_children(struct cds_ja_shadow_node *shadow_node,
 
 		for (i = 0; i < nr_child; i++) {
 			struct cds_ja_inode_flag *iter;
-			struct cds_hlist_head head;
-			struct cds_ja_node *entry;
-			struct cds_hlist_node *pos, *tmp;
+			struct cds_ja_node *node_iter, *n;
 			uint8_t v;
 
 			ja_linear_node_get_ith_pos(type, node, i, &v, &iter);
-			if (!iter)
-				continue;
-			head.next = (struct cds_hlist_node *) iter;
-			cds_hlist_for_each_entry_safe(entry, pos, tmp, &head, list) {
-				rcu_free_node(entry);
+			node_iter = (struct cds_ja_node *) iter;
+			cds_ja_for_each_duplicate_safe(node_iter, n) {
+				rcu_free_node(node_iter);
 			}
 		}
 		break;
@@ -2577,17 +2566,13 @@ void rcuja_free_all_children(struct cds_ja_shadow_node *shadow_node,
 
 			for (j = 0; j < nr_child; j++) {
 				struct cds_ja_inode_flag *iter;
-				struct cds_hlist_head head;
-				struct cds_ja_node *entry;
-				struct cds_hlist_node *pos, *tmp;
+				struct cds_ja_node *node_iter, *n;
 				uint8_t v;
 
 				ja_linear_node_get_ith_pos(type, pool, j, &v, &iter);
-				if (!iter)
-					continue;
-				head.next = (struct cds_hlist_node *) iter;
-				cds_hlist_for_each_entry_safe(entry, pos, tmp, &head, list) {
-					rcu_free_node(entry);
+				node_iter = (struct cds_ja_node *) iter;
+				cds_ja_for_each_duplicate_safe(node_iter, n) {
+					rcu_free_node(node_iter);
 				}
 			}
 		}
@@ -2601,16 +2586,12 @@ void rcuja_free_all_children(struct cds_ja_shadow_node *shadow_node,
 
 		for (i = 0; i < JA_ENTRY_PER_NODE; i++) {
 			struct cds_ja_inode_flag *iter;
-			struct cds_hlist_head head;
-			struct cds_ja_node *entry;
-			struct cds_hlist_node *pos, *tmp;
+			struct cds_ja_node *node_iter, *n;
 
 			iter = ja_pigeon_node_get_ith_pos(type, node, i);
-			if (!iter)
-				continue;
-			head.next = (struct cds_hlist_node *) iter;
-			cds_hlist_for_each_entry_safe(entry, pos, tmp, &head, list) {
-				rcu_free_node(entry);
+			node_iter = (struct cds_ja_node *) iter;
+			cds_ja_for_each_duplicate_safe(node_iter, n) {
+				rcu_free_node(node_iter);
 			}
 		}
 		break;

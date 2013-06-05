@@ -190,6 +190,22 @@ int rcuja_delete_ht(struct cds_lfht *ht);
 __attribute__((visibility("protected")))
 void free_cds_ja_node(struct cds_ja *ja, struct cds_ja_inode *node);
 
+/*
+ * Iterate through duplicates returned by cds_ja_lookup*()
+ * Receives a struct cds_ja_node * as parameter, which is used as start
+ * of duplicate list and loop cursor.
+ */
+#define cds_ja_for_each_duplicate(pos)					\
+	for (; (pos) != NULL; (pos) = (pos)->next)
+
+/*
+ * Iterate through duplicates returned by cds_ja_lookup*()
+ * Safe against removal of entries during traversal.
+ */
+#define cds_ja_for_each_duplicate_safe(_pos, _next)			\
+	for (; (_pos) != NULL ? ((_next) = (_pos)->next, 1) : 0;	\
+		(_pos) = (_next))
+
 //#define DEBUG
 
 #ifdef __linux__

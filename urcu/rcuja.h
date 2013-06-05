@@ -36,9 +36,12 @@
 extern "C" {
 #endif
 
+/*
+ * Duplicate nodes with the same key are chained into a singly-linked
+ * list. The last item of this list has a NULL next pointer.
+ */
 struct cds_ja_node {
-	/* Linked list of nodes with same key */
-	struct cds_hlist_node list;
+	struct cds_ja_node *next;
 };
 
 struct cds_ja;
@@ -55,8 +58,8 @@ void cds_ja_node_init(struct cds_ja_node *node)
 {
 }
 
-struct cds_hlist_head cds_ja_lookup(struct cds_ja *ja, uint64_t key);
-struct cds_hlist_head cds_ja_lookup_lower_equal(struct cds_ja *ja,
+struct cds_ja_node *cds_ja_lookup(struct cds_ja *ja, uint64_t key);
+struct cds_ja_node *cds_ja_lookup_lower_equal(struct cds_ja *ja,
 		uint64_t key);
 
 int cds_ja_add(struct cds_ja *ja, uint64_t key,
@@ -79,6 +82,15 @@ struct cds_ja *cds_ja_new(unsigned int key_bits)
 
 int cds_ja_destroy(struct cds_ja *ja,
 		void (*rcu_free_node_cb)(struct cds_ja_node *node));
+
+/*
+ * Iterate through duplicates returned by cds_ja_lookup*()
+ * This must be done while rcu_read_lock() is held.
+ * Receives a struct cds_ja_node * as parameter, which is used as start
+ * of duplicate list and loop cursor.
+ */
+#define cds_ja_for_each_duplicate_rcu(pos)				\
+	for (; (pos) != NULL; (pos) = rcu_dereference((pos)->next))
 
 #ifdef __cplusplus
 }

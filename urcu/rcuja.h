@@ -39,8 +39,6 @@ extern "C" {
 struct cds_ja_node {
 	/* Linked list of nodes with same key */
 	struct cds_hlist_node list;
-	/* delayed reclaim */
-	struct rcu_head head;
 };
 
 struct cds_ja;
@@ -80,7 +78,7 @@ struct cds_ja *cds_ja_new(unsigned int key_bits)
 }
 
 int cds_ja_destroy(struct cds_ja *ja,
-		void (*free_node_cb)(struct rcu_head *head));
+		void (*rcu_free_node_cb)(struct cds_ja_node *node));
 
 #ifdef __cplusplus
 }

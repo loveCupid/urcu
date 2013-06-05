@@ -156,8 +156,22 @@ static
 void free_node_cb(struct rcu_head *head)
 {
 	struct ja_test_node *node =
-		caa_container_of(head, struct ja_test_node, node.head);
+		caa_container_of(head, struct ja_test_node, head);
 	free_node(node);
+}
+
+static
+void rcu_free_test_node(struct ja_test_node *test_node)
+{
+	call_rcu(&test_node->head, free_node_cb);
+}
+
+static
+void rcu_free_node(struct cds_ja_node *node)
+{
+	struct ja_test_node *test_node = to_test_node(node);
+
+	rcu_free_test_node(test_node);
 }
 
 #if 0
@@ -286,7 +300,7 @@ int test_8bit_key(void)
 			fprintf(stderr, "Error (%d) removing node %" PRIu64 "\n", ret, key);
 			assert(0);
 		}
-		call_rcu(&node->node.head, free_node_cb);
+		rcu_free_test_node(node);
 		head = cds_ja_lookup(test_ja, key);
 		if (!cds_hlist_empty(&head)) {
 			fprintf(stderr, "Error lookup %" PRIu64 ": %p (after delete) failed. Node is not expected.\n", key, head.next);
@@ -357,7 +371,7 @@ int test_8bit_key(void)
 
 	printf("OK\n");
 
-	ret = cds_ja_destroy(test_ja, free_node_cb);
+	ret = cds_ja_destroy(test_ja, rcu_free_node);
 	if (ret) {
 		fprintf(stderr, "Error destroying judy array\n");
 		return -1;
@@ -445,7 +459,7 @@ int test_16bit_key(void)
 			fprintf(stderr, "Error (%d) removing node %" PRIu64 "\n", ret, key);
 			assert(0);
 		}
-		call_rcu(&node->node.head, free_node_cb);
+		rcu_free_test_node(node);
 		head = cds_ja_lookup(test_ja, key);
 		if (!cds_hlist_empty(&head)) {
 			fprintf(stderr, "Error lookup %" PRIu64 ": %p (after delete) failed. Node is not expected.\n", key, head.next);
@@ -516,7 +530,7 @@ int test_16bit_key(void)
 
 	printf("OK\n");
 
-	ret = cds_ja_destroy(test_ja, free_node_cb);
+	ret = cds_ja_destroy(test_ja, rcu_free_node);
 	if (ret) {
 		fprintf(stderr, "Error destroying judy array\n");
 		return -1;
@@ -638,7 +652,7 @@ int test_sparse_key(unsigned int bits, int nr_dup)
 				fprintf(stderr, "Error (%d) removing node %" PRIu64 "\n", ret, key);
 				assert(0);
 			}
-			call_rcu(&node->node.head, free_node_cb);
+			rcu_free_test_node(node);
 			testhead = cds_ja_lookup(test_ja, key);
 			if (count < nr_dup && cds_hlist_empty(&testhead)) {
 				fprintf(stderr, "Error: no node found after deletion of some nodes of a key\n");
@@ -656,7 +670,7 @@ int test_sparse_key(unsigned int bits, int nr_dup)
 	}
 	printf("OK\n");
 
-	ret = cds_ja_destroy(test_ja, free_node_cb);
+	ret = cds_ja_destroy(test_ja, rcu_free_node);
 	if (ret) {
 		fprintf(stderr, "Error destroying judy array\n");
 		return -1;
@@ -858,7 +872,7 @@ void *test_ja_rw_thr_writer(void *_count)
 			if (node) {
 				ret = cds_ja_del(test_ja, key, &node->node);
 				if (!ret) {
-					call_rcu(&node->node.head, free_node_cb);
+					rcu_free_test_node(node);
 					URCU_TLS(nr_del)++;
 				} else {
 					URCU_TLS(nr_delnoent)++;
@@ -1001,7 +1015,7 @@ int do_mt_test(void)
 	}
 	rcu_thread_online_qsbr();
 
-	ret = cds_ja_destroy(test_ja, free_node_cb);
+	ret = cds_ja_destroy(test_ja, rcu_free_node);
 	if (ret) {
 		fprintf(stderr, "Error destroying judy array\n");
 		goto end;

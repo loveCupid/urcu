@@ -2529,14 +2529,12 @@ ja_error:
 __attribute__((visibility("protected")))
 void rcuja_free_all_children(struct cds_ja_shadow_node *shadow_node,
 		struct cds_ja_inode_flag *node_flag,
-		void (*free_node_cb)(struct rcu_head *head))
+		void (*rcu_free_node)(struct cds_ja_node *node))
 {
-	const struct rcu_flavor_struct *flavor;
 	unsigned int type_index;
 	struct cds_ja_inode *node;
 	const struct cds_ja_type *type;
 
-	flavor = cds_lfht_rcu_flavor(shadow_node->ja->ht);
 	node = ja_node_ptr(node_flag);
 	assert(node != NULL);
 	type_index = ja_node_type(node_flag);
@@ -2561,7 +2559,7 @@ void rcuja_free_all_children(struct cds_ja_shadow_node *shadow_node,
 				continue;
 			head.next = (struct cds_hlist_node *) iter;
 			cds_hlist_for_each_entry_safe(entry, pos, tmp, &head, list) {
-				flavor->update_call_rcu(&entry->head, free_node_cb);
+				rcu_free_node(entry);
 			}
 		}
 		break;
@@ -2589,7 +2587,7 @@ void rcuja_free_all_children(struct cds_ja_shadow_node *shadow_node,
 					continue;
 				head.next = (struct cds_hlist_node *) iter;
 				cds_hlist_for_each_entry_safe(entry, pos, tmp, &head, list) {
-					flavor->update_call_rcu(&entry->head, free_node_cb);
+					rcu_free_node(entry);
 				}
 			}
 		}
@@ -2612,7 +2610,7 @@ void rcuja_free_all_children(struct cds_ja_shadow_node *shadow_node,
 				continue;
 			head.next = (struct cds_hlist_node *) iter;
 			cds_hlist_for_each_entry_safe(entry, pos, tmp, &head, list) {
-				flavor->update_call_rcu(&entry->head, free_node_cb);
+				rcu_free_node(entry);
 			}
 		}
 		break;
@@ -2671,7 +2669,7 @@ int ja_final_checks(struct cds_ja *ja)
  * being destroyed (ensured by the caller).
  */
 int cds_ja_destroy(struct cds_ja *ja,
-		void (*free_node_cb)(struct rcu_head *head))
+		void (*rcu_free_node)(struct cds_ja_node *node))
 {
 	const struct rcu_flavor_struct *flavor;
 	int ret;
@@ -2679,7 +2677,7 @@ int cds_ja_destroy(struct cds_ja *ja,
 	flavor = cds_lfht_rcu_flavor(ja->ht);
 	rcuja_shadow_prune(ja->ht,
 		RCUJA_SHADOW_CLEAR_FREE_NODE | RCUJA_SHADOW_CLEAR_FREE_LOCK,
-		free_node_cb);
+		rcu_free_node);
 	flavor->thread_offline();
 	ret = rcuja_delete_ht(ja->ht);
 	if (ret)

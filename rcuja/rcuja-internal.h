@@ -140,11 +140,36 @@ void ja_node_pool_2d_bitsel(struct cds_ja_inode_flag *node, unsigned long *bits)
 	bits[1] = ((unsigned long) node & JA_POOL_1D_MASK) >> JA_TYPE_BITS;
 }
 
-__attribute__((visibility("protected")))
-unsigned long ja_node_type(struct cds_ja_inode_flag *node);
+/* Hardcoded pool indexes for fast path */
+#define RCU_JA_POOL_IDX_5	5
+#define RCU_JA_POOL_IDX_6	6
+static inline
+struct cds_ja_inode *ja_node_ptr(struct cds_ja_inode_flag *node)
+{
+	unsigned long v, type_idx;
+
+	if (!node)
+		return NULL;	/* RCU_JA_NULL */
+	v = (unsigned long) node;
+	type_idx = v & JA_TYPE_MASK;
+
+	switch (type_idx) {
+	case RCU_JA_POOL_IDX_5:
+		v &= ~(JA_POOL_1D_MASK | JA_TYPE_MASK);
+		break;
+	case RCU_JA_POOL_IDX_6:
+		v &= ~(JA_POOL_2D_MASK | JA_POOL_1D_MASK | JA_TYPE_MASK);
+		break;
+	default:
+		/* RCU_JA_LINEAR or RCU_JA_PIGEON */
+		v &= JA_PTR_MASK;
+		break;
+	}
+	return (struct cds_ja_node *) v;
+}
 
 __attribute__((visibility("protected")))
-struct cds_ja_inode *ja_node_ptr(struct cds_ja_inode_flag *node);
+unsigned long ja_node_type(struct cds_ja_inode_flag *node);
 
 __attribute__((visibility("protected")))
 void rcuja_free_all_children(struct cds_ja_shadow_node *shadow_node,

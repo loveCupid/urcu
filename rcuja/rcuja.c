@@ -120,7 +120,9 @@ const struct cds_ja_type ja_types[] = {
 	{ .type_class = RCU_JA_LINEAR, .min_child = 10, .max_child = ja_type_4_max_child, .max_linear_child = ja_type_4_max_linear_child, .order = 7, },
 
 	/* Pools may fill sooner than max_child */
+	/* This pool is hardcoded at index 5. See ja_node_ptr(). */
 	{ .type_class = RCU_JA_POOL, .min_child = 20, .max_child = ja_type_5_max_child, .max_linear_child = ja_type_5_max_linear_child, .order = 8, .nr_pool_order = ja_type_5_nr_pool_order, .pool_size_order = 7, },
+	/* This pool is hardcoded at index 6. See ja_node_ptr(). */
 	{ .type_class = RCU_JA_POOL, .min_child = 45, .max_child = ja_type_6_max_child, .max_linear_child = ja_type_6_max_linear_child, .order = 9, .nr_pool_order = ja_type_6_nr_pool_order, .pool_size_order = 7, },
 
 	/*
@@ -168,7 +170,9 @@ const struct cds_ja_type ja_types[] = {
 	{ .type_class = RCU_JA_LINEAR, .min_child = 10, .max_child = ja_type_4_max_child, .max_linear_child = ja_type_4_max_linear_child, .order = 8, },
 
 	/* Pools may fill sooner than max_child. */
+	/* This pool is hardcoded at index 5. See ja_node_ptr(). */
 	{ .type_class = RCU_JA_POOL, .min_child = 22, .max_child = ja_type_5_max_child, .max_linear_child = ja_type_5_max_linear_child, .order = 9, .nr_pool_order = ja_type_5_nr_pool_order, .pool_size_order = 8, },
+	/* This pool is hardcoded at index 6. See ja_node_ptr(). */
 	{ .type_class = RCU_JA_POOL, .min_child = 51, .max_child = ja_type_6_max_child, .max_linear_child = ja_type_6_max_linear_child, .order = 10, .nr_pool_order = ja_type_6_nr_pool_order, .pool_size_order = 8, },
 
 	/*
@@ -259,30 +263,6 @@ unsigned long ja_node_type(struct cds_ja_inode_flag *node)
 	type = (unsigned int) ((unsigned long) node & JA_TYPE_MASK);
 	assert(type < (1UL << JA_TYPE_BITS));
 	return type;
-}
-
-struct cds_ja_inode *ja_node_ptr(struct cds_ja_inode_flag *node)
-{
-	unsigned long type_index = ja_node_type(node);
-	const struct cds_ja_type *type;
-
-	type = &ja_types[type_index];
-	switch (type->type_class) {
-	case RCU_JA_LINEAR:
-	case RCU_JA_PIGEON:	/* fall-through */
-	case RCU_JA_NULL:	/* fall-through */
-	default:		/* fall-through */
-		return _ja_node_mask_ptr(node);
-	case RCU_JA_POOL:
-		switch (type->nr_pool_order) {
-		case 1:
-			return (struct cds_ja_inode *) (((unsigned long) node) & ~(JA_POOL_1D_MASK | JA_TYPE_MASK));
-		case 2:
-			return (struct cds_ja_inode *) (((unsigned long) node) & ~(JA_POOL_2D_MASK | JA_POOL_1D_MASK | JA_TYPE_MASK));
-		default:
-			assert(0);
-		}
-	}
 }
 
 static

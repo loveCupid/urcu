@@ -2015,7 +2015,7 @@ end:
 
 static
 int _cds_ja_add(struct cds_ja *ja, uint64_t key,
-		struct cds_ja_node *new_node,
+		struct cds_ja_node *node,
 		struct cds_ja_node **unique_node_ret)
 {
 	unsigned int tree_depth, i;
@@ -2036,7 +2036,7 @@ int _cds_ja_add(struct cds_ja *ja, uint64_t key,
 
 retry:
 	dbg_printf("cds_ja_add attempt: key %" PRIu64 ", node %p\n",
-		key, new_node);
+		key, node);
 	parent2_node_flag = NULL;
 	parent_node_flag =
 		(struct cds_ja_inode_flag *) &ja->root;	/* Use root ptr address as key for mutex */
@@ -2079,7 +2079,7 @@ retry:
 				parent_attach_node_flag,
 				node_flag_ptr,
 				node_flag,
-				key, i, new_node);
+				key, i, node);
 	} else {
 		if (unique_node_ret) {
 			*unique_node_ret = (struct cds_ja_node *) ja_node_ptr(node_flag);
@@ -2097,7 +2097,7 @@ retry:
 			parent_attach_node_flag,
 			attach_node_flag_ptr,
 			attach_node_flag,
-			new_node);
+			node);
 	}
 	if (ret == -EAGAIN || ret == -EEXIST)
 		goto retry;
@@ -2106,22 +2106,22 @@ retry:
 }
 
 int cds_ja_add(struct cds_ja *ja, uint64_t key,
-		struct cds_ja_node *new_node)
+		struct cds_ja_node *node)
 {
-	return _cds_ja_add(ja, key, new_node, NULL);
+	return _cds_ja_add(ja, key, node, NULL);
 }
 
 struct cds_ja_node *cds_ja_add_unique(struct cds_ja *ja, uint64_t key,
-		struct cds_ja_node *new_node)
+		struct cds_ja_node *node)
 {
 	int ret;
 	struct cds_ja_node *ret_node;
 
-	ret = _cds_ja_add(ja, key, new_node, &ret_node);
+	ret = _cds_ja_add(ja, key, node, &ret_node);
 	if (ret == -EEXIST)
 		return ret_node;
 	else
-		return new_node;
+		return node;
 }
 
 /*

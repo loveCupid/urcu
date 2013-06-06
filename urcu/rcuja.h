@@ -83,24 +83,69 @@ struct cds_ja_node *cds_ja_lookup(struct cds_ja *ja, uint64_t key);
 struct cds_ja_node *cds_ja_lookup_lower_equal(struct cds_ja *ja,
 		uint64_t key);
 
+/*
+ * cds_ja_add - Add @node at @key, allowing duplicates.
+ * @ja: the Judy array.
+ * @key: key at which @node should be added.
+ * @node: node to add.
+ *
+ * Returns 0 on success, negative error value on error.
+ * A RCU read-side lock should be held across call to this function.
+ */
 int cds_ja_add(struct cds_ja *ja, uint64_t key,
-		struct cds_ja_node *new_node);
+		struct cds_ja_node *node);
 
+/*
+ * cds_ja_add_unique - Add @node at @key, without duplicates.
+ * @ja: the Judy array.
+ * @key: key at which @node should be added.
+ * @node: node to add.
+ *
+ * Returns @node if successfully added, else returns the already
+ * existing node (acts as a RCU lookup).
+ * A RCU read-side lock should be held across call to this function and
+ * use of its return value.
+ */
 struct cds_ja_node *cds_ja_add_unique(struct cds_ja *ja, uint64_t key,
-		struct cds_ja_node *new_node);
+		struct cds_ja_node *node);
 
+/*
+ * cds_ja_del - Remove @node at @key.
+ * @ja: the Judy array.
+ * @key: key at which @node is expected.
+ * @node: node to remove.
+ *
+ * Returns 0 on success, negative error value on error.
+ * A RCU read-side lock should be held across call to this function.
+ */
 int cds_ja_del(struct cds_ja *ja, uint64_t key,
 		struct cds_ja_node *node);
 
 struct cds_ja *_cds_ja_new(unsigned int key_bits,
 		const struct rcu_flavor_struct *flavor);
 
+/*
+ * cds_ja_new - Create a Judy array.
+ * @key_bits: Number of bits for key.
+ *
+ * Returns non-NULL pointer on success, else NULL on error. @key_bits
+ * needs to be multiple of 8, either: 8, 16, 24, 32, 40, 48, 56, or 64.
+ */
 static inline
 struct cds_ja *cds_ja_new(unsigned int key_bits)
 {
 	return _cds_ja_new(key_bits, &rcu_flavor);
 }
 
+/*
+ * cds_ja_destroy - Destroy a Judy array.
+ * @ja: the Judy array.
+ * @rcu_free_node_cb: callback performing memory free of leftover nodes.
+ *
+ * Returns 0 on success, negative error value on error.
+ * The @rcu_free_node_cb callback should internally wait for a grace
+ * period before freeing the node.
+ */
 int cds_ja_destroy(struct cds_ja *ja,
 		void (*rcu_free_node_cb)(struct cds_ja_node *node));
 

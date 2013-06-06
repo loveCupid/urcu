@@ -1091,17 +1091,18 @@ void ja_node_sum_distribution_2d(enum ja_recompact mode,
 				continue;
 			for (bit_i = 0; bit_i < JA_BITS_PER_BYTE; bit_i++) {
 				for (bit_j = 0; bit_j < bit_i; bit_j++) {
-					if ((v & (1U << bit_i)) && (v & (1U << bit_j))) {
-						nr_2d_11[bit_i][bit_j]++;
-					}
-					if ((v & (1U << bit_i)) && !(v & (1U << bit_j))) {
-						nr_2d_10[bit_i][bit_j]++;
-					}
-					if (!(v & (1U << bit_i)) && (v & (1U << bit_j))) {
-						nr_2d_01[bit_i][bit_j]++;
-					}
-					if (!(v & (1U << bit_i)) && !(v & (1U << bit_j))) {
-						nr_2d_00[bit_i][bit_j]++;
+					if (v & (1U << bit_i)) {
+						if (v & (1U << bit_j)) {
+							nr_2d_11[bit_i][bit_j]++;
+						} else {
+							nr_2d_10[bit_i][bit_j]++;
+						}
+					} else {
+						if (v & (1U << bit_j)) {
+							nr_2d_01[bit_i][bit_j]++;
+						} else {
+							nr_2d_00[bit_i][bit_j]++;
+						}
 					}
 				}
 			}
@@ -1133,17 +1134,18 @@ void ja_node_sum_distribution_2d(enum ja_recompact mode,
 					continue;
 				for (bit_i = 0; bit_i < JA_BITS_PER_BYTE; bit_i++) {
 					for (bit_j = 0; bit_j < bit_i; bit_j++) {
-						if ((v & (1U << bit_i)) && (v & (1U << bit_j))) {
-							nr_2d_11[bit_i][bit_j]++;
-						}
-						if ((v & (1U << bit_i)) && !(v & (1U << bit_j))) {
-							nr_2d_10[bit_i][bit_j]++;
-						}
-						if (!(v & (1U << bit_i)) && (v & (1U << bit_j))) {
-							nr_2d_01[bit_i][bit_j]++;
-						}
-						if (!(v & (1U << bit_i)) && !(v & (1U << bit_j))) {
-							nr_2d_00[bit_i][bit_j]++;
+						if (v & (1U << bit_i)) {
+							if (v & (1U << bit_j)) {
+								nr_2d_11[bit_i][bit_j]++;
+							} else {
+								nr_2d_10[bit_i][bit_j]++;
+							}
+						} else {
+							if (v & (1U << bit_j)) {
+								nr_2d_01[bit_i][bit_j]++;
+							} else {
+								nr_2d_00[bit_i][bit_j]++;
+							}
 						}
 					}
 				}
@@ -1167,17 +1169,18 @@ void ja_node_sum_distribution_2d(enum ja_recompact mode,
 				continue;
 			for (bit_i = 0; bit_i < JA_BITS_PER_BYTE; bit_i++) {
 				for (bit_j = 0; bit_j < bit_i; bit_j++) {
-					if ((i & (1U << bit_i)) && (i & (1U << bit_j))) {
-						nr_2d_11[bit_i][bit_j]++;
-					}
-					if ((i & (1U << bit_i)) && !(i & (1U << bit_j))) {
-						nr_2d_10[bit_i][bit_j]++;
-					}
-					if (!(i & (1U << bit_i)) && (i & (1U << bit_j))) {
-						nr_2d_01[bit_i][bit_j]++;
-					}
-					if (!(i & (1U << bit_i)) && !(i & (1U << bit_j))) {
-						nr_2d_00[bit_i][bit_j]++;
+					if (i & (1U << bit_i)) {
+						if (i & (1U << bit_j)) {
+							nr_2d_11[bit_i][bit_j]++;
+						} else {
+							nr_2d_10[bit_i][bit_j]++;
+						}
+					} else {
+						if (i & (1U << bit_j)) {
+							nr_2d_01[bit_i][bit_j]++;
+						} else {
+							nr_2d_00[bit_i][bit_j]++;
+						}
 					}
 				}
 			}
@@ -1196,17 +1199,18 @@ void ja_node_sum_distribution_2d(enum ja_recompact mode,
 	if (mode == JA_RECOMPACT_ADD_NEXT || mode == JA_RECOMPACT_ADD_SAME) {
 		for (bit_i = 0; bit_i < JA_BITS_PER_BYTE; bit_i++) {
 			for (bit_j = 0; bit_j < bit_i; bit_j++) {
-				if ((n & (1U << bit_i)) && (n & (1U << bit_j))) {
-					nr_2d_11[bit_i][bit_j]++;
-				}
-				if ((n & (1U << bit_i)) && !(n & (1U << bit_j))) {
-					nr_2d_10[bit_i][bit_j]++;
-				}
-				if (!(n & (1U << bit_i)) && (n & (1U << bit_j))) {
-					nr_2d_01[bit_i][bit_j]++;
-				}
-				if (!(n & (1U << bit_i)) && !(n & (1U << bit_j))) {
-					nr_2d_00[bit_i][bit_j]++;
+				if (n & (1U << bit_i)) {
+					if (n & (1U << bit_j)) {
+						nr_2d_11[bit_i][bit_j]++;
+					} else {
+						nr_2d_10[bit_i][bit_j]++;
+					}
+				} else {
+					if (n & (1U << bit_j)) {
+						nr_2d_01[bit_i][bit_j]++;
+					} else {
+						nr_2d_00[bit_i][bit_j]++;
+					}
 				}
 			}
 		}

@@ -340,26 +340,27 @@ int rcuja_shadow_clear(struct cds_lfht *ht,
 	 * don't let RCU JA use a node being removed.
 	 */
 	ret = cds_lfht_del(ht, lookup_node);
-	if (!ret) {
-		if ((flags & RCUJA_SHADOW_CLEAR_FREE_NODE)
-				&& shadow_node->level) {
-			if (flags & RCUJA_SHADOW_CLEAR_FREE_LOCK) {
-				flavor->update_call_rcu(&shadow_node->head,
-					free_shadow_node_and_node_and_lock);
-			} else {
-				flavor->update_call_rcu(&shadow_node->head,
-					free_shadow_node_and_node);
-			}
+	if (ret)
+		goto unlock;
+	if ((flags & RCUJA_SHADOW_CLEAR_FREE_NODE)
+			&& shadow_node->level) {
+		if (flags & RCUJA_SHADOW_CLEAR_FREE_LOCK) {
+			flavor->update_call_rcu(&shadow_node->head,
+				free_shadow_node_and_node_and_lock);
 		} else {
-			if (flags & RCUJA_SHADOW_CLEAR_FREE_LOCK) {
-				flavor->update_call_rcu(&shadow_node->head,
-					free_shadow_node_and_lock);
-			} else {
-				flavor->update_call_rcu(&shadow_node->head,
-					free_shadow_node);
-			}
+			flavor->update_call_rcu(&shadow_node->head,
+				free_shadow_node_and_node);
+		}
+	} else {
+		if (flags & RCUJA_SHADOW_CLEAR_FREE_LOCK) {
+			flavor->update_call_rcu(&shadow_node->head,
+				free_shadow_node_and_lock);
+		} else {
+			flavor->update_call_rcu(&shadow_node->head,
+				free_shadow_node);
 		}
 	}
+unlock:
 	if (lookup_shadow) {
 		lockret = pthread_mutex_unlock(shadow_node->lock);
 		assert(!lockret);
@@ -377,7 +378,7 @@ rcu_unlock:
 __attribute__((visibility("protected")))
 void rcuja_shadow_prune(struct cds_lfht *ht,
 		unsigned int flags,
-		void (*rcu_free_node)(struct cds_ja_node *node))
+		void (*free_node_cb)(struct cds_ja_node *node))
 {
 	const struct rcu_flavor_struct *flavor;
 	struct cds_ja_shadow_node *shadow_node;
@@ -385,37 +386,42 @@ void rcuja_shadow_prune(struct cds_lfht *ht,
 	int ret, lockret;
 
 	flavor = cds_lfht_rcu_flavor(ht);
+	/*
+	 * Read-side lock is needed to ensure hash table node existence
+	 * vs concurrent resize.
+	 */
 	flavor->read_lock();
 	cds_lfht_for_each_entry(ht, &iter, shadow_node, ht_node) {
 		lockret = pthread_mutex_lock(shadow_node->lock);
 		assert(!lockret);
 	
 		ret = cds_lfht_del(ht, &shadow_node->ht_node);
-		if (!ret) {
-			if ((flags & RCUJA_SHADOW_CLEAR_FREE_NODE)
-					&& shadow_node->level) {
-				if (shadow_node->level == shadow_node->ja->tree_depth - 1) {
-					rcuja_free_all_children(shadow_node,
-							shadow_node->node_flag,
-							rcu_free_node);
-				}
-				if (flags & RCUJA_SHADOW_CLEAR_FREE_LOCK) {
-					flavor->update_call_rcu(&shadow_node->head,
-						free_shadow_node_and_node_and_lock);
-				} else {
-					flavor->update_call_rcu(&shadow_node->head,
-						free_shadow_node_and_node);
-				}
+		if (ret)
+			goto unlock;
+		if ((flags & RCUJA_SHADOW_CLEAR_FREE_NODE)
+				&& shadow_node->level) {
+			if (shadow_node->level == shadow_node->ja->tree_depth - 1) {
+				rcuja_free_all_children(shadow_node,
+						shadow_node->node_flag,
+						free_node_cb);
+			}
+			if (flags & RCUJA_SHADOW_CLEAR_FREE_LOCK) {
+				flavor->update_call_rcu(&shadow_node->head,
+					free_shadow_node_and_node_and_lock);
 			} else {
-				if (flags & RCUJA_SHADOW_CLEAR_FREE_LOCK) {
-					flavor->update_call_rcu(&shadow_node->head,
-						free_shadow_node_and_lock);
-				} else {
-					flavor->update_call_rcu(&shadow_node->head,
-						free_shadow_node);
-				}
+				flavor->update_call_rcu(&shadow_node->head,
+					free_shadow_node_and_node);
+			}
+		} else {
+			if (flags & RCUJA_SHADOW_CLEAR_FREE_LOCK) {
+				flavor->update_call_rcu(&shadow_node->head,
+					free_shadow_node_and_lock);
+			} else {
+				flavor->update_call_rcu(&shadow_node->head,
+					free_shadow_node);
 			}
 		}
+	unlock:
 		lockret = pthread_mutex_unlock(shadow_node->lock);
 		assert(!lockret);
 	}

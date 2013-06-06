@@ -143,11 +143,13 @@ struct cds_ja *cds_ja_new(unsigned int key_bits)
  * @rcu_free_node_cb: callback performing memory free of leftover nodes.
  *
  * Returns 0 on success, negative error value on error.
- * The @rcu_free_node_cb callback should internally wait for a grace
- * period before freeing the node.
+ * There should be no more concurrent add, delete, nor look-up performed
+ * on the Judy array while it is being destroyed (ensured by the caller).
+ * There is no need for the @rcu_free_node_cb callback to wait for grace
+ * periods, since there are no more concurrent users of the Judy array.
  */
 int cds_ja_destroy(struct cds_ja *ja,
-		void (*rcu_free_node_cb)(struct cds_ja_node *node));
+		void (*free_node_cb)(struct cds_ja_node *node));
 
 /*
  * Iterate through duplicates returned by cds_ja_lookup*()

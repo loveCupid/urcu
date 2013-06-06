@@ -174,7 +174,7 @@ unsigned long ja_node_type(struct cds_ja_inode_flag *node);
 __attribute__((visibility("protected")))
 void rcuja_free_all_children(struct cds_ja_shadow_node *shadow_node,
 		struct cds_ja_inode_flag *node_flag,
-		void (*rcu_free_node)(struct cds_ja_node *node));
+		void (*free_node_cb)(struct cds_ja_node *node));
 
 __attribute__((visibility("protected")))
 struct cds_ja_shadow_node *rcuja_shadow_lookup_lock(struct cds_lfht *ht,
@@ -204,7 +204,7 @@ int rcuja_shadow_clear(struct cds_lfht *ht,
 __attribute__((visibility("protected")))
 void rcuja_shadow_prune(struct cds_lfht *ht,
 		unsigned int flags,
-		void (*rcu_free_node)(struct cds_ja_node *node));
+		void (*free_node_cb)(struct cds_ja_node *node));
 
 __attribute__((visibility("protected")))
 struct cds_lfht *rcuja_create_ht(const struct rcu_flavor_struct *flavor);

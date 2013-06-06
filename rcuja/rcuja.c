@@ -2630,11 +2630,12 @@ int ja_final_checks(struct cds_ja *ja)
 }
 
 /*
- * There should be no more concurrent add to the judy array while it is
- * being destroyed (ensured by the caller).
+ * There should be no more concurrent add, delete, nor look-up performed
+ * on the Judy array while it is being destroyed (ensured by the
+ * caller).
  */
 int cds_ja_destroy(struct cds_ja *ja,
-		void (*rcu_free_node)(struct cds_ja_node *node))
+		void (*free_node_cb)(struct cds_ja_node *node))
 {
 	const struct rcu_flavor_struct *flavor;
 	int ret;
@@ -2642,7 +2643,7 @@ int cds_ja_destroy(struct cds_ja *ja,
 	flavor = cds_lfht_rcu_flavor(ja->ht);
 	rcuja_shadow_prune(ja->ht,
 		RCUJA_SHADOW_CLEAR_FREE_NODE | RCUJA_SHADOW_CLEAR_FREE_LOCK,
-		rcu_free_node);
+		free_node_cb);
 	flavor->thread_offline();
 	ret = rcuja_delete_ht(ja->ht);
 	if (ret)

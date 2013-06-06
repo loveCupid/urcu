@@ -145,7 +145,7 @@ struct ja_test_node *node_alloc(void)
 }
 
 static
-void free_node(struct ja_test_node *node)
+void free_test_node(struct ja_test_node *node)
 {
 	poison_free(node);
 	if (leak_detection)
@@ -153,25 +153,25 @@ void free_node(struct ja_test_node *node)
 }
 
 static
-void free_node_cb(struct rcu_head *head)
+void free_test_node_cb(struct rcu_head *head)
 {
 	struct ja_test_node *node =
 		caa_container_of(head, struct ja_test_node, head);
-	free_node(node);
+	free_test_node(node);
 }
 
 static
 void rcu_free_test_node(struct ja_test_node *test_node)
 {
-	call_rcu(&test_node->head, free_node_cb);
+	call_rcu(&test_node->head, free_test_node_cb);
 }
 
 static
-void rcu_free_node(struct cds_ja_node *node)
+void free_node(struct cds_ja_node *node)
 {
 	struct ja_test_node *test_node = to_test_node(node);
 
-	rcu_free_test_node(test_node);
+	free_test_node(test_node);
 }
 
 #if 0
@@ -371,7 +371,7 @@ int test_8bit_key(void)
 
 	printf("OK\n");
 
-	ret = cds_ja_destroy(test_ja, rcu_free_node);
+	ret = cds_ja_destroy(test_ja, free_node);
 	if (ret) {
 		fprintf(stderr, "Error destroying judy array\n");
 		return -1;
@@ -530,7 +530,7 @@ int test_16bit_key(void)
 
 	printf("OK\n");
 
-	ret = cds_ja_destroy(test_ja, rcu_free_node);
+	ret = cds_ja_destroy(test_ja, free_node);
 	if (ret) {
 		fprintf(stderr, "Error destroying judy array\n");
 		return -1;
@@ -665,7 +665,7 @@ int test_sparse_key(unsigned int bits, int nr_dup)
 	}
 	printf("OK\n");
 
-	ret = cds_ja_destroy(test_ja, rcu_free_node);
+	ret = cds_ja_destroy(test_ja, free_node);
 	if (ret) {
 		fprintf(stderr, "Error destroying judy array\n");
 		return -1;
@@ -834,7 +834,7 @@ void *test_ja_rw_thr_writer(void *_count)
 			if (add_unique) {
 				ret_node = cds_ja_add_unique(test_ja, key, &node->node);
 				if (ret_node != &node->node) {
-					free_node(node);
+					free_test_node(node);
 					URCU_TLS(nr_addexist)++;
 				} else {
 					URCU_TLS(nr_add)++;
@@ -845,7 +845,7 @@ void *test_ja_rw_thr_writer(void *_count)
 				ret = cds_ja_add(test_ja, key, &node->node);
 				if (ret) {
 					fprintf(stderr, "Error in cds_ja_add: %d\n", ret);
-					free_node(node);
+					free_test_node(node);
 				} else {
 					URCU_TLS(nr_add)++;
 				}
@@ -1011,7 +1011,7 @@ int do_mt_test(void)
 	}
 	rcu_thread_online_qsbr();
 
-	ret = cds_ja_destroy(test_ja, rcu_free_node);
+	ret = cds_ja_destroy(test_ja, free_node);
 	if (ret) {
 		fprintf(stderr, "Error destroying judy array\n");
 		goto end;

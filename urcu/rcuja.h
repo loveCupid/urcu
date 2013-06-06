@@ -58,7 +58,28 @@ void cds_ja_node_init(struct cds_ja_node *node)
 {
 }
 
+/*
+ * cds_ja_lookup - look up by key.
+ * @ja: the Judy array.
+ * @key: key to look up.
+ *
+ * Returns the first node of a duplicate chain if a match is found, else
+ * returns NULL.
+ * A RCU read-side lock should be held across call to this function and
+ * use of its return value.
+ */
 struct cds_ja_node *cds_ja_lookup(struct cds_ja *ja, uint64_t key);
+
+/*
+ * cds_ja_lookup_lower_equal - look up first node with key <= @key.
+ * @ja: the Judy array.
+ * @key: key to look up.
+ *
+ * Returns the first node of a duplicate chain if a node is present in
+ * the tree which has a key lower or equal to @key, else returns NULL.
+ * A RCU read-side lock should be held across call to this function and
+ * use of its return value.
+ */
 struct cds_ja_node *cds_ja_lookup_lower_equal(struct cds_ja *ja,
 		uint64_t key);
 

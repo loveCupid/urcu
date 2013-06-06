@@ -1032,7 +1032,7 @@ unsigned int ja_node_sum_distribution_1d(enum ja_recompact mode,
 	for (bit_i = 0; bit_i < JA_BITS_PER_BYTE; bit_i++) {
 		unsigned int distance_to_best;
 
-		distance_to_best = abs_int((nr_one[bit_i] << 1U) - distrib_nr_child);
+		distance_to_best = abs_int(((unsigned int) nr_one[bit_i] << 1U) - distrib_nr_child);
 		if (distance_to_best < overall_best_distance) {
 			overall_best_distance = distance_to_best;
 			bitsel = bit_i;
@@ -1228,10 +1228,10 @@ void ja_node_sum_distribution_2d(enum ja_recompact mode,
 		for (bit_j = 0; bit_j < bit_i; bit_j++) {
 			int distance_to_best[4];
 
-			distance_to_best[0] = (nr_2d_11[bit_i][bit_j] << 2U) - distrib_nr_child;
-			distance_to_best[1] = (nr_2d_10[bit_i][bit_j] << 2U) - distrib_nr_child;
-			distance_to_best[2] = (nr_2d_01[bit_i][bit_j] << 2U) - distrib_nr_child;
-			distance_to_best[3] = (nr_2d_00[bit_i][bit_j] << 2U) - distrib_nr_child;
+			distance_to_best[0] = ((unsigned int) nr_2d_11[bit_i][bit_j] << 2U) - distrib_nr_child;
+			distance_to_best[1] = ((unsigned int) nr_2d_10[bit_i][bit_j] << 2U) - distrib_nr_child;
+			distance_to_best[2] = ((unsigned int) nr_2d_01[bit_i][bit_j] << 2U) - distrib_nr_child;
+			distance_to_best[3] = ((unsigned int) nr_2d_00[bit_i][bit_j] << 2U) - distrib_nr_child;
 
 			/* Consider worse distance above best */
 			if (distance_to_best[1] > 0 && distance_to_best[1] > distance_to_best[0])

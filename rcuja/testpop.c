@@ -258,6 +258,8 @@ void print_distrib(void)
 		return;
 	printf("Distribution:\n");
 	for (i = 0; i < 256; i++) {
+		if (!subclass_len_distrib[i])
+			continue;
 		printf("(%u, %u, %llu%%) ",
 			i, subclass_len_distrib[i],
 			100 * (unsigned long long) subclass_len_distrib[i] / tot);

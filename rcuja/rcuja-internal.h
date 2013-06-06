@@ -165,7 +165,7 @@ struct cds_ja_inode *ja_node_ptr(struct cds_ja_inode_flag *node)
 		v &= JA_PTR_MASK;
 		break;
 	}
-	return (struct cds_ja_node *) v;
+	return (struct cds_ja_inode *) v;
 }
 
 __attribute__((visibility("protected")))

@@ -32,6 +32,7 @@
 #include <time.h>
 #include <string.h>
 #include <limits.h>
+#include <assert.h>
 
 static int sel_pool_len = 50;	/* default */
 static int nr_distrib = 2;	/* default */
@@ -45,7 +46,6 @@ static uint8_t nr_2d_10[8][8];
 static uint8_t nr_2d_01[8][8];
 static uint8_t nr_2d_00[8][8];
 static int global_max_minsubclass_len = 0;
-static int global_max_best_distance = 0;
 
 static unsigned int subclass_len_distrib[256];
 
@@ -155,75 +155,93 @@ void print_count(void)
 }
 
 static
+void stat_count_1d(void)
+{
+	unsigned int overall_best_distance = UINT_MAX;
+	unsigned int overall_minsubclass_len;
+	int i;
+
+	for (i = 0; i < 8; i++) {
+		int distance_to_best;
+
+		distance_to_best = ((unsigned int) nr_one[i] << 1U) - sel_pool_len;
+		if (distance_to_best < 0)
+			distance_to_best = -distance_to_best;
+		if (distance_to_best < overall_best_distance) {
+			overall_best_distance = distance_to_best;
+		}
+	}
+	overall_minsubclass_len = (overall_best_distance + sel_pool_len) >> 1UL;
+	if (overall_minsubclass_len > global_max_minsubclass_len) {
+		global_max_minsubclass_len = overall_minsubclass_len;
+	}
+	subclass_len_distrib[overall_minsubclass_len]++;
+}
+
+static
+void stat_count_2d(void)
+{
+	int overall_best_distance = INT_MAX;
+	unsigned int overall_minsubclass_len = 0;
+	int bit_i, bit_j;
+
+	for (bit_i = 0; bit_i < 8; bit_i++) {
+		for (bit_j = 0; bit_j < bit_i; bit_j++) {
+			int distance_to_best[4], subclass_len[4];
+
+			distance_to_best[0] = ((unsigned int) nr_2d_11[bit_i][bit_j] << 2U) - sel_pool_len;
+			distance_to_best[1] = ((unsigned int) nr_2d_10[bit_i][bit_j] << 2U) - sel_pool_len;
+			distance_to_best[2] = ((unsigned int) nr_2d_01[bit_i][bit_j] << 2U) - sel_pool_len;
+			distance_to_best[3] = ((unsigned int) nr_2d_00[bit_i][bit_j] << 2U) - sel_pool_len;
+
+			subclass_len[0] = nr_2d_11[bit_i][bit_j];
+			subclass_len[1] = nr_2d_10[bit_i][bit_j];
+			subclass_len[2] = nr_2d_01[bit_i][bit_j];
+			subclass_len[3] = nr_2d_00[bit_i][bit_j];
+
+			/* Consider worse distance above best */
+			if (distance_to_best[1] > 0 && distance_to_best[1] > distance_to_best[0]) {
+				distance_to_best[0] = distance_to_best[1];
+				subclass_len[0] = subclass_len[1];
+			}
+			if (distance_to_best[2] > 0 && distance_to_best[2] > distance_to_best[0]) {
+				distance_to_best[0] = distance_to_best[2];
+				subclass_len[0] = subclass_len[2];
+			}
+			if (distance_to_best[3] > 0 && distance_to_best[3] > distance_to_best[0]) {
+				distance_to_best[0] = distance_to_best[3];
+				subclass_len[0] = subclass_len[3];
+			}
+
+			/*
+			 * If our worse distance is better than overall,
+			 * we become new best candidate.
+			 */
+			if (distance_to_best[0] < overall_best_distance) {
+				overall_best_distance = distance_to_best[0];
+				overall_minsubclass_len = subclass_len[0];
+			}
+		}
+	}
+	if (overall_minsubclass_len > global_max_minsubclass_len) {
+		global_max_minsubclass_len = overall_minsubclass_len;
+	}
+	subclass_len_distrib[overall_minsubclass_len]++;
+}
+
+static
 void stat_count(void)
 {
-	int minsubclass_len = INT_MAX;
-	int overall_best_distance = INT_MAX;
-
-	if (nr_distrib == 2) {
-		int i;
-
-		for (i = 0; i < 8; i++) {
-			int diff;
-
-			diff = (int) nr_one[i] * 2 - sel_pool_len;
-			if (diff < 0)
-				diff = -diff;
-			if ((diff >> 1) < minsubclass_len) {
-				minsubclass_len = diff >> 1;
-			}
-		}
-		if (minsubclass_len > global_max_minsubclass_len) {
-			global_max_minsubclass_len = minsubclass_len;
-		}
-		subclass_len_distrib[minsubclass_len]++;
-	}
-
-	if (nr_distrib == 4) {
-		int bit_i, bit_j;
-
-		for (bit_i = 0; bit_i < 8; bit_i++) {
-			for (bit_j = 0; bit_j < bit_i; bit_j++) {
-				int distance_to_best[4], subclass_len[4];
-
-				distance_to_best[0] = (nr_2d_11[bit_i][bit_j] << 2U) - sel_pool_len;
-				distance_to_best[1] = (nr_2d_10[bit_i][bit_j] << 2U) - sel_pool_len;
-				distance_to_best[2] = (nr_2d_01[bit_i][bit_j] << 2U) - sel_pool_len;
-				distance_to_best[3] = (nr_2d_00[bit_i][bit_j] << 2U) - sel_pool_len;
-
-				subclass_len[0] = nr_2d_11[bit_i][bit_j];
-				subclass_len[1] = nr_2d_10[bit_i][bit_j];
-				subclass_len[2] = nr_2d_01[bit_i][bit_j];
-				subclass_len[3] = nr_2d_00[bit_i][bit_j];
-
-				/* Consider worse distance above best */
-				if (distance_to_best[1] > 0 && distance_to_best[1] > distance_to_best[0]) {
-					distance_to_best[0] = distance_to_best[1];
-					subclass_len[0] = subclass_len[1];
-				}
-				if (distance_to_best[2] > 0 && distance_to_best[2] > distance_to_best[0]) {
-					distance_to_best[0] = distance_to_best[2];
-					subclass_len[0] = subclass_len[2];
-				}
-				if (distance_to_best[3] > 0 && distance_to_best[3] > distance_to_best[0]) {
-					distance_to_best[0] = distance_to_best[3];
-					subclass_len[0] = subclass_len[3];
-				}
-
-				/*
-				 * If our worse distance is better than overall,
-				 * we become new best candidate.
-				 */
-				if (distance_to_best[0] < overall_best_distance) {
-					overall_best_distance = distance_to_best[0];
-					minsubclass_len = subclass_len[0];
-				}
-			}
-		}
-		if (overall_best_distance > global_max_best_distance) {
-			global_max_best_distance = overall_best_distance;
-		}
-		subclass_len_distrib[minsubclass_len]++;
+	switch (nr_distrib) {
+	case 2:
+		stat_count_1d();
+		break;
+	case 4:
+		stat_count_2d();
+		break;
+	default:
+		assert(0);
+		break;
 	}
 }
 
@@ -250,9 +268,8 @@ void print_distrib(void)
 static
 void print_stat(uint64_t i)
 {
-	printf("after %llu pools, global_max_minsubclass_len extra: %d global_max_best_distance %d\n",
-		(unsigned long long) i, global_max_minsubclass_len,
-		global_max_best_distance);
+	printf("after %llu pools, global_max_minsubclass_len: %d\n",
+		(unsigned long long) i, global_max_minsubclass_len);
 	print_distrib();
 }
 

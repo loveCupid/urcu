@@ -247,6 +247,18 @@ enum ja_recompact {
 	JA_RECOMPACT_DEL,
 };
 
+enum ja_lookup_inequality {
+	JA_LOOKUP_BE,
+	JA_LOOKUP_AE,
+};
+
+enum ja_direction {
+	JA_LEFT,
+	JA_RIGHT,
+	JA_LEFTMOST,
+	JA_RIGHTMOST,
+};
+
 static
 struct cds_ja_inode *_ja_node_mask_ptr(struct cds_ja_inode_flag *node)
 {
@@ -350,18 +362,26 @@ struct cds_ja_inode_flag *ja_linear_node_get_nth(const struct cds_ja_type *type,
 }
 
 static
-struct cds_ja_inode_flag *ja_linear_node_get_left(const struct cds_ja_type *type,
+struct cds_ja_inode_flag *ja_linear_node_get_direction(const struct cds_ja_type *type,
 		struct cds_ja_inode *node,
-		unsigned int n)
+		int n,
+		enum ja_direction dir)
 {
 	uint8_t nr_child;
 	uint8_t *values;
 	struct cds_ja_inode_flag **pointers;
 	struct cds_ja_inode_flag *ptr;
-	unsigned int i, match_idx;
-	int match_v = -1;
+	unsigned int i;
+	int match_idx = -1, match_v;
 
 	assert(type->type_class == RCU_JA_LINEAR || type->type_class == RCU_JA_POOL);
+	assert(dir == JA_LEFT || dir == JA_RIGHT);
+
+	if (dir == JA_LEFT) {
+		match_v = -1;
+	} else {
+		match_v = JA_ENTRY_PER_NODE;
+	}
 
 	nr_child = ja_linear_node_get_nr_child(type, node);
 	cmm_smp_rmb();	/* read nr_child before values and pointers */
@@ -373,14 +393,24 @@ struct cds_ja_inode_flag *ja_linear_node_get_left(const struct cds_ja_type *type
 		unsigned int v;
 
 		v = CMM_LOAD_SHARED(values[i]);
-		if (v < n && (int) v > match_v) {
-			match_v = v;
-			match_idx = i;
+		if (dir == JA_LEFT) {
+			if ((int) v < n && (int) v > match_v) {
+				match_v = v;
+				match_idx = i;
+			}
+		} else {
+			if ((int) v > n && (int) v < match_v) {
+				match_v = v;
+				match_idx = i;
+			}
 		}
 	}
-	if (match_v < 0) {
+
+	if (match_idx < 0) {
 		return NULL;
 	}
+	assert(match_v >= 0 && match_v < JA_ENTRY_PER_NODE);
+
 	pointers = (struct cds_ja_inode_flag **) align_ptr_size(&values[type->max_linear_child]);
 	ptr = rcu_dereference(pointers[match_idx]);
 	return ptr;
@@ -459,15 +489,23 @@ struct cds_ja_inode *ja_pool_node_get_ith_pool(const struct cds_ja_type *type,
 }
 
 static
-struct cds_ja_inode_flag *ja_pool_node_get_left(const struct cds_ja_type *type,
+struct cds_ja_inode_flag *ja_pool_node_get_direction(const struct cds_ja_type *type,
 		struct cds_ja_inode *node,
-		unsigned int n)
+		int n,
+		enum ja_direction dir)
 {
 	unsigned int pool_nr;
-	int match_v = -1;
+	int match_v;
 	struct cds_ja_inode_flag *match_node_flag = NULL;
 
 	assert(type->type_class == RCU_JA_POOL);
+	assert(dir == JA_LEFT || dir == JA_RIGHT);
+
+	if (dir == JA_LEFT) {
+		match_v = -1;
+	} else {
+		match_v = JA_ENTRY_PER_NODE;
+	}
 
 	for (pool_nr = 0; pool_nr < (1U << type->nr_pool_order); pool_nr++) {
 		struct cds_ja_inode *pool =
@@ -485,9 +523,16 @@ struct cds_ja_inode_flag *ja_pool_node_get_left(const struct cds_ja_type *type,
 					j, &v, &iter);
 			if (!iter)
 				continue;
-			if (v < n && (int) v > match_v) {
-				match_v = v;
-				match_node_flag = iter;
+			if (dir == JA_LEFT) {
+				if ((int) v < n && (int) v > match_v) {
+					match_v = v;
+					match_node_flag = iter;
+				}
+			} else {
+				if ((int) v > n && (int) v < match_v) {
+					match_v = v;
+					match_node_flag = iter;
+				}
 			}
 		}
 	}
@@ -514,24 +559,39 @@ struct cds_ja_inode_flag *ja_pigeon_node_get_nth(const struct cds_ja_type *type,
 }
 
 static
-struct cds_ja_inode_flag *ja_pigeon_node_get_left(const struct cds_ja_type *type,
+struct cds_ja_inode_flag *ja_pigeon_node_get_direction(const struct cds_ja_type *type,
 		struct cds_ja_inode *node,
-		unsigned int n)
+		int n,
+		enum ja_direction dir)
 {
 	struct cds_ja_inode_flag **child_node_flag_ptr;
 	struct cds_ja_inode_flag *child_node_flag;
 	int i;
 
 	assert(type->type_class == RCU_JA_PIGEON);
+	assert(dir == JA_LEFT || dir == JA_RIGHT);
 
-	/* n - 1 is first value left of n */
-	for (i = n - 1; i >= 0; i--) {
-		child_node_flag_ptr = &((struct cds_ja_inode_flag **) node->u.data)[i];
-		child_node_flag = rcu_dereference(*child_node_flag_ptr);
-		if (child_node_flag) {
-			dbg_printf("ja_pigeon_node_get_left child_node_flag %p\n",
-				child_node_flag);
-			return child_node_flag;
+	if (dir == JA_LEFT) {
+		/* n - 1 is first value left of n */
+		for (i = n - 1; i >= 0; i--) {
+			child_node_flag_ptr = &((struct cds_ja_inode_flag **) node->u.data)[i];
+			child_node_flag = rcu_dereference(*child_node_flag_ptr);
+			if (child_node_flag) {
+				dbg_printf("ja_pigeon_node_get_left child_node_flag %p\n",
+					child_node_flag);
+				return child_node_flag;
+			}
+		}
+	} else {
+		/* n + 1 is first value right of n */
+		for (i = n + 1; i < JA_ENTRY_PER_NODE; i++) {
+			child_node_flag_ptr = &((struct cds_ja_inode_flag **) node->u.data)[i];
+			child_node_flag = rcu_dereference(*child_node_flag_ptr);
+			if (child_node_flag) {
+				dbg_printf("ja_pigeon_node_get_right child_node_flag %p\n",
+					child_node_flag);
+				return child_node_flag;
+			}
 		}
 	}
 	return NULL;
@@ -580,8 +640,9 @@ struct cds_ja_inode_flag *ja_node_get_nth(struct cds_ja_inode_flag *node_flag,
 }
 
 static
-struct cds_ja_inode_flag *ja_node_get_left(struct cds_ja_inode_flag *node_flag,
-		unsigned int n)
+struct cds_ja_inode_flag *ja_node_get_direction(struct cds_ja_inode_flag *node_flag,
+		int n,
+		enum ja_direction dir)
 {
 	unsigned int type_index;
 	struct cds_ja_inode *node;
@@ -594,11 +655,11 @@ struct cds_ja_inode_flag *ja_node_get_left(struct cds_ja_inode_flag *node_flag,
 
 	switch (type->type_class) {
 	case RCU_JA_LINEAR:
-		return ja_linear_node_get_left(type, node, n);
+		return ja_linear_node_get_direction(type, node, n, dir);
 	case RCU_JA_POOL:
-		return ja_pool_node_get_left(type, node, n);
+		return ja_pool_node_get_direction(type, node, n, dir);
 	case RCU_JA_PIGEON:
-		return ja_pigeon_node_get_left(type, node, n);
+		return ja_pigeon_node_get_direction(type, node, n, dir);
 	default:
 		assert(0);
 		return (void *) -1UL;
@@ -606,9 +667,27 @@ struct cds_ja_inode_flag *ja_node_get_left(struct cds_ja_inode_flag *node_flag,
 }
 
 static
-struct cds_ja_inode_flag *ja_node_get_rightmost(struct cds_ja_inode_flag *node_flag)
+struct cds_ja_inode_flag *ja_node_get_leftright(struct cds_ja_inode_flag *node_flag,
+		unsigned int n,
+		enum ja_direction dir)
 {
-	return ja_node_get_left(node_flag, JA_ENTRY_PER_NODE);
+	return ja_node_get_direction(node_flag, n, dir);
+}
+
+static
+struct cds_ja_inode_flag *ja_node_get_minmax(struct cds_ja_inode_flag *node_flag,
+		enum ja_direction dir)
+{
+	switch (dir) {
+	case JA_LEFTMOST:
+		return ja_node_get_direction(node_flag,
+				-1, JA_RIGHT);
+	case JA_RIGHTMOST:
+		return ja_node_get_direction(node_flag,
+				JA_ENTRY_PER_NODE, JA_LEFT);
+	default:
+		assert(0);
+	}
 }
 
 static
@@ -1720,13 +1799,26 @@ struct cds_ja_node *cds_ja_lookup(struct cds_ja *ja, uint64_t key)
 	return (struct cds_ja_node *) node_flag;
 }
 
-struct cds_ja_node *cds_ja_lookup_lower_equal(struct cds_ja *ja, uint64_t key)
+static
+struct cds_ja_node *cds_ja_lookup_inequality(struct cds_ja *ja, uint64_t key,
+		enum ja_lookup_inequality mode)
 {
 	int tree_depth, level;
 	struct cds_ja_inode_flag *node_flag, *cur_node_depth[JA_MAX_DEPTH];
+	enum ja_direction dir;
 
-	if (caa_unlikely(key > ja->key_max || !key))
+	switch (mode) {
+	case JA_LOOKUP_BE:
+		if (caa_unlikely(key > ja->key_max || key == 0))
+			return NULL;
+		break;
+	case JA_LOOKUP_AE:
+		if (caa_unlikely(key >= ja->key_max))
+			return NULL;
+		break;
+	default:
 		return NULL;
+	}
 
 	memset(cur_node_depth, 0, sizeof(cur_node_depth));
 	tree_depth = ja->tree_depth;
@@ -1745,7 +1837,7 @@ struct cds_ja_node *cds_ja_lookup_lower_equal(struct cds_ja *ja, uint64_t key)
 		if (!ja_node_ptr(node_flag))
 			break;
 		cur_node_depth[level] = node_flag;
-		dbg_printf("cds_ja_lookup iter key lookup %u finds node_flag %p\n",
+		dbg_printf("cds_ja_lookup_inequality iter key lookup %u finds node_flag %p\n",
 				(unsigned int) iter_key, node_flag);
 	}
 
@@ -1755,26 +1847,37 @@ struct cds_ja_node *cds_ja_lookup_lower_equal(struct cds_ja *ja, uint64_t key)
 	}
 
 	/*
-	 * Find highest value left of current node.
+	 * Find highest value left/right of current node.
 	 * Current node is cur_node_depth[level].
-	 * Start at current level. If we cannot find any key left of
-	 * ours, go one level up, seek highest value left of current
-	 * (recursively), and when we find one, get the rightmost child
-	 * of its rightmost child (recursively).
+	 * Start at current level. If we cannot find any key left/right
+	 * of ours, go one level up, seek highest value left/right of
+	 * current (recursively), and when we find one, get the
+	 * rightmost/leftmost child of its rightmost/leftmost child
+	 * (recursively).
 	 */
+	switch (mode) {
+	case JA_LOOKUP_BE:
+		dir = JA_LEFT;
+		break;
+	case JA_LOOKUP_AE:
+		dir = JA_RIGHT;
+		break;
+	default:
+		assert(0);
+	}
 	for (; level > 0; level--) {
 		uint8_t iter_key;
 
 		iter_key = (uint8_t) (key >> (JA_BITS_PER_BYTE * (tree_depth - level - 1)));
-		node_flag = ja_node_get_left(cur_node_depth[level - 1],
-				iter_key);
-		/* If found left sibling, find rightmost child. */
+		node_flag = ja_node_get_leftright(cur_node_depth[level - 1],
+				iter_key, dir);
+		/* If found left sibling, find rightmost/leftmost child. */
 		if (ja_node_ptr(node_flag))
 			break;
 	}
 
 	if (!level) {
-		/* Reached the root and could not find a left sibling. */
+		/* Reached the root and could not find a left/right sibling. */
 		return NULL;
 	}
 
@@ -1782,15 +1885,27 @@ struct cds_ja_node *cds_ja_lookup_lower_equal(struct cds_ja *ja, uint64_t key)
 
 	/*
 	 * From this point, we are guaranteed to be able to find a
-	 * "lower than" match. ja_attach_node() and ja_detach_node()
-	 * both guarantee that it is not possible for a lookup to reach
-	 * a dead-end.
+	 * "below than"/"above than" match. ja_attach_node() and
+	 * ja_detach_node() both guarantee that it is not possible for a
+	 * lookup to reach a dead-end.
 	 */
 
-	/* Find rightmost child of rightmost child (recursively). */
+	/*
+	 * Find rightmost/leftmost child of rightmost/leftmost child
+	 * (recursively).
+	 */
+	switch (mode) {
+	case JA_LOOKUP_BE:
+		dir = JA_RIGHTMOST;
+		break;
+	case JA_LOOKUP_AE:
+		dir = JA_LEFTMOST;
+		break;
+	default:
+		assert(0);
+	}
 	for (; level < tree_depth; level++) {
-		node_flag = ja_node_get_rightmost(node_flag);
-		/* If found left sibling, find rightmost child. */
+		node_flag = ja_node_get_minmax(node_flag, dir);
 		if (!ja_node_ptr(node_flag))
 			break;
 	}
@@ -1798,6 +1913,16 @@ struct cds_ja_node *cds_ja_lookup_lower_equal(struct cds_ja *ja, uint64_t key)
 	assert(level == tree_depth);
 
 	return (struct cds_ja_node *) node_flag;
+}
+
+struct cds_ja_node *cds_ja_lookup_below_equal(struct cds_ja *ja, uint64_t key)
+{
+	return cds_ja_lookup_inequality(ja, key, JA_LOOKUP_BE);
+}
+
+struct cds_ja_node *cds_ja_lookup_above_equal(struct cds_ja *ja, uint64_t key)
+{
+	return cds_ja_lookup_inequality(ja, key, JA_LOOKUP_AE);
 }
 
 /*

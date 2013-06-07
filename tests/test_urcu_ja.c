@@ -333,7 +333,7 @@ int test_8bit_key(void)
 
 		key = ka[i] + ka_test_offset;
 		rcu_read_lock();
-		ja_node = cds_ja_lookup_lower_equal(test_ja, key);
+		ja_node = cds_ja_lookup_below_equal(test_ja, key);
 		if (!ja_node) {
 			fprintf(stderr, "Error lookup lower equal. Cannot find expected key %" PRIu64" below or equal to %" PRIu64 ".\n",
 				ka[i], key);
@@ -354,7 +354,7 @@ int test_8bit_key(void)
 
 		key = ka[i];	/* without offset */
 		rcu_read_lock();
-		ja_node = cds_ja_lookup_lower_equal(test_ja, key);
+		ja_node = cds_ja_lookup_below_equal(test_ja, key);
 		if (!ja_node) {
 			fprintf(stderr, "Error lookup lower equal. Cannot find expected key %" PRIu64" below or equal to %" PRIu64 ".\n",
 				ka[i], key);
@@ -492,7 +492,7 @@ int test_16bit_key(void)
 
 		key = ka[i] + ka_test_offset;
 		rcu_read_lock();
-		ja_node = cds_ja_lookup_lower_equal(test_ja, key);
+		ja_node = cds_ja_lookup_below_equal(test_ja, key);
 		if (!ja_node) {
 			fprintf(stderr, "Error lookup lower equal. Cannot find expected key %" PRIu64" below or equal to %" PRIu64 ".\n",
 				ka[i], key);
@@ -513,7 +513,7 @@ int test_16bit_key(void)
 
 		key = ka[i];	/* without offset */
 		rcu_read_lock();
-		ja_node = cds_ja_lookup_lower_equal(test_ja, key);
+		ja_node = cds_ja_lookup_below_equal(test_ja, key);
 		if (!ja_node) {
 			fprintf(stderr, "Error lookup lower equal. Cannot find expected key %" PRIu64" below or equal to %" PRIu64 ".\n",
 				ka[i], key);

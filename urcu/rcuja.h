@@ -169,13 +169,61 @@ int cds_ja_destroy(struct cds_ja *ja,
 		void (*free_node_cb)(struct cds_ja_node *node));
 
 /*
+ * cds_ja_for_each_duplicate_rcu: Iterate through duplicates.
+ * @pos: struct cds_ja_node *, start of duplicate list and loop cursor.
+ *
  * Iterate through duplicates returned by cds_ja_lookup*()
  * This must be done while rcu_read_lock() is held.
  * Receives a struct cds_ja_node * as parameter, which is used as start
  * of duplicate list and loop cursor.
+ * _NOT_ safe against node removal within iteration.
  */
 #define cds_ja_for_each_duplicate_rcu(pos)				\
 	for (; (pos) != NULL; (pos) = rcu_dereference((pos)->next))
+
+/*
+ * cds_ja_for_each_duplicate_safe_rcu: Iterate through duplicates.
+ * @pos: struct cds_ja_node *, start of duplicate list and loop cursor.
+ * @p: struct cds_ja_node *, temporary pointer to next.
+ *
+ * Iterate through duplicates returned by cds_ja_lookup*()
+ * This must be done while rcu_read_lock() is held.
+ * Safe against node removal within iteration.
+ */
+#define cds_ja_for_each_duplicate_safe_rcu(pos, p)			\
+	for (; (pos) != NULL ?						\
+			((p) = rcu_dereference((pos)->next), 1) : 0;	\
+			(pos) = (p))
+
+/*
+ * cds_ja_for_each_key_rcu: Iterate over all keys in ascending order.
+ * @ja: Judy array on which iteration should be done.
+ * @key: Key cursor, needs to be a uint64_t.
+ * @pos: struct cds_ja_node *, used as loop cursor.
+ *
+ * Iterate over all keys of a RCU Judy array (_not_ duplicates) in
+ * ascending order.
+ * This must be done while rcu_read_lock() is held.
+ * Safe against node removal during iteration.
+ */
+#define cds_ja_for_each_key_rcu(ja, key, pos)				\
+	for ((key) = 0;							\
+		((pos) = cds_ja_lookup_above_equal(ja, key, &(key))); )
+
+/*
+ * cds_ja_for_each_key_prev_rcu: Iterate over all keys in descending order.
+ * @ja: Judy array on which iteration should be done.
+ * @key: Key cursor, needs to be a uint64_t.
+ * @pos: struct cds_ja_node *, used as loop cursor.
+ *
+ * Iterate over all keys of a RCU Judy array (_not_ duplicates) in
+ * descending order.
+ * This must be done while rcu_read_lock() is held.
+ * Safe against node removal during iteration.
+ */
+#define cds_ja_for_each_key_prev_rcu(ja, key, pos)			\
+	for ((key) = UINT64_MAX;					\
+		((pos) = cds_ja_lookup_below_equal(ja, key, &(key))); )
 
 #ifdef __cplusplus
 }

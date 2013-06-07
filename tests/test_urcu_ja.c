@@ -224,12 +224,39 @@ printf("        [not -u nor -s] Add entries (supports redundant keys).\n");
 }
 
 static
+int test_free_all_nodes(struct cds_ja *ja)
+{
+	uint64_t key;
+	struct cds_ja_node *ja_node;
+	int ret = 0;
+
+	rcu_read_lock();
+	cds_ja_for_each_key_rcu(test_ja, key, ja_node) {
+		struct cds_ja_node *tmp_node;
+
+		cds_ja_for_each_duplicate_safe_rcu(ja_node, tmp_node) {
+			ret = cds_ja_del(test_ja, key, ja_node);
+			if (ret) {
+				fprintf(stderr, "Error (%d) removing node %" PRIu64 "\n", ret, key);
+				goto end;
+			}
+			/* Alone using Judy array, OK to free now */
+			free_node(ja_node);
+		}
+	}
+end:
+	rcu_read_unlock();
+	return ret;
+}
+
+static
 int test_8bit_key(void)
 {
 	int ret, i;
 	uint64_t key;
 	uint64_t ka[] = { 5, 17, 100, 222 };
 	uint64_t ka_test_offset = 5;
+	struct cds_ja_node *ja_node;
 
 	/* Test with 8-bit key */
 	test_ja = cds_ja_new(8);
@@ -257,11 +284,9 @@ int test_8bit_key(void)
 
 	printf("Test #2: successful key lookup (8-bit).\n");
 	for (key = 0; key < 200; key++) {
-		struct cds_ja_node *node;
-
 		rcu_read_lock();
-		node = cds_ja_lookup(test_ja, key);
-		if (!node) {
+		ja_node = cds_ja_lookup(test_ja, key);
+		if (!ja_node) {
 			fprintf(stderr, "Error lookup node %" PRIu64 "\n", key);
 			assert(0);
 		}
@@ -270,11 +295,9 @@ int test_8bit_key(void)
 	printf("OK\n");
 	printf("Test #3: unsuccessful key lookup (8-bit).\n");
 	for (key = 200; key < 240; key++) {
-		struct cds_ja_node *node;
-
 		rcu_read_lock();
-		node = cds_ja_lookup(test_ja, key);
-		if (node) {
+		ja_node = cds_ja_lookup(test_ja, key);
+		if (ja_node) {
 			fprintf(stderr,
 				"Error unexpected lookup node %" PRIu64 "\n",
 				key);
@@ -285,7 +308,6 @@ int test_8bit_key(void)
 	printf("OK\n");
 	printf("Test #4: remove keys (8-bit).\n");
 	for (key = 0; key < 200; key++) {
-		struct cds_ja_node *ja_node;
 		struct ja_test_node *node;
 
 		rcu_read_lock();
@@ -328,7 +350,6 @@ int test_8bit_key(void)
 	}
 
 	for (i = 0; i < CAA_ARRAY_SIZE(ka); i++) {
-		struct cds_ja_node *ja_node;
 		struct ja_test_node *node;
 		uint64_t result_key;
 
@@ -350,7 +371,6 @@ int test_8bit_key(void)
 	}
 
 	for (i = 0; i < CAA_ARRAY_SIZE(ka); i++) {
-		struct cds_ja_node *ja_node;
 		struct ja_test_node *node;
 		uint64_t result_key;
 
@@ -372,7 +392,6 @@ int test_8bit_key(void)
 	}
 
 	for (i = 0; i < CAA_ARRAY_SIZE(ka); i++) {
-		struct cds_ja_node *ja_node;
 		struct ja_test_node *node;
 		uint64_t result_key;
 
@@ -408,6 +427,12 @@ int test_8bit_key(void)
 
 	printf("OK\n");
 
+	ret = test_free_all_nodes(test_ja);
+	if (ret) {
+		fprintf(stderr, "Error freeing all nodes\n");
+		return -1;
+	}
+
 	ret = cds_ja_destroy(test_ja, free_node);
 	if (ret) {
 		fprintf(stderr, "Error destroying judy array\n");
@@ -423,6 +448,7 @@ int test_16bit_key(void)
 	uint64_t key;
 	uint64_t ka[] = { 105, 206, 4000, 4111, 59990, 65435 };
 	uint64_t ka_test_offset = 100;
+	struct cds_ja_node *ja_node;
 
 	/* Test with 16-bit key */
 	test_ja = cds_ja_new(16);
@@ -452,11 +478,11 @@ int test_16bit_key(void)
 	printf("Test #2: successful key lookup (16-bit).\n");
 	for (key = 0; key < 10000; key++) {
 	//for (key = 0; key < 65536; key+=256) {
-		struct cds_ja_node *node;
+		struct cds_ja_node *ja_node;
 
 		rcu_read_lock();
-		node = cds_ja_lookup(test_ja, key);
-		if (!node) {
+		ja_node = cds_ja_lookup(test_ja, key);
+		if (!ja_node) {
 			fprintf(stderr, "Error lookup node %" PRIu64 "\n", key);
 			assert(0);
 		}
@@ -465,11 +491,11 @@ int test_16bit_key(void)
 	printf("OK\n");
 	printf("Test #3: unsuccessful key lookup (16-bit).\n");
 	for (key = 11000; key <= 11002; key++) {
-		struct cds_ja_node *node;
+		struct cds_ja_node *ja_node;
 
 		rcu_read_lock();
-		node = cds_ja_lookup(test_ja, key);
-		if (node) {
+		ja_node = cds_ja_lookup(test_ja, key);
+		if (ja_node) {
 			fprintf(stderr,
 				"Error unexpected lookup node %" PRIu64 "\n",
 				key);
@@ -481,7 +507,6 @@ int test_16bit_key(void)
 	printf("Test #4: remove keys (16-bit).\n");
 	for (key = 0; key < 10000; key++) {
 	//for (key = 0; key < 65536; key+=256) {
-		struct cds_ja_node *ja_node;
 		struct ja_test_node *node;
 
 		rcu_read_lock();
@@ -524,7 +549,6 @@ int test_16bit_key(void)
 	}
 
 	for (i = 0; i < CAA_ARRAY_SIZE(ka); i++) {
-		struct cds_ja_node *ja_node;
 		struct ja_test_node *node;
 		uint64_t result_key;
 
@@ -546,7 +570,6 @@ int test_16bit_key(void)
 	}
 
 	for (i = 0; i < CAA_ARRAY_SIZE(ka); i++) {
-		struct cds_ja_node *ja_node;
 		struct ja_test_node *node;
 		uint64_t result_key;
 
@@ -568,7 +591,6 @@ int test_16bit_key(void)
 	}
 
 	for (i = 0; i < CAA_ARRAY_SIZE(ka); i++) {
-		struct cds_ja_node *ja_node;
 		struct ja_test_node *node;
 		uint64_t result_key;
 
@@ -604,6 +626,12 @@ int test_16bit_key(void)
 
 	printf("OK\n");
 
+	ret = test_free_all_nodes(test_ja);
+	if (ret) {
+		fprintf(stderr, "Error freeing all nodes\n");
+		return -1;
+	}
+
 	ret = cds_ja_destroy(test_ja, free_node);
 	if (ret) {
 		fprintf(stderr, "Error destroying judy array\n");
@@ -620,6 +648,7 @@ int test_sparse_key(unsigned int bits, int nr_dup)
 {
 	uint64_t key, max_key;
 	int zerocount, i, ret;
+	struct cds_ja_node *ja_node;
 
 	if (bits == 64)
 		max_key = UINT64_MAX;
@@ -659,7 +688,6 @@ int test_sparse_key(unsigned int bits, int nr_dup)
 	printf("Test #2: successful key lookup (%u-bit).\n", bits);
 	zerocount = 0;
 	for (key = 0; key <= max_key && (key != 0 || zerocount < 1); key += 1ULL << (bits - 8)) {
-		struct cds_ja_node *ja_node;
 		struct ja_test_node *node;
 		int count = 0;
 
@@ -684,8 +712,6 @@ int test_sparse_key(unsigned int bits, int nr_dup)
 		printf("Test #3: unsuccessful key lookup (%u-bit).\n", bits);
 		zerocount = 0;
 		for (key = 0; key <= max_key && (key != 0 || zerocount < 1); key += 1ULL << (bits - 8)) {
-			struct cds_ja_node *ja_node;
-
 			rcu_read_lock();
 			ja_node = cds_ja_lookup(test_ja, key + 42);
 			if (ja_node) {
@@ -703,7 +729,6 @@ int test_sparse_key(unsigned int bits, int nr_dup)
 	printf("Test #4: remove keys (%u-bit).\n", bits);
 	zerocount = 0;
 	for (key = 0; key <= max_key && (key != 0 || zerocount < 1); key += 1ULL << (bits - 8)) {
-		struct cds_ja_node *ja_node;
 		int count = 0;
 
 		rcu_read_lock();
@@ -738,6 +763,12 @@ int test_sparse_key(unsigned int bits, int nr_dup)
 			zerocount++;
 	}
 	printf("OK\n");
+
+	ret = test_free_all_nodes(test_ja);
+	if (ret) {
+		fprintf(stderr, "Error freeing all nodes\n");
+		return -1;
+	}
 
 	ret = cds_ja_destroy(test_ja, free_node);
 	if (ret) {
@@ -1084,6 +1115,12 @@ int do_mt_test(void)
 		tot_remove += count_writer[i].remove;
 	}
 	rcu_thread_online_qsbr();
+
+	ret = test_free_all_nodes(test_ja);
+	if (ret) {
+		fprintf(stderr, "Error freeing all nodes\n");
+		return -1;
+	}
 
 	ret = cds_ja_destroy(test_ja, free_node);
 	if (ret) {

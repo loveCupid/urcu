@@ -24,13 +24,13 @@
 #include <stdint.h>
 #include <errno.h>
 #include <limits.h>
+#include <assert.h>
+#include <stdlib.h>
+#include <time.h>
 #include <urcu/rcuja.h>
 #include <urcu/compiler.h>
 #include <urcu/arch.h>
-#include <assert.h>
 #include <urcu-pointer.h>
-#include <stdlib.h>
-#include <time.h>
 
 #include "rcuja-internal.h"
 

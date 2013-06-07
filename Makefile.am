@@ -17,7 +17,7 @@ nobase_dist_include_HEADERS = urcu/compiler.h urcu/hlist.h urcu/list.h \
 		urcu/wfqueue.h urcu/rculfstack.h urcu/rculfqueue.h \
 		urcu/ref.h urcu/cds.h urcu/urcu_ref.h urcu/urcu-futex.h \
 		urcu/uatomic_arch.h urcu/rculfhash.h urcu/wfcqueue.h \
-		urcu/rcuja.h urcu/lfstack.h \
+		urcu/rcuja.h urcu/rcuja-range.h urcu/lfstack.h \
 		$(top_srcdir)/urcu/map/*.h \
 		$(top_srcdir)/urcu/static/*.h \
 		urcu/tls-compat.h
@@ -45,7 +45,7 @@ endif
 RCULFHASH = rculfhash.c rculfhash-mm-order.c rculfhash-mm-chunk.c \
 		rculfhash-mm-mmap.c
 
-RCUJA = rcuja/rcuja.c rcuja/rcuja-shadow-nodes.c
+RCUJA = rcuja/rcuja.c rcuja/rcuja-shadow-nodes.c rcuja/rcuja-range.c
 
 lib_LTLIBRARIES = liburcu-common.la \
 		liburcu.la liburcu-qsbr.la \

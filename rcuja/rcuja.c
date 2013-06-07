@@ -2646,91 +2646,6 @@ ja_error:
 	return NULL;
 }
 
-/*
- * Called from RCU read-side CS.
- */
-__attribute__((visibility("protected")))
-void rcuja_free_all_children(struct cds_ja_shadow_node *shadow_node,
-		struct cds_ja_inode_flag *node_flag,
-		void (*rcu_free_node)(struct cds_ja_node *node))
-{
-	unsigned int type_index;
-	struct cds_ja_inode *node;
-	const struct cds_ja_type *type;
-
-	node = ja_node_ptr(node_flag);
-	assert(node != NULL);
-	type_index = ja_node_type(node_flag);
-	type = &ja_types[type_index];
-
-	switch (type->type_class) {
-	case RCU_JA_LINEAR:
-	{
-		uint8_t nr_child =
-			ja_linear_node_get_nr_child(type, node);
-		unsigned int i;
-
-		for (i = 0; i < nr_child; i++) {
-			struct cds_ja_inode_flag *iter;
-			struct cds_ja_node *node_iter, *n;
-			uint8_t v;
-
-			ja_linear_node_get_ith_pos(type, node, i, &v, &iter);
-			node_iter = (struct cds_ja_node *) iter;
-			cds_ja_for_each_duplicate_safe(node_iter, n) {
-				rcu_free_node(node_iter);
-			}
-		}
-		break;
-	}
-	case RCU_JA_POOL:
-	{
-		unsigned int pool_nr;
-
-		for (pool_nr = 0; pool_nr < (1U << type->nr_pool_order); pool_nr++) {
-			struct cds_ja_inode *pool =
-				ja_pool_node_get_ith_pool(type, node, pool_nr);
-			uint8_t nr_child =
-				ja_linear_node_get_nr_child(type, pool);
-			unsigned int j;
-
-			for (j = 0; j < nr_child; j++) {
-				struct cds_ja_inode_flag *iter;
-				struct cds_ja_node *node_iter, *n;
-				uint8_t v;
-
-				ja_linear_node_get_ith_pos(type, pool, j, &v, &iter);
-				node_iter = (struct cds_ja_node *) iter;
-				cds_ja_for_each_duplicate_safe(node_iter, n) {
-					rcu_free_node(node_iter);
-				}
-			}
-		}
-		break;
-	}
-	case RCU_JA_NULL:
-		break;
-	case RCU_JA_PIGEON:
-	{
-		unsigned int i;
-
-		for (i = 0; i < JA_ENTRY_PER_NODE; i++) {
-			struct cds_ja_inode_flag *iter;
-			struct cds_ja_node *node_iter, *n;
-
-			iter = ja_pigeon_node_get_ith_pos(type, node, i);
-			node_iter = (struct cds_ja_node *) iter;
-			cds_ja_for_each_duplicate_safe(node_iter, n) {
-				rcu_free_node(node_iter);
-			}
-		}
-		break;
-	}
-	default:
-		assert(0);
-	}
-}
-
 static
 void print_debug_fallback_distribution(struct cds_ja *ja)
 {
@@ -2780,16 +2695,14 @@ int ja_final_checks(struct cds_ja *ja)
  * on the Judy array while it is being destroyed (ensured by the
  * caller).
  */
-int cds_ja_destroy(struct cds_ja *ja,
-		void (*free_node_cb)(struct cds_ja_node *node))
+int cds_ja_destroy(struct cds_ja *ja)
 {
 	const struct rcu_flavor_struct *flavor;
 	int ret;
 
 	flavor = cds_lfht_rcu_flavor(ja->ht);
 	rcuja_shadow_prune(ja->ht,
-		RCUJA_SHADOW_CLEAR_FREE_NODE | RCUJA_SHADOW_CLEAR_FREE_LOCK,
-		free_node_cb);
+		RCUJA_SHADOW_CLEAR_FREE_NODE | RCUJA_SHADOW_CLEAR_FREE_LOCK);
 	flavor->thread_offline();
 	ret = rcuja_delete_ht(ja->ht);
 	if (ret)

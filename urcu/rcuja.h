@@ -155,18 +155,14 @@ struct cds_ja *cds_ja_new(unsigned int key_bits)
 /*
  * cds_ja_destroy - Destroy a Judy array.
  * @ja: the Judy array.
- * @rcu_free_node_cb: callback performing memory free of leftover nodes.
  *
  * Returns 0 on success, negative error value on error.
  * There should be no more concurrent add, delete, nor look-up performed
  * on the Judy array while it is being destroyed (ensured by the caller).
- * There is no need for the @rcu_free_node_cb callback to wait for grace
- * periods, since there are no more concurrent users of the Judy array.
  * RCU read-side lock should _not_ be held when calling this function,
  * however, QSBR threads need to be online.
  */
-int cds_ja_destroy(struct cds_ja *ja,
-		void (*free_node_cb)(struct cds_ja_node *node));
+int cds_ja_destroy(struct cds_ja *ja);
 
 /*
  * cds_ja_for_each_duplicate_rcu: Iterate through duplicates.
@@ -178,17 +174,17 @@ int cds_ja_destroy(struct cds_ja *ja,
  * of duplicate list and loop cursor.
  * _NOT_ safe against node removal within iteration.
  */
-#define cds_ja_for_each_duplicate_rcu(pos)				\
+#define cds_ja_for_each_duplicate_rcu(pos)					\
 	for (; (pos) != NULL; (pos) = rcu_dereference((pos)->next))
 
 /*
- * cds_ja_for_each_duplicate_safe_rcu: Iterate through duplicates.
+ * cds_ja_for_each_duplicate_safe: Iterate through duplicates.
  * @pos: struct cds_ja_node *, start of duplicate list and loop cursor.
  * @p: struct cds_ja_node *, temporary pointer to next.
  *
- * Iterate through duplicates returned by cds_ja_lookup*()
- * This must be done while rcu_read_lock() is held.
+ * Iterate through duplicates returned by cds_ja_lookup*().
  * Safe against node removal within iteration.
+ * This must be done while rcu_read_lock() is held.
  */
 #define cds_ja_for_each_duplicate_safe_rcu(pos, p)			\
 	for (; (pos) != NULL ?						\

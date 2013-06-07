@@ -433,7 +433,7 @@ int test_8bit_key(void)
 		return -1;
 	}
 
-	ret = cds_ja_destroy(test_ja, free_node);
+	ret = cds_ja_destroy(test_ja);
 	if (ret) {
 		fprintf(stderr, "Error destroying judy array\n");
 		return -1;
@@ -632,7 +632,7 @@ int test_16bit_key(void)
 		return -1;
 	}
 
-	ret = cds_ja_destroy(test_ja, free_node);
+	ret = cds_ja_destroy(test_ja);
 	if (ret) {
 		fprintf(stderr, "Error destroying judy array\n");
 		return -1;
@@ -770,7 +770,7 @@ int test_sparse_key(unsigned int bits, int nr_dup)
 		return -1;
 	}
 
-	ret = cds_ja_destroy(test_ja, free_node);
+	ret = cds_ja_destroy(test_ja);
 	if (ret) {
 		fprintf(stderr, "Error destroying judy array\n");
 		return -1;
@@ -1122,7 +1122,7 @@ int do_mt_test(void)
 		return -1;
 	}
 
-	ret = cds_ja_destroy(test_ja, free_node);
+	ret = cds_ja_destroy(test_ja);
 	if (ret) {
 		fprintf(stderr, "Error destroying judy array\n");
 		goto end;

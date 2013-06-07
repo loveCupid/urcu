@@ -377,8 +377,7 @@ rcu_unlock:
  */
 __attribute__((visibility("protected")))
 void rcuja_shadow_prune(struct cds_lfht *ht,
-		unsigned int flags,
-		void (*free_node_cb)(struct cds_ja_node *node))
+		unsigned int flags)
 {
 	const struct rcu_flavor_struct *flavor;
 	struct cds_ja_shadow_node *shadow_node;
@@ -400,11 +399,6 @@ void rcuja_shadow_prune(struct cds_lfht *ht,
 			goto unlock;
 		if ((flags & RCUJA_SHADOW_CLEAR_FREE_NODE)
 				&& shadow_node->level) {
-			if (shadow_node->level == shadow_node->ja->tree_depth - 1) {
-				rcuja_free_all_children(shadow_node,
-						shadow_node->node_flag,
-						free_node_cb);
-			}
 			if (flags & RCUJA_SHADOW_CLEAR_FREE_LOCK) {
 				flavor->update_call_rcu(&shadow_node->head,
 					free_shadow_node_and_node_and_lock);

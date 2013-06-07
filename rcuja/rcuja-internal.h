@@ -173,8 +173,7 @@ unsigned long ja_node_type(struct cds_ja_inode_flag *node);
 
 __attribute__((visibility("protected")))
 void rcuja_free_all_children(struct cds_ja_shadow_node *shadow_node,
-		struct cds_ja_inode_flag *node_flag,
-		void (*free_node_cb)(struct cds_ja_node *node));
+		struct cds_ja_inode_flag *node_flag);
 
 __attribute__((visibility("protected")))
 struct cds_ja_shadow_node *rcuja_shadow_lookup_lock(struct cds_lfht *ht,
@@ -203,8 +202,7 @@ int rcuja_shadow_clear(struct cds_lfht *ht,
 
 __attribute__((visibility("protected")))
 void rcuja_shadow_prune(struct cds_lfht *ht,
-		unsigned int flags,
-		void (*free_node_cb)(struct cds_ja_node *node));
+		unsigned int flags);
 
 __attribute__((visibility("protected")))
 struct cds_lfht *rcuja_create_ht(const struct rcu_flavor_struct *flavor);
@@ -220,16 +218,8 @@ void free_cds_ja_node(struct cds_ja *ja, struct cds_ja_inode *node);
  * Receives a struct cds_ja_node * as parameter, which is used as start
  * of duplicate list and loop cursor.
  */
-#define cds_ja_for_each_duplicate(pos)					\
-	for (; (pos) != NULL; (pos) = (pos)->next)
-
-/*
- * Iterate through duplicates returned by cds_ja_lookup*()
- * Safe against removal of entries during traversal.
- */
-#define cds_ja_for_each_duplicate_safe(_pos, _next)			\
-	for (; (_pos) != NULL ? ((_next) = (_pos)->next, 1) : 0;	\
-		(_pos) = (_next))
+#define cds_ja_for_each_duplicate(pos)				\
+       for (; (pos) != NULL; (pos) = (pos)->next)
 
 //#define DEBUG
 

@@ -330,19 +330,20 @@ int test_8bit_key(void)
 	for (i = 0; i < CAA_ARRAY_SIZE(ka); i++) {
 		struct cds_ja_node *ja_node;
 		struct ja_test_node *node;
+		uint64_t result_key;
 
 		key = ka[i] + ka_test_offset;
 		rcu_read_lock();
-		ja_node = cds_ja_lookup_below_equal(test_ja, key);
+		ja_node = cds_ja_lookup_below_equal(test_ja, key, &result_key);
 		if (!ja_node) {
 			fprintf(stderr, "Error lookup below equal. Cannot find expected key %" PRIu64" below or equal to %" PRIu64 ".\n",
 				ka[i], key);
 			assert(0);
 		}
 		node = caa_container_of(ja_node, struct ja_test_node, node);
-		if (node->key != ka[i]) {
-			fprintf(stderr, "Error lookup below equal. Expecting key %" PRIu64 " below or equal to %" PRIu64 ", but found %" PRIu64 " instead.\n",
-				ka[i], key, node->key);
+		if (node->key != ka[i] || result_key != ka[i]) {
+			fprintf(stderr, "Error lookup below equal. Expecting key %" PRIu64 " below or equal to %" PRIu64 ", but found %" PRIu64 "/%" PRIu64" instead.\n",
+				ka[i], key, node->key, result_key);
 			assert(0);
 		}
 		rcu_read_unlock();
@@ -351,19 +352,20 @@ int test_8bit_key(void)
 	for (i = 0; i < CAA_ARRAY_SIZE(ka); i++) {
 		struct cds_ja_node *ja_node;
 		struct ja_test_node *node;
+		uint64_t result_key;
 
 		key = ka[i] - ka_test_offset;
 		rcu_read_lock();
-		ja_node = cds_ja_lookup_above_equal(test_ja, key);
+		ja_node = cds_ja_lookup_above_equal(test_ja, key, &result_key);
 		if (!ja_node) {
 			fprintf(stderr, "Error lookup above equal. Cannot find expected key %" PRIu64" below or equal to %" PRIu64 ".\n",
 				ka[i], key);
 			assert(0);
 		}
 		node = caa_container_of(ja_node, struct ja_test_node, node);
-		if (node->key != ka[i]) {
-			fprintf(stderr, "Error lookup above equal. Expecting key %" PRIu64 " below or equal to %" PRIu64 ", but found %" PRIu64 " instead.\n",
-				ka[i], key, node->key);
+		if (node->key != ka[i] || result_key != ka[i]) {
+			fprintf(stderr, "Error lookup above equal. Expecting key %" PRIu64 " below or equal to %" PRIu64 ", but found %" PRIu64 "/%" PRIu64" instead.\n",
+				ka[i], key, node->key, result_key);
 			assert(0);
 		}
 		rcu_read_unlock();
@@ -372,32 +374,33 @@ int test_8bit_key(void)
 	for (i = 0; i < CAA_ARRAY_SIZE(ka); i++) {
 		struct cds_ja_node *ja_node;
 		struct ja_test_node *node;
+		uint64_t result_key;
 
 		key = ka[i];	/* without offset */
 		rcu_read_lock();
-		ja_node = cds_ja_lookup_below_equal(test_ja, key);
+		ja_node = cds_ja_lookup_below_equal(test_ja, key, &result_key);
 		if (!ja_node) {
 			fprintf(stderr, "Error lookup below equal. Cannot find expected key %" PRIu64" below or equal to %" PRIu64 ".\n",
 				ka[i], key);
 			assert(0);
 		}
 		node = caa_container_of(ja_node, struct ja_test_node, node);
-		if (node->key != ka[i]) {
-			fprintf(stderr, "Error lookup below equal. Expecting key %" PRIu64 " below or equal to %" PRIu64 ", but found %" PRIu64 " instead.\n",
-				ka[i], key, node->key);
+		if (node->key != ka[i] || result_key != ka[i]) {
+			fprintf(stderr, "Error lookup below equal. Expecting key %" PRIu64 " below or equal to %" PRIu64 ", but found %" PRIu64 "/%" PRIu64" instead.\n",
+				ka[i], key, node->key, result_key);
 			assert(0);
 		}
 
-		ja_node = cds_ja_lookup_above_equal(test_ja, key);
+		ja_node = cds_ja_lookup_above_equal(test_ja, key, &result_key);
 		if (!ja_node) {
 			fprintf(stderr, "Error lookup above equal. Cannot find expected key %" PRIu64" below or equal to %" PRIu64 ".\n",
 				ka[i], key);
 			assert(0);
 		}
 		node = caa_container_of(ja_node, struct ja_test_node, node);
-		if (node->key != ka[i]) {
-			fprintf(stderr, "Error lookup above equal. Expecting key %" PRIu64 " below or equal to %" PRIu64 ", but found %" PRIu64 " instead.\n",
-				ka[i], key, node->key);
+		if (node->key != ka[i] || result_key != ka[i]) {
+			fprintf(stderr, "Error lookup above equal. Expecting key %" PRIu64 " below or equal to %" PRIu64 ", but found %" PRIu64 "/%" PRIu64" instead.\n",
+				ka[i], key, node->key, result_key);
 			assert(0);
 		}
 		rcu_read_unlock();
@@ -503,7 +506,7 @@ int test_16bit_key(void)
 	}
 	printf("OK\n");
 
-	printf("Test #5: lookup below equal (16-bit).\n");
+	printf("Test #5: lookup below/above equal (16-bit).\n");
 
 	for (i = 0; i < CAA_ARRAY_SIZE(ka); i++) {
 		struct ja_test_node *node = node_alloc();
@@ -523,19 +526,20 @@ int test_16bit_key(void)
 	for (i = 0; i < CAA_ARRAY_SIZE(ka); i++) {
 		struct cds_ja_node *ja_node;
 		struct ja_test_node *node;
+		uint64_t result_key;
 
 		key = ka[i] + ka_test_offset;
 		rcu_read_lock();
-		ja_node = cds_ja_lookup_below_equal(test_ja, key);
+		ja_node = cds_ja_lookup_below_equal(test_ja, key, &result_key);
 		if (!ja_node) {
 			fprintf(stderr, "Error lookup below equal. Cannot find expected key %" PRIu64" below or equal to %" PRIu64 ".\n",
 				ka[i], key);
 			assert(0);
 		}
 		node = caa_container_of(ja_node, struct ja_test_node, node);
-		if (node->key != ka[i]) {
-			fprintf(stderr, "Error lookup below equal. Expecting key %" PRIu64 " below or equal to %" PRIu64 ", but found %" PRIu64 " instead.\n",
-				ka[i], key, node->key);
+		if (node->key != ka[i] || result_key != ka[i]) {
+			fprintf(stderr, "Error lookup below equal. Expecting key %" PRIu64 " below or equal to %" PRIu64 ", but found %" PRIu64 "/%" PRIu64" instead.\n",
+				ka[i], key, node->key, result_key);
 			assert(0);
 		}
 		rcu_read_unlock();
@@ -544,19 +548,20 @@ int test_16bit_key(void)
 	for (i = 0; i < CAA_ARRAY_SIZE(ka); i++) {
 		struct cds_ja_node *ja_node;
 		struct ja_test_node *node;
+		uint64_t result_key;
 
 		key = ka[i] - ka_test_offset;
 		rcu_read_lock();
-		ja_node = cds_ja_lookup_above_equal(test_ja, key);
+		ja_node = cds_ja_lookup_above_equal(test_ja, key, &result_key);
 		if (!ja_node) {
 			fprintf(stderr, "Error lookup above equal. Cannot find expected key %" PRIu64" above or equal to %" PRIu64 ".\n",
 				ka[i], key);
 			assert(0);
 		}
 		node = caa_container_of(ja_node, struct ja_test_node, node);
-		if (node->key != ka[i]) {
-			fprintf(stderr, "Error lookup above equal. Expecting key %" PRIu64 " above or equal to %" PRIu64 ", but found %" PRIu64 " instead.\n",
-				ka[i], key, node->key);
+		if (node->key != ka[i] || result_key != ka[i]) {
+			fprintf(stderr, "Error lookup above equal. Expecting key %" PRIu64 " above or equal to %" PRIu64 ", but found %" PRIu64 "/%" PRIu64" instead.\n",
+				ka[i], key, node->key, result_key);
 			assert(0);
 		}
 		rcu_read_unlock();
@@ -565,32 +570,33 @@ int test_16bit_key(void)
 	for (i = 0; i < CAA_ARRAY_SIZE(ka); i++) {
 		struct cds_ja_node *ja_node;
 		struct ja_test_node *node;
+		uint64_t result_key;
 
 		key = ka[i];	/* without offset */
 		rcu_read_lock();
-		ja_node = cds_ja_lookup_below_equal(test_ja, key);
+		ja_node = cds_ja_lookup_below_equal(test_ja, key, &result_key);
 		if (!ja_node) {
 			fprintf(stderr, "Error lookup below equal. Cannot find expected key %" PRIu64" below or equal to %" PRIu64 ".\n",
 				ka[i], key);
 			assert(0);
 		}
 		node = caa_container_of(ja_node, struct ja_test_node, node);
-		if (node->key != ka[i]) {
-			fprintf(stderr, "Error lookup below equal. Expecting key %" PRIu64 " below or equal to %" PRIu64 ", but found %" PRIu64 " instead.\n",
-				ka[i], key, node->key);
+		if (node->key != ka[i] || result_key != ka[i]) {
+			fprintf(stderr, "Error lookup below equal. Expecting key %" PRIu64 " below or equal to %" PRIu64 ", but found %" PRIu64 "/%" PRIu64" instead.\n",
+				ka[i], key, node->key, result_key);
 			assert(0);
 		}
 
-		ja_node = cds_ja_lookup_above_equal(test_ja, key);
+		ja_node = cds_ja_lookup_above_equal(test_ja, key, &result_key);
 		if (!ja_node) {
 			fprintf(stderr, "Error lookup above equal. Cannot find expected key %" PRIu64" above or equal to %" PRIu64 ".\n",
 				ka[i], key);
 			assert(0);
 		}
 		node = caa_container_of(ja_node, struct ja_test_node, node);
-		if (node->key != ka[i]) {
-			fprintf(stderr, "Error lookup above equal. Expecting key %" PRIu64 " above or equal to %" PRIu64 ", but found %" PRIu64 " instead.\n",
-				ka[i], key, node->key);
+		if (node->key != ka[i] || result_key != ka[i]) {
+			fprintf(stderr, "Error lookup above equal. Expecting key %" PRIu64 " above or equal to %" PRIu64 ", but found %" PRIu64 "/%" PRIu64" instead.\n",
+				ka[i], key, node->key, result_key);
 			assert(0);
 		}
 		rcu_read_unlock();

@@ -74,6 +74,7 @@ struct cds_ja_node *cds_ja_lookup(struct cds_ja *ja, uint64_t key);
  * cds_ja_lookup_below_equal - look up first node with key <= @key.
  * @ja: the Judy array.
  * @key: key to look up.
+ * @result_key: key found.
  *
  * Returns the first node of a duplicate chain if a node is present in
  * the tree which has a key below or equal to @key, else returns NULL.
@@ -81,12 +82,13 @@ struct cds_ja_node *cds_ja_lookup(struct cds_ja *ja, uint64_t key);
  * use of its return value.
  */
 struct cds_ja_node *cds_ja_lookup_below_equal(struct cds_ja *ja,
-		uint64_t key);
+		uint64_t key, uint64_t *result_key);
 
 /*
  * cds_ja_lookup_above_equal - look up first node with key >= @key.
  * @ja: the Judy array.
  * @key: key to look up.
+ * @result_key: key found.
  *
  * Returns the first node of a duplicate chain if a node is present in
  * the tree which has a key above or equal to @key, else returns NULL.
@@ -94,7 +96,7 @@ struct cds_ja_node *cds_ja_lookup_below_equal(struct cds_ja *ja,
  * use of its return value.
  */
 struct cds_ja_node *cds_ja_lookup_above_equal(struct cds_ja *ja,
-		uint64_t key);
+		uint64_t key, uint64_t *result_key);
 
 /*
  * cds_ja_add - Add @node at @key, allowing duplicates.

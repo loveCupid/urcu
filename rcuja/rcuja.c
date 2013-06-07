@@ -26,13 +26,12 @@
 #include <errno.h>
 #include <limits.h>
 #include <string.h>
+#include <assert.h>
 #include <urcu/rcuja.h>
 #include <urcu/compiler.h>
 #include <urcu/arch.h>
-#include <assert.h>
 #include <urcu-pointer.h>
 #include <urcu/uatomic.h>
-#include <stdint.h>
 
 #include "rcuja-internal.h"
 

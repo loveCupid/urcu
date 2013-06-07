@@ -147,7 +147,8 @@ struct cds_ja *cds_ja_new(unsigned int key_bits)
  * on the Judy array while it is being destroyed (ensured by the caller).
  * There is no need for the @rcu_free_node_cb callback to wait for grace
  * periods, since there are no more concurrent users of the Judy array.
- * RCU read-side lock should _not_ be held when calling this function.
+ * RCU read-side lock should _not_ be held when calling this function,
+ * however, QSBR threads need to be online.
  */
 int cds_ja_destroy(struct cds_ja *ja,
 		void (*free_node_cb)(struct cds_ja_node *node));

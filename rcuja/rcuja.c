@@ -582,7 +582,7 @@ struct cds_ja_inode_flag *ja_pigeon_node_get_direction(const struct cds_ja_type 
 			if (child_node_flag) {
 				dbg_printf("ja_pigeon_node_get_left child_node_flag %p\n",
 					child_node_flag);
-				*result_key = i;
+				*result_key = (uint8_t) i;
 				return child_node_flag;
 			}
 		}
@@ -594,7 +594,7 @@ struct cds_ja_inode_flag *ja_pigeon_node_get_direction(const struct cds_ja_type 
 			if (child_node_flag) {
 				dbg_printf("ja_pigeon_node_get_right child_node_flag %p\n",
 					child_node_flag);
-				*result_key = i;
+				*result_key = (uint8_t) i;
 				return child_node_flag;
 			}
 		}

@@ -4,7 +4,7 @@
  * Userspace RCU library - RCU Judy Array
  *
  * Copyright (C) 2000 - 2002 Hewlett-Packard Company
- * Copyright 2012 - Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+ * Copyright 2012-2013 - Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public

@@ -2146,25 +2146,41 @@ int ja_chain_node(struct cds_ja *ja,
 		struct cds_ja_inode_flag *parent_node_flag,
 		struct cds_ja_inode_flag **node_flag_ptr,
 		struct cds_ja_inode_flag *node_flag,
+		struct cds_ja_node *last_node,
 		struct cds_ja_node *node)
 {
 	struct cds_ja_shadow_node *shadow_node;
-	int ret = 0;
+	struct cds_ja_node *iter_node;
+	int ret = 0, found = 0;
 
 	shadow_node = rcuja_shadow_lookup_lock(ja->ht, parent_node_flag);
 	if (!shadow_node) {
 		return -EAGAIN;
 	}
-	if (ja_node_ptr(*node_flag_ptr) != ja_node_ptr(node_flag)) {
+	/*
+	 * Ensure that previous node is still there at end of list.
+	 */
+	iter_node = (struct cds_ja_node *) ja_node_ptr(node_flag);
+	if ((struct cds_ja_node *) ja_node_ptr(*node_flag_ptr) != iter_node) {
+		ret = -EAGAIN;
+		goto end;
+	}
+	cds_ja_for_each_duplicate(iter_node) {
+		if (iter_node == last_node)
+			found = 1;
+	}
+	if (!found) {
 		ret = -EAGAIN;
 		goto end;
 	}
 	/*
-	 * Add node to head of list. Safe against concurrent RCU read
-	 * traversals.
+	 * Add node to tail of list to ensure that RCU traversals will
+	 * always see either the prior node or the newly added if
+	 * executed concurrently with a sequence of add followed by del
+	 * on the same key. Safe against concurrent RCU read traversals.
 	 */
-	node->next = (struct cds_ja_node *) node_flag;
-	rcu_assign_pointer(*node_flag_ptr, (struct cds_ja_inode_flag *) node);
+	node->next = NULL;
+	rcu_assign_pointer(last_node->next, node);
 end:
 	rcuja_shadow_unlock(shadow_node);
 	return ret;
@@ -2238,10 +2254,17 @@ retry:
 				node_flag,
 				key, i, node);
 	} else {
+		struct cds_ja_node *iter_node, *last_node = NULL;
+
 		if (unique_node_ret) {
 			*unique_node_ret = (struct cds_ja_node *) ja_node_ptr(node_flag);
 			return -EEXIST;
 		}
+
+		/* Find last duplicate */
+		iter_node = (struct cds_ja_node *) ja_node_ptr(node_flag);
+		cds_ja_for_each_duplicate_rcu(iter_node)
+			last_node = iter_node;
 
 		dbg_printf("cds_ja_add duplicate parent2_node_flag %p parent_node_flag %p node_flag_ptr %p node_flag %p\n",
 				parent2_node_flag, parent_node_flag, node_flag_ptr, node_flag);
@@ -2254,6 +2277,7 @@ retry:
 			parent_attach_node_flag,
 			attach_node_flag_ptr,
 			attach_node_flag,
+			last_node,
 			node);
 	}
 	if (ret == -EAGAIN || ret == -EEXIST)

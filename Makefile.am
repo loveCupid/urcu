@@ -7,7 +7,7 @@ INCLUDES = -I$(top_builddir)/urcu
 AM_LDFLAGS=-lpthread -version-info $(URCU_LIBRARY_VERSION)
 AM_CFLAGS=-Wall
 
-SUBDIRS = . doc tests
+SUBDIRS = . doc tests rcuja
 
 include_HEADERS = urcu.h urcu-bp.h urcu-call-rcu.h urcu-defer.h \
 		urcu-pointer.h urcu-qsbr.h urcu-flavor.h

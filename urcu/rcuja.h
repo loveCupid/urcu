@@ -30,7 +30,6 @@
 #include <urcu-call-rcu.h>
 #include <urcu-flavor.h>
 #include <stdint.h>
-#include <urcu/rcuhlist.h>
 
 #ifdef __cplusplus
 extern "C" {

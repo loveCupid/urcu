@@ -49,6 +49,8 @@ static int global_max_minsubclass_len = 0;
 
 static unsigned int subclass_len_distrib[256];
 
+static int verbose;
+
 static
 uint8_t random_char(void)
 {
@@ -297,6 +299,13 @@ int main(int argc, char **argv)
 			return -1;
 		}
 	}
+
+	if (argc > 3) {
+		if (!strcmp(argv[3], "-v")) {
+			verbose = 1;
+		}
+	}
+
 	printf("pool distributions: %d\n", nr_distrib);
 
 	if (nr_distrib != 2 && nr_distrib != 4) {
@@ -308,8 +317,10 @@ int main(int argc, char **argv)
 	while (1) {
 		gen_pool();
 		count_pool();
-		//print_pool();
-		//print_count();
+		if (verbose) {
+			print_pool();
+			print_count();
+		}
 		stat_count();
 		if (!(i % 100000ULL))
 			print_stat(i);

@@ -105,7 +105,7 @@ struct cds_ja_range *cds_ja_range_lookup(struct cds_ja *ja, uint64_t key)
 		return NULL;
 	/*
 	 * We found an allocated range. We can return it for use with
-	 * RCU read-side prototection for existence. However, we have no
+	 * RCU read-side protection for existence. However, we have no
 	 * mutual exclusion against removal at this point.
 	 */
 	return range;

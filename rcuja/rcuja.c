@@ -1820,11 +1820,11 @@ struct cds_ja_node *cds_ja_lookup_inequality(struct cds_ja *ja, uint64_t key,
 
 	switch (mode) {
 	case JA_LOOKUP_BE:
-		if (caa_unlikely(key > ja->key_max || key == 0))
+		if (caa_unlikely(key > ja->key_max))
 			return NULL;
 		break;
 	case JA_LOOKUP_AE:
-		if (caa_unlikely(key >= ja->key_max))
+		if (caa_unlikely(key > ja->key_max))
 			return NULL;
 		break;
 	default:

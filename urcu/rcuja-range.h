@@ -77,4 +77,4 @@ int cds_ja_range_destroy(struct cds_ja *ja);
 }
 #endif
 
-#endif /* _URCU_RCUJA_H */
+#endif /* _URCU_RCUJA_RANGE_H */

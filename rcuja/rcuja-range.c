@@ -92,6 +92,7 @@
  * A range type never changes otherwise.
  */
 
+#define CDS_JA_RANGE_KEY_BITS	64
 
 struct cds_ja_range *cds_ja_range_lookup(struct cds_ja *ja, uint64_t key)
 {
@@ -367,26 +368,32 @@ unlock_retry:
 	goto retry;
 }
 
-int cds_ja_range_init(struct cds_ja *ja)
+struct cds_ja *_cds_ja_range_new(const struct rcu_flavor_struct *flavor)
 {
-	struct cds_ja_node *node;
 	struct cds_ja_range *range;
+	struct cds_ja *ja;
 	int ret;
 
-	/*
-	 * Sanity check: should be empty.
-	 */
-	node = cds_ja_lookup_above_equal(ja, 0, NULL);
-	if (node)
-		return -EINVAL;
+	ja = _cds_ja_new(CDS_JA_RANGE_KEY_BITS, flavor);
+	if (!ja)
+		return NULL;
 	range = range_create(0, UINT64_MAX, CDS_JA_RANGE_FREE);
 	if (!range)
-		return -EINVAL;
+		goto free_ja;
 	ret = cds_ja_add(ja, 0, &range->ja_node);
-	return ret;
+	if (ret)
+		goto free_range;
+	return ja;
+
+free_range:
+	free_range(range);
+free_ja:
+	ret = cds_ja_destroy(ja);
+	assert(!ret);
+	return NULL;
 }
 
-int cds_ja_range_fini(struct cds_ja *ja)
+int cds_ja_range_destroy(struct cds_ja *ja)
 {
 	uint64_t key;
 	struct cds_ja_node *ja_node;
@@ -401,13 +408,14 @@ int cds_ja_range_fini(struct cds_ja *ja)
 			range = caa_container_of(ja_node,
 					struct cds_ja_range, ja_node);
 			ret = cds_ja_del(ja, key, &range->ja_node);
-			if (ret) {
-				goto end;
-			}
+			if (ret)
+				goto error;
 			/* Alone using Judy array, OK to free now */
 			free_range(range);
 		}
 	}
-end:
+	return cds_ja_destroy(ja);
+
+error:
 	return ret;
 }

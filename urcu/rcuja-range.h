@@ -51,9 +51,6 @@ struct cds_ja_range {
 	struct rcu_head head;
 };
 
-int cds_ja_range_init(struct cds_ja *ja);
-int cds_ja_range_fini(struct cds_ja *ja);
-
 struct cds_ja_range *cds_ja_range_lookup(struct cds_ja *ja, uint64_t key);
 
 struct cds_ja_range *cds_ja_range_lock(struct cds_ja_range *range);
@@ -65,6 +62,16 @@ struct cds_ja_range *cds_ja_range_add(struct cds_ja *ja,
 		uint64_t end);		/* inclusive */
 
 int cds_ja_range_del(struct cds_ja *ja, struct cds_ja_range *range);
+
+struct cds_ja *_cds_ja_range_new(const struct rcu_flavor_struct *flavor);
+
+static inline
+struct cds_ja *cds_ja_range_new(void)
+{
+	return _cds_ja_range_new(&rcu_flavor);
+}
+
+int cds_ja_range_destroy(struct cds_ja *ja);
 
 #ifdef __cplusplus
 }

@@ -26,30 +26,11 @@
  */
 
 #include <urcu/rcuja.h>
-#include <pthread.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-enum cds_ja_range_type {
-	CDS_JA_RANGE_ALLOCATED,
-	CDS_JA_RANGE_FREE,
-	CDS_JA_RANGE_REMOVED,
-};
-
-/*
- * Range goes from start (inclusive) to end (inclusive).
- * Range start is used as node key in the Judy array.
- */
-struct cds_ja_range {
-	uint64_t start, end;
-	struct cds_ja_node ja_node;
-	pthread_mutex_t lock;
-	enum cds_ja_range_type type;
-	struct rcu_head head;
-};
 
 struct cds_ja_range *cds_ja_range_lookup(struct cds_ja *ja, uint64_t key);
 
@@ -59,7 +40,8 @@ void cds_ja_range_unlock(struct cds_ja_range *range);
 
 struct cds_ja_range *cds_ja_range_add(struct cds_ja *ja,
 		uint64_t start,		/* inclusive */
-		uint64_t end);		/* inclusive */
+		uint64_t end,		/* inclusive */
+		void *priv);
 
 int cds_ja_range_del(struct cds_ja *ja, struct cds_ja_range *range);
 
@@ -71,7 +53,8 @@ struct cds_ja *cds_ja_range_new(void)
 	return _cds_ja_range_new(&rcu_flavor);
 }
 
-int cds_ja_range_destroy(struct cds_ja *ja);
+int cds_ja_range_destroy(struct cds_ja *ja,
+		void (*free_priv)(void *ptr));
 
 #ifdef __cplusplus
 }

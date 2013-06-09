@@ -94,6 +94,28 @@
 
 #define CDS_JA_RANGE_KEY_BITS	64
 
+enum cds_ja_range_type {
+	CDS_JA_RANGE_ALLOCATED,
+	CDS_JA_RANGE_FREE,
+	CDS_JA_RANGE_REMOVED,
+};
+
+/*
+ * Range goes from start (inclusive) to end (inclusive).
+ * Range start is used as node key in the Judy array.
+ */
+struct cds_ja_range {
+	uint64_t end;
+	struct cds_ja_node ja_node;
+	pthread_mutex_t lock;
+	void *priv;
+	enum cds_ja_range_type type;
+
+	/* not required on lookup fast-path */
+	uint64_t start;
+	struct rcu_head head;
+};
+
 struct cds_ja_range *cds_ja_range_lookup(struct cds_ja *ja, uint64_t key)
 {
 	struct cds_ja_node *node, *last_node;
@@ -150,6 +172,7 @@ static
 struct cds_ja_range *range_create(
 		uint64_t start,		/* inclusive */
 		uint64_t end,		/* inclusive */
+		void *priv,
 		enum cds_ja_range_type type)
 {
 	struct cds_ja_range *range;
@@ -159,6 +182,7 @@ struct cds_ja_range *range_create(
 		return NULL;
 	range->start = start;
 	range->end = end;
+	range->priv = priv;
 	range->type = type;
 	pthread_mutex_init(&range->lock, NULL);
 	return range;
@@ -187,7 +211,8 @@ void rcu_free_range(struct cds_ja *ja, struct cds_ja_range *range)
 
 struct cds_ja_range *cds_ja_range_add(struct cds_ja *ja,
 		uint64_t start,		/* inclusive */
-		uint64_t end)		/* inclusive */
+		uint64_t end,		/* inclusive */
+		void *priv)
 {
 	struct cds_ja_node *old_node, *old_node_end;
 	struct cds_ja_range *old_range, *old_range_end, *new_range, *ranges[3];
@@ -238,32 +263,32 @@ retry:
 		if (end == old_range->end) {
 			/* 1 range */
 			ranges[0] = new_range = range_create(start, end,
-				CDS_JA_RANGE_ALLOCATED);
+				priv, CDS_JA_RANGE_ALLOCATED);
 			nr_ranges = 1;
 		} else {
 			/* 2 ranges */
 			ranges[0] = new_range = range_create(start, end,
-				CDS_JA_RANGE_ALLOCATED);
+				priv, CDS_JA_RANGE_ALLOCATED);
 			ranges[1] = range_create(end + 1, old_range->end,
-				CDS_JA_RANGE_FREE);
+				NULL, CDS_JA_RANGE_FREE);
 			nr_ranges = 2;
 		}
 	} else {
 		if (end == old_range->end) {
 			/* 2 ranges */
 			ranges[0] = range_create(old_range->start, start - 1,
-				CDS_JA_RANGE_FREE);
+				NULL, CDS_JA_RANGE_FREE);
 			ranges[1] = new_range = range_create(start, end,
-				CDS_JA_RANGE_ALLOCATED);
+				priv, CDS_JA_RANGE_ALLOCATED);
 			nr_ranges = 2;
 		} else {
 			/* 3 ranges */
 			ranges[0] = range_create(old_range->start, start - 1,
-				CDS_JA_RANGE_FREE);
+				NULL, CDS_JA_RANGE_FREE);
 			ranges[1] = new_range = range_create(start, end,
-				CDS_JA_RANGE_ALLOCATED);
+				priv, CDS_JA_RANGE_ALLOCATED);
 			ranges[2] = range_create(end + 1, old_range->end,
-				CDS_JA_RANGE_FREE);
+				NULL, CDS_JA_RANGE_FREE);
 			nr_ranges = 3;
 		}
 	}
@@ -342,7 +367,7 @@ retry:
 	/* Create new free range */
 	start = merge_ranges[0]->start;
 	end = merge_ranges[nr_merge - 1]->end;
-	new_range = range_create(start, end, CDS_JA_RANGE_FREE);
+	new_range = range_create(start, end, NULL, CDS_JA_RANGE_FREE);
 	ret = cds_ja_add(ja, start, &new_range->ja_node);
 	assert(!ret);
 
@@ -377,7 +402,7 @@ struct cds_ja *_cds_ja_range_new(const struct rcu_flavor_struct *flavor)
 	ja = _cds_ja_new(CDS_JA_RANGE_KEY_BITS, flavor);
 	if (!ja)
 		return NULL;
-	range = range_create(0, UINT64_MAX, CDS_JA_RANGE_FREE);
+	range = range_create(0, UINT64_MAX, NULL, CDS_JA_RANGE_FREE);
 	if (!range)
 		goto free_ja;
 	ret = cds_ja_add(ja, 0, &range->ja_node);
@@ -393,7 +418,8 @@ free_ja:
 	return NULL;
 }
 
-int cds_ja_range_destroy(struct cds_ja *ja)
+int cds_ja_range_destroy(struct cds_ja *ja,
+		void (*free_priv)(void *ptr))
 {
 	uint64_t key;
 	struct cds_ja_node *ja_node;
@@ -410,6 +436,8 @@ int cds_ja_range_destroy(struct cds_ja *ja)
 			ret = cds_ja_del(ja, key, &range->ja_node);
 			if (ret)
 				goto error;
+			if (free_priv)
+				free_priv(range->priv);
 			/* Alone using Judy array, OK to free now */
 			free_range(range);
 		}

@@ -22,7 +22,7 @@ noinst_PROGRAMS = test_urcu test_urcu_dynamic_link test_urcu_timing \
 	test_urcu_lfs_rcu_dynlink \
 	test_urcu_multiflavor test_urcu_multiflavor_dynlink \
 	test_urcu_fork \
-	test_urcu_ja
+	test_urcu_ja test_urcu_ja_range
 noinst_HEADERS = rcutorture.h test_urcu_multiflavor.h cpuset.h
 
 if COMPAT_ARCH
@@ -233,6 +233,11 @@ test_urcu_ja_SOURCES = test_urcu_ja.c test_urcu_ja.h \
 		$(COMPAT)
 test_urcu_ja_CFLAGS = -DRCU_QSBR $(AM_CFLAGS)
 test_urcu_ja_LDADD = $(URCU_QSBR_LIB) $(URCU_CDS_LIB)
+
+test_urcu_ja_range_SOURCES = test_urcu_ja_range.c test_urcu_ja_range.h \
+		$(COMPAT)
+test_urcu_ja_range_CFLAGS = -DRCU_QSBR $(AM_CFLAGS)
+test_urcu_ja_range_LDADD = $(URCU_QSBR_LIB) $(URCU_CDS_LIB)
 
 urcutorture.c: api.h
 

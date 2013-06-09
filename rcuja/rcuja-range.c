@@ -405,7 +405,9 @@ struct cds_ja *_cds_ja_range_new(const struct rcu_flavor_struct *flavor)
 	range = range_create(0, UINT64_MAX, NULL, CDS_JA_RANGE_FREE);
 	if (!range)
 		goto free_ja;
+	cds_lfht_rcu_flavor(ja->ht)->read_lock();
 	ret = cds_ja_add(ja, 0, &range->ja_node);
+	cds_lfht_rcu_flavor(ja->ht)->read_unlock();
 	if (ret)
 		goto free_range;
 	return ja;
@@ -425,6 +427,7 @@ int cds_ja_range_destroy(struct cds_ja *ja,
 	struct cds_ja_node *ja_node;
 	int ret = 0;
 
+	cds_lfht_rcu_flavor(ja->ht)->read_lock();
 	cds_ja_for_each_key_rcu(ja, key, ja_node) {
 		struct cds_ja_node *tmp_node;
 
@@ -442,8 +445,10 @@ int cds_ja_range_destroy(struct cds_ja *ja,
 			free_range(range);
 		}
 	}
+	cds_lfht_rcu_flavor(ja->ht)->read_unlock();
 	return cds_ja_destroy(ja);
 
 error:
+	cds_lfht_rcu_flavor(ja->ht)->read_unlock();
 	return ret;
 }

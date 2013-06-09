@@ -68,6 +68,19 @@
  */
 
 /*
+ * Discussion: concurrent deletion of contiguous allocated ranges.
+ *
+ * Ensuring that merge of contiguous free ranges is always performed, we
+ * need to ensure locking of concurrent removal of contiguous allocated
+ * ranges one with respect to another. This is done by locking the
+ * ranges prior to and after the range to remove, even if that range is
+ * allocated. This serializes removal of contiguous ranges. The only
+ * cases for which there is no range to lock is when removing an
+ * allocated range starting at 0, and/or ending at the end of the key
+ * space.
+ */
+
+/*
  * Discussion of the type state transitions.
  *
  * State transitions of "type" always go from either:
@@ -206,9 +219,6 @@ retry:
 		switch (CMM_LOAD_SHARED(old_range->type)) {
 		case CDS_JA_RANGE_ALLOCATED:
 		case CDS_JA_RANGE_FREE:		/* fall-through */
-			/*
-			 * TODO: think about free range merge.
-			 */
 			return NULL;
 		case CDS_JA_RANGE_REMOVED:
 			goto retry;
@@ -285,32 +295,46 @@ retry:
 int cds_ja_range_del(struct cds_ja *ja, struct cds_ja_range *range)
 {
 	struct cds_ja_node *prev_node, *next_node;
-	struct cds_ja_range *prev_range, *next_range, *new_range;
-	struct cds_ja_range *merge_ranges[3];
-	unsigned int nr_merge, i;
+	struct cds_ja_range *new_range;
+	struct cds_ja_range *merge_ranges[3], *lock_ranges[3];
+	unsigned int nr_merge, nr_lock, i;
 	uint64_t start, end;
 	int ret;
 
 retry:
 	nr_merge = 0;
+	nr_lock = 0;
 	prev_node = cds_ja_lookup_below_equal(ja, range->start - 1, NULL);
-	prev_range = caa_container_of(prev_node, struct cds_ja_range, ja_node);
-	if (prev_node && prev_range->type != CDS_JA_RANGE_ALLOCATED)
-		merge_ranges[nr_merge++] = prev_range;
+	if (prev_node) {
+		struct cds_ja_range *prev_range;
 
+		prev_range = caa_container_of(prev_node,
+			struct cds_ja_range, ja_node);
+		lock_ranges[nr_lock++] = prev_range;
+		if (prev_range->type != CDS_JA_RANGE_ALLOCATED)
+			merge_ranges[nr_merge++] = prev_range;
+	}
+
+	lock_ranges[nr_lock++] = range;
 	merge_ranges[nr_merge++] = range;
 
 	next_node = cds_ja_lookup_above_equal(ja, range->end + 1, NULL);
-	next_range = caa_container_of(next_node, struct cds_ja_range, ja_node);
-	if (next_node && next_range->type != CDS_JA_RANGE_ALLOCATED)
-		merge_ranges[nr_merge++] = next_range;
+	if (next_node) {
+		struct cds_ja_range *next_range;
+
+		next_range = caa_container_of(next_node,
+			struct cds_ja_range, ja_node);
+		lock_ranges[nr_lock++] = next_range;
+		if (next_range->type != CDS_JA_RANGE_ALLOCATED)
+			merge_ranges[nr_merge++] = next_range;
+	}
 
 	/* Acquire locks in increasing key order for range merge */
-	for (i = 0; i < nr_merge; i++)
-		pthread_mutex_lock(&merge_ranges[i]->lock);
+	for (i = 0; i < nr_lock; i++)
+		pthread_mutex_lock(&lock_ranges[i]->lock);
 	/* Ensure they are valid */
-	for (i = 0; i < nr_merge; i++) {
-		if (merge_ranges[i]->type == CDS_JA_RANGE_REMOVED)
+	for (i = 0; i < nr_lock; i++) {
+		if (lock_ranges[i]->type == CDS_JA_RANGE_REMOVED)
 			goto unlock_retry;
 	}
 
@@ -327,16 +351,19 @@ retry:
 				&merge_ranges[i]->ja_node);
 		assert(!ret);
 		merge_ranges[i]->type = CDS_JA_RANGE_REMOVED;
-		pthread_mutex_unlock(&merge_ranges[i]->lock);
-		rcu_free_range(ja, merge_ranges[i]);
 	}
+	for (i = 0; i < nr_lock; i++)
+		pthread_mutex_unlock(&lock_ranges[i]->lock);
+	/* Free old merged ranges */
+	for (i = 0; i < nr_merge; i++)
+		rcu_free_range(ja, merge_ranges[i]);
 
 	return 0;
 
 	/* retry paths */
 unlock_retry:
-	for (i = 0; i < nr_merge; i++)
-		pthread_mutex_unlock(&merge_ranges[i]->lock);
+	for (i = 0; i < nr_lock; i++)
+		pthread_mutex_unlock(&lock_ranges[i]->lock);
 	goto retry;
 }
 

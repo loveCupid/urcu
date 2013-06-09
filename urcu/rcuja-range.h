@@ -38,7 +38,7 @@ struct cds_ja_range *cds_ja_range_lock(struct cds_ja_range *range);
 
 void cds_ja_range_unlock(struct cds_ja_range *range);
 
-struct cds_ja_range *cds_ja_range_add(struct cds_ja *ja,
+int cds_ja_range_add(struct cds_ja *ja,
 		uint64_t start,		/* inclusive */
 		uint64_t end,		/* inclusive */
 		void *priv);

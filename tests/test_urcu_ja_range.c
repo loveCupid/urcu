@@ -296,9 +296,13 @@ void *test_ja_rw_thr_writer(void *_count)
 				end = tmp;
 			}
 			rcu_read_lock();
-			range = cds_ja_range_add(test_ja, start, end, NULL);
-			if (!range) {
-				fprintf(stderr, "Error in cds_ja_range_add\n");
+			ret = cds_ja_range_add(test_ja, start, end, NULL);
+			if (ret) {
+				if (ret == -EEXIST) {
+					URCU_TLS(nr_addexist)++;
+				} else {
+					assert(0);
+				}
 			} else {
 				URCU_TLS(nr_add)++;
 			}
@@ -371,13 +375,13 @@ int do_mt_populate_ja(void)
 		key = (unsigned long) iter;
 		key *= key_mul;
 		rcu_read_lock();
-		range = cds_ja_range_add(test_ja, key, key, NULL);
+		ret = cds_ja_range_add(test_ja, key, key, NULL);
 		URCU_TLS(nr_add)++;
 		URCU_TLS(nr_writes)++;
 		rcu_read_unlock();
-		if (!range) {
-			fprintf(stderr, "Error adding range %" PRIu64 "\n",
-				key);
+		if (ret) {
+			fprintf(stderr, "Error (%d) adding range %" PRIu64 "\n",
+				ret, key);
 			assert(0);
 		}
 	}

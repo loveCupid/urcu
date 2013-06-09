@@ -209,7 +209,7 @@ void rcu_free_range(struct cds_ja *ja, struct cds_ja_range *range)
 			free_range_cb);
 }
 
-struct cds_ja_range *cds_ja_range_add(struct cds_ja *ja,
+int cds_ja_range_add(struct cds_ja *ja,
 		uint64_t start,		/* inclusive */
 		uint64_t end,		/* inclusive */
 		void *priv)
@@ -230,7 +230,7 @@ retry:
 	old_range = caa_container_of(old_node, struct cds_ja_range, ja_node);
 	switch (CMM_LOAD_SHARED(old_range->type)) {
 	case CDS_JA_RANGE_ALLOCATED:
-		return NULL;
+		return -EEXIST;
 	case CDS_JA_RANGE_FREE:
 		break;
 	case CDS_JA_RANGE_REMOVED:
@@ -245,7 +245,7 @@ retry:
 		switch (CMM_LOAD_SHARED(old_range->type)) {
 		case CDS_JA_RANGE_ALLOCATED:
 		case CDS_JA_RANGE_FREE:		/* fall-through */
-			return NULL;
+			return -EEXIST;
 		case CDS_JA_RANGE_REMOVED:
 			goto retry;
 		}
@@ -315,7 +315,7 @@ retry:
 
 	rcu_free_range(ja, old_range);
 
-	return new_range;
+	return 0;
 }
 
 int cds_ja_range_del(struct cds_ja *ja, struct cds_ja_range *range)

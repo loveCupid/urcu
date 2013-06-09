@@ -298,7 +298,7 @@ void *test_ja_rw_thr_writer(void *_count)
 			rcu_read_lock();
 			range = cds_ja_range_add(test_ja, start, end, NULL);
 			if (!range) {
-				fprintf(stderr, "Error in cds_ja_add: %d\n", ret);
+				fprintf(stderr, "Error in cds_ja_range_add: %d\n");
 			} else {
 				URCU_TLS(nr_add)++;
 			}

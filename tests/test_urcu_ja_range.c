@@ -405,8 +405,9 @@ int do_mt_test(void)
 	count_reader = malloc(sizeof(*count_reader) * nr_readers);
 	count_writer = malloc(sizeof(*count_writer) * nr_writers);
 
-	printf("Allocating Judy Array for ranges\n");
-	test_ja = cds_ja_range_new();
+	printf("Allocating %u-bit Judy Array for ranges\n",
+		key_bits);
+	test_ja = cds_ja_range_new(key_bits);
 	if (!test_ja) {
 		printf("Error allocating judy array.\n");
 		ret = -1;

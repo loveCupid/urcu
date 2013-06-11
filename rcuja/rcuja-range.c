@@ -136,8 +136,6 @@ do {								\
 } while (0)
 #endif
 
-#define CDS_JA_RANGE_KEY_BITS	64
-
 enum cds_ja_range_type {
 	CDS_JA_RANGE_ALLOCATED,
 	CDS_JA_RANGE_FREE,
@@ -514,13 +512,14 @@ unlock_error:
 	return ret;
 }
 
-struct cds_ja *_cds_ja_range_new(const struct rcu_flavor_struct *flavor)
+struct cds_ja *_cds_ja_range_new(unsigned int key_bits,
+		const struct rcu_flavor_struct *flavor)
 {
 	struct cds_ja_range *range;
 	struct cds_ja *ja;
 	int ret;
 
-	ja = _cds_ja_new(CDS_JA_RANGE_KEY_BITS, flavor);
+	ja = _cds_ja_new(key_bits, flavor);
 	if (!ja)
 		return NULL;
 	range = range_create(0, UINT64_MAX - 1, NULL, CDS_JA_RANGE_FREE);

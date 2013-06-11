@@ -45,12 +45,13 @@ int cds_ja_range_add(struct cds_ja *ja,
 
 int cds_ja_range_del(struct cds_ja *ja, struct cds_ja_range *range);
 
-struct cds_ja *_cds_ja_range_new(const struct rcu_flavor_struct *flavor);
+struct cds_ja *_cds_ja_range_new(unsigned int key_bits,
+		const struct rcu_flavor_struct *flavor);
 
 static inline
-struct cds_ja *cds_ja_range_new(void)
+struct cds_ja *cds_ja_range_new(unsigned int key_bits)
 {
-	return _cds_ja_range_new(&rcu_flavor);
+	return _cds_ja_range_new(key_bits, &rcu_flavor);
 }
 
 int cds_ja_range_destroy(struct cds_ja *ja,

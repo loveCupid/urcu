@@ -45,6 +45,9 @@ int cds_ja_range_add(struct cds_ja *ja,
 
 int cds_ja_range_del(struct cds_ja *ja, struct cds_ja_range *range);
 
+void cds_ja_range_get_values(const struct cds_ja_range *range,
+	uint64_t *start, uint64_t *end, void **priv);
+
 struct cds_ja *_cds_ja_range_new(unsigned int key_bits,
 		const struct rcu_flavor_struct *flavor);
 

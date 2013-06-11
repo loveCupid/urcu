@@ -217,6 +217,14 @@ void cds_ja_range_unlock(struct cds_ja_range *range)
 	pthread_mutex_unlock(&range->lock);
 }
 
+void cds_ja_range_get_values(const struct cds_ja_range *range,
+	uint64_t *start, uint64_t *end, void **priv)
+{
+	*start = range->start;
+	*end = range->end;
+	*priv = range->priv;
+}
+
 static
 struct cds_ja_range *range_create(
 		uint64_t start,		/* inclusive */

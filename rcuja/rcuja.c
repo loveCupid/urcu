@@ -370,9 +370,9 @@ struct cds_ja_inode_flag *ja_linear_node_get_direction(const struct cds_ja_type 
 	uint8_t nr_child;
 	uint8_t *values;
 	struct cds_ja_inode_flag **pointers;
-	struct cds_ja_inode_flag *ptr = NULL;
+	struct cds_ja_inode_flag *ptr, *match_ptr = NULL;
 	unsigned int i;
-	int match_idx = -1, match_v;
+	int match_v;
 
 	assert(type->type_class == RCU_JA_LINEAR || type->type_class == RCU_JA_POOL);
 	assert(dir == JA_LEFT || dir == JA_RIGHT);
@@ -400,24 +400,23 @@ struct cds_ja_inode_flag *ja_linear_node_get_direction(const struct cds_ja_type 
 		if (dir == JA_LEFT) {
 			if ((int) v < n && (int) v > match_v) {
 				match_v = v;
-				match_idx = i;
+				match_ptr = ptr;
 			}
 		} else {
 			if ((int) v > n && (int) v < match_v) {
 				match_v = v;
-				match_idx = i;
+				match_ptr = ptr;
 			}
 		}
 	}
 
-	if (match_idx < 0) {
+	if (!match_ptr) {
 		return NULL;
 	}
 	assert(match_v >= 0 && match_v < JA_ENTRY_PER_NODE);
 
 	*result_key = (uint8_t) match_v;
-	ptr = rcu_dereference(pointers[match_idx]);
-	return ptr;
+	return match_ptr;
 }
 
 static
@@ -1784,7 +1783,7 @@ struct cds_ja_node *cds_ja_lookup(struct cds_ja *ja, uint64_t key)
 	unsigned int tree_depth, i;
 	struct cds_ja_inode_flag *node_flag;
 
-	if (caa_unlikely(key > ja->key_max))
+	if (caa_unlikely(key > ja->key_max || key == UINT64_MAX))
 		return NULL;
 	tree_depth = ja->tree_depth;
 	node_flag = rcu_dereference(ja->root);
@@ -1820,11 +1819,8 @@ struct cds_ja_node *cds_ja_lookup_inequality(struct cds_ja *ja, uint64_t key,
 
 	switch (mode) {
 	case JA_LOOKUP_BE:
-		if (caa_unlikely(key > ja->key_max))
-			return NULL;
-		break;
 	case JA_LOOKUP_AE:
-		if (caa_unlikely(key > ja->key_max))
+		if (caa_unlikely(key > ja->key_max || key == UINT64_MAX))
 			return NULL;
 		break;
 	default:
@@ -2202,7 +2198,7 @@ int _cds_ja_add(struct cds_ja *ja, uint64_t key,
 		**node_flag_ptr;
 	int ret;
 
-	if (caa_unlikely(key > ja->key_max)) {
+	if (caa_unlikely(key > ja->key_max || key == UINT64_MAX)) {
 		return -EINVAL;
 	}
 	tree_depth = ja->tree_depth;
@@ -2533,7 +2529,7 @@ int cds_ja_del(struct cds_ja *ja, uint64_t key,
 	int nr_snapshot;
 	int ret;
 
-	if (caa_unlikely(key > ja->key_max))
+	if (caa_unlikely(key > ja->key_max || key == UINT64_MAX))
 		return -EINVAL;
 	tree_depth = ja->tree_depth;
 

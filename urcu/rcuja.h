@@ -57,6 +57,10 @@ void cds_ja_node_init(struct cds_ja_node *node)
 }
 
 /*
+ * Note: key UINT64_MAX is reserved internally for iteration.
+ */
+
+/*
  * cds_ja_lookup - look up by key.
  * @ja: the Judy array.
  * @key: key to look up.
@@ -202,7 +206,9 @@ int cds_ja_destroy(struct cds_ja *ja);
  */
 #define cds_ja_for_each_key_rcu(ja, key, pos)				\
 	for ((key) = 0;							\
-		((pos) = cds_ja_lookup_above_equal(ja, key, &(key))); )
+		((key) != UINT64_MAX ?					\
+			((pos) = cds_ja_lookup_above_equal(ja, key, &(key))) : 0); \
+		(key)++)
 
 /*
  * cds_ja_for_each_key_prev_rcu: Iterate over all keys in descending order.
@@ -216,8 +222,10 @@ int cds_ja_destroy(struct cds_ja *ja);
  * Safe against node removal during iteration.
  */
 #define cds_ja_for_each_key_prev_rcu(ja, key, pos)			\
-	for ((key) = UINT64_MAX;					\
-		((pos) = cds_ja_lookup_below_equal(ja, key, &(key))); )
+	for ((key) = UINT64_MAX - 1;					\
+		((key) != UINT64_MAX ?					\
+			((pos) = cds_ja_lookup_below_equal(ja, key, &(key))) : 0); \
+		(key)--)
 
 #ifdef __cplusplus
 }

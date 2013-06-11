@@ -16,7 +16,7 @@ CFLAGS = -g -O2 -Wall
 # Only necessary when building from the source tree and userspace RCU is
 # not installed
 ifdef BUILD_EXAMPLES_FROM_TREE
-LOCAL_CPPFLAGS += -I../../../urcu/
+LOCAL_CPPFLAGS += -I../../../urcu/ -I../../../
 LIBURCU_QSBR_PATH = ../../../.libs/
 override LDFLAGS += -L$(LIBURCU_QSBR_PATH) -Wl,-rpath='$$ORIGIN/$(LIBURCU_QSBR_PATH)'
 

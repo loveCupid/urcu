@@ -56,6 +56,8 @@ struct cds_ja *cds_ja_range_new(void)
 int cds_ja_range_destroy(struct cds_ja *ja,
 		void (*free_priv)(void *ptr));
 
+int cds_ja_range_validate(struct cds_ja *ja);
+
 #ifdef __cplusplus
 }
 #endif

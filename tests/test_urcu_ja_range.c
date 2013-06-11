@@ -462,6 +462,9 @@ int do_mt_test(void)
 	}
 	rcu_thread_online_qsbr();
 
+	ret = cds_ja_range_validate(test_ja);
+	assert(!ret);
+
 	ret = cds_ja_range_destroy(test_ja, NULL);
 	if (ret) {
 		fprintf(stderr, "Error destroying judy array\n");

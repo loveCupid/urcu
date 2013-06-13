@@ -71,7 +71,7 @@ DEFINE_URCU_TLS(unsigned long long, nr_reads);
 unsigned int nr_readers;
 unsigned int nr_writers;
 
-static unsigned int add_ratio = 50;
+static unsigned int add_ratio = 50, range_max_len = 0;
 static uint64_t key_mul = 1ULL;
 
 static int add_unique, add_replace;
@@ -159,6 +159,7 @@ printf("        [not -u nor -s] Add entries (supports redundant keys).\n");
 	printf("        [-B] Key bits for multithread test (default: 32).\n");
 	printf("        [-m factor] Key multiplication factor.\n");
 	printf("	[-l] Memory leak detection.\n");
+	printf("	[-L len] Range max len.\n");
 	printf("\n\n");
 }
 
@@ -294,6 +295,9 @@ void *test_ja_rw_thr_writer(void *_count)
 				tmp = start;
 				start = end;
 				end = tmp;
+			}
+			if (end - start > range_max_len) {
+				end = start + range_max_len;
 			}
 			rcu_read_lock();
 			ret = cds_ja_range_add(test_ja, start, end, NULL);
@@ -594,6 +598,9 @@ int main(int argc, char **argv)
 		case 'l':
 			leak_detection = 1;
 			break;
+		case 'L':
+			range_max_len = atol(argv[++i]);
+			break;
 		}
 	}
 
@@ -612,6 +619,8 @@ int main(int argc, char **argv)
 		lookup_pool_offset, lookup_pool_size);
 	printf_verbose("Update pool size offset %lu size %lu.\n",
 		write_pool_offset, write_pool_size);
+	printf_verbose("Range max len: %lu.\n",
+		range_max_len);
 	if (validate_lookup)
 		printf_verbose("Validating lookups.\n");
 	if (leak_detection)

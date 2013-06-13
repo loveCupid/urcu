@@ -290,14 +290,15 @@ struct cds_ja_inode *alloc_cds_ja_node(struct cds_ja *ja,
 		return NULL;
 	}
 	memset(p, 0, len);
-	uatomic_inc(&ja->nr_nodes_allocated);
+	if (ja_debug_counters())
+		uatomic_inc(&ja->nr_nodes_allocated);
 	return p;
 }
 
 void free_cds_ja_node(struct cds_ja *ja, struct cds_ja_inode *node)
 {
 	free(node);
-	if (node)
+	if (ja_debug_counters() && node)
 		uatomic_inc(&ja->nr_nodes_freed);
 }
 
@@ -1605,7 +1606,8 @@ skip_copy:
 		dbg_printf("Using fallback for %u children, node type index: %u, mode %s\n",
 			new_shadow_node->nr_child, old_type_index, mode == JA_RECOMPACT_ADD_NEXT ? "add_next" :
 				(mode == JA_RECOMPACT_DEL ? "del" : "add_same"));
-		uatomic_inc(&ja->node_fallback_count_distribution[new_shadow_node->nr_child]);
+		if (ja_debug_counters())
+			uatomic_inc(&ja->node_fallback_count_distribution[new_shadow_node->nr_child]);
 	}
 
 	/* Return pointer to new recompacted node through old_node_flag_ptr */
@@ -1671,7 +1673,8 @@ fallback_toosmall:
 		} else {
 			new_type_index++;
 			dbg_printf("Add fallback to type %d\n", new_type_index);
-			uatomic_inc(&ja->nr_fallback);
+			if (ja_debug_counters())
+				uatomic_inc(&ja->nr_fallback);
 			fallback = 1;
 			goto retry;
 		}
@@ -2697,6 +2700,9 @@ int ja_final_checks(struct cds_ja *ja)
 	double fallback_ratio;
 	unsigned long na, nf, nr_fallback;
 	int ret = 0;
+
+	if (!ja_debug_counters())
+		return 0;
 
 	fallback_ratio = (double) uatomic_read(&ja->nr_fallback);
 	fallback_ratio /= (double) uatomic_read(&ja->nr_nodes_allocated);

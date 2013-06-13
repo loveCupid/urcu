@@ -223,6 +223,7 @@ void free_cds_ja_node(struct cds_ja *ja, struct cds_ja_inode *node);
        for (; (pos) != NULL; (pos) = (pos)->next)
 
 //#define DEBUG
+//#define DEBUG_COUNTERS
 
 #ifdef __linux__
 #include <syscall.h>
@@ -248,6 +249,7 @@ static inline pid_t gettid(void)
 	fprintf(stderr, "[debug rcuja %lu %s()@%s:%u] " fmt,	\
 		(unsigned long) gettid(), __func__,		\
 		__FILE__, __LINE__, ## args)
+
 #else
 #define dbg_printf(fmt, args...)				\
 do {								\
@@ -257,6 +259,20 @@ do {								\
 			(unsigned long) gettid(), __func__,	\
 			__FILE__, __LINE__, ## args);		\
 } while (0)
+#endif
+
+#ifdef DEBUG_COUNTERS
+static inline
+ja_debug_counters(void)
+{
+	return 1;
+}
+#else
+static inline
+ja_debug_counters(void)
+{
+	return 0;
+}
 #endif
 
 #endif /* _URCU_RCUJA_INTERNAL_H */

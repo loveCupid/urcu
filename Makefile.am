@@ -45,7 +45,8 @@ endif
 RCULFHASH = rculfhash.c rculfhash-mm-order.c rculfhash-mm-chunk.c \
 		rculfhash-mm-mmap.c
 
-RCUJA = rcuja/rcuja.c rcuja/rcuja-shadow-nodes.c rcuja/rcuja-range.c
+RCUJA = rcuja/rcuja.c rcuja/rcuja-shadow-nodes.c rcuja/rcuja-range.c \
+		rcuja/rcuja-internal.h
 
 lib_LTLIBRARIES = liburcu-common.la \
 		liburcu.la liburcu-qsbr.la \

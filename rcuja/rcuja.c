@@ -417,7 +417,7 @@ struct cds_ja_inode_flag *ja_linear_node_get_direction(const struct cds_ja_type 
 	assert(match_v >= 0 && match_v < JA_ENTRY_PER_NODE);
 
 	*result_key = (uint8_t) match_v;
-	return match_ptr;
+	return rcu_dereference(match_ptr);
 }
 
 static

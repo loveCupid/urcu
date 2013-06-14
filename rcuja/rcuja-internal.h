@@ -263,13 +263,13 @@ do {								\
 
 #ifdef DEBUG_COUNTERS
 static inline
-ja_debug_counters(void)
+int ja_debug_counters(void)
 {
 	return 1;
 }
 #else
 static inline
-ja_debug_counters(void)
+int ja_debug_counters(void)
 {
 	return 0;
 }

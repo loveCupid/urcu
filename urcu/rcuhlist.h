@@ -29,61 +29,67 @@
 #include <urcu/arch.h>
 #include <urcu-pointer.h>
 
-/* Add new element at the head of the list.
- */
-static inline void cds_hlist_add_head_rcu(struct cds_hlist_node *newp,
-				      struct cds_hlist_head *head)
+/* Add new element at the head of the list. */
+static inline
+void cds_hlist_add_head_rcu(struct cds_hlist_node *newp,
+		struct cds_hlist_head *head)
 {
 	newp->next = head->next;
 	newp->prev = (struct cds_hlist_node *)head;
-	cmm_smp_wmb();
 	if (head->next)
 		head->next->prev = newp;
-	head->next = newp;
+	rcu_assign_pointer(head->next, newp);
 }
 
 /* Remove element from list. */
-static inline void cds_hlist_del_rcu(struct cds_hlist_node *elem)
+static inline
+void cds_hlist_del_rcu(struct cds_hlist_node *elem)
 {
 	if (elem->next)
 		elem->next->prev = elem->prev;
-	elem->prev->next = elem->next;
+	CMM_STORE_SHARED(elem->prev->next, elem->next);
 }
 
 /*
  * Get first element from a RCU hlist. Assumes the hlist is not empty.
  * This must be done while rcu_read_lock() is held.
  */
-#define cds_hlist_first_rcu(ptr, type)					\
+#define cds_hlist_first_rcu(ptr, type) \
 	rcu_dereference((ptr)->next)
 
 /*
  * Get first entry from a RCU hlist. Assumes the hlist is not empty.
  * This must be done while rcu_read_lock() is held.
  */
-#define cds_hlist_first_entry_rcu(ptr, type, member)			\
+#define cds_hlist_first_entry_rcu(ptr, type, member) \
 	cds_hlist_entry(rcu_dereference((ptr)->next), type, member)
-
-/*
- * Iterate through nodes of the list.
- * This must be done while rcu_read_lock() is held.
- */
-
-#define cds_hlist_for_each_rcu(pos, head)				\
-	for (pos = rcu_dereference((head)->next);			\
-	     pos != NULL;						\
-	     pos = rcu_dereference((pos)->next))
 
 /*
  * Iterate through elements of the list.
  * This must be done while rcu_read_lock() is held.
  */
+#define cds_hlist_for_each_rcu(pos, head) \
+	for (pos = rcu_dereference((head)->next); pos != NULL; \
+		pos = rcu_dereference(pos->next))
 
-#define cds_hlist_for_each_entry_rcu(entry, pos, head, member)		\
-	for (pos = rcu_dereference((head)->next),			\
-		     entry = cds_hlist_entry(pos, __typeof__(*entry), member);	\
-	     pos != NULL;						\
-	     pos = rcu_dereference(pos->next),				\
-		     entry = cds_hlist_entry(pos, __typeof__(*entry), member))
+/*
+ * cds_hlist_for_each_entry_rcu takes 4 arguments, while the Linux
+ * kernel API only takes 3.
+ * We implement cds_hlist_for_each_entry_rcu_2() to follow the Linux
+ * kernel APIs.
+ */
+#define cds_hlist_for_each_entry_rcu(entry, pos, head, member) \
+	for (pos = rcu_dereference((head)->next), \
+			entry = cds_hlist_entry(pos, __typeof__(*entry), member); \
+		pos != NULL; \
+		pos = rcu_dereference(pos->next), \
+			entry = cds_hlist_entry(pos, __typeof__(*entry), member))
+
+#define cds_hlist_for_each_entry_rcu_2(entry, head, member) \
+	for (entry = cds_hlist_entry(rcu_dereference((head)->next), \
+			__typeof__(*entry), member); \
+		&entry->member != NULL; \
+		entry = cds_hlist_entry(rcu_dereference(entry->member.next), \
+			__typeof__(*entry), member))
 
 #endif	/* _URCU_RCUHLIST_H */

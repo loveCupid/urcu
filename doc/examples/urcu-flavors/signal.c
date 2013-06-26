@@ -16,17 +16,20 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#define _LGPL_SOURCE
-#include <urcu-qsbr.h>
-#include <urcu/rculist.h>
-#include <urcu/compiler.h>
-
+#include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <inttypes.h>
 
+#define RCU_SIGNAL		/* Signal-based RCU flavor */
+#include <urcu.h>
+#include <urcu/rculist.h>	/* List example */
+#include <urcu/compiler.h>	/* For CAA_ARRAY_SIZE */
+
 /*
+ * Example showing how to use the signal-based Userspace RCU flavor.
+ *
  * This is a mock-up example where updates and RCU traversals are
  * performed by the same thread to keep things simple on purpose.
  */
@@ -68,7 +71,7 @@ int main(int argc, char **argv)
 	struct mynode *node, *n;
 
 	/*
-	 * Each thread need using RCU read-side need to be explicitely
+	 * Each thread need using RCU read-side need to be explicitly
 	 * registered.
 	 */
 	rcu_register_thread();
@@ -84,10 +87,9 @@ int main(int argc, char **argv)
 	}
 
 	/*
-	 * For all RCU flavors except QSBR, we need to explicitly mark
-	 * RCU read-side critical sections with rcu_read_lock() and
-	 * rcu_read_unlock(). They can be nested. Those are no-ops for
-	 * the QSBR flavor.
+	 * We need to explicitly mark RCU read-side critical sections
+	 * with rcu_read_lock() and rcu_read_unlock(). They can be
+	 * nested. Those are no-ops for the QSBR flavor.
 	 */
 	rcu_read_lock();
 
@@ -105,29 +107,30 @@ int main(int argc, char **argv)
 	 */
 	cds_list_for_each_entry_safe(node, n, &mylist, node) {
 		cds_list_del_rcu(&node->node);
+		/*
+		 * call_rcu() will ensure that the handler
+		 * "rcu_free_node" is executed after a grace period.
+		 * call_rcu() can be called from RCU read-side critical
+		 * sections.
+		 */
 		call_rcu(&node->rcu_head, rcu_free_node);
 	}
 
 	/*
-	 * For QSBR flavor, we need to explicitly announce quiescent
-	 * states.
+	 * We can also wait for a quiescent state by calling
+	 * synchronize_rcu() rather than using call_rcu(). It is usually
+	 * a slower approach than call_rcu(), because the latter can
+	 * batch work. Moreover, call_rcu() can be called from a RCU
+	 * read-side critical section, but synchronize_rcu() should not.
 	 */
-	rcu_quiescent_state();
-
-	/*
-	 * For QSBR flavor, when a thread needs to be in a quiescent
-	 * state for a long period of time, we use rcu_thread_offline()
-	 * and rcu_thread_online().
-	 */
-	rcu_thread_offline();
+	synchronize_rcu();
 
 	sleep(1);
 
-	rcu_thread_online();
-
 	/*
 	 * Waiting for previously called call_rcu handlers to complete
-	 * before program exits is a good practice.
+	 * before program exits, or in library destructors, is a good
+	 * practice.
 	 */
 	rcu_barrier();
 

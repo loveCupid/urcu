@@ -1033,6 +1033,9 @@ int do_mt_populate_ja(void)
 		URCU_TLS(nr_add)++;
 		URCU_TLS(nr_writes)++;
 		rcu_read_unlock();
+		/* Hash table resize only occurs in call_rcu thread */
+		if (!(iter % 100))
+			rcu_quiescent_state();
 		if (ret) {
 			fprintf(stderr, "Error (%d) adding node %" PRIu64 "\n",
 				ret, key);

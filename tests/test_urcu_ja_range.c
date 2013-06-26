@@ -200,6 +200,8 @@ void *test_ja_rw_thr_reader(void *_count)
 	printf_verbose("thread_begin %s, thread id : %lx, tid %lu\n",
 			"reader", pthread_self(), (unsigned long) gettid());
 
+	URCU_TLS(rand_lookup) = (unsigned int) gettid() ^ time(NULL);
+
 	set_affinity();
 
 	rcu_register_thread();
@@ -212,9 +214,11 @@ void *test_ja_rw_thr_reader(void *_count)
 	for (;;) {
 		rcu_read_lock();
 
-		/* note: only looking up ulong keys */
-		key = ((unsigned long) rand_r(&URCU_TLS(rand_lookup)) % lookup_pool_size) + lookup_pool_offset;
+		key = (uint64_t) rand_r(&URCU_TLS(rand_lookup));
+		key += (uint64_t) rand_r(&URCU_TLS(rand_lookup)) << 32ULL;
+		key = (key % lookup_pool_size) + lookup_pool_offset;
 		key *= key_mul;
+
 		range = cds_ja_range_lookup(test_ja, key);
 		if (!range) {
 			if (validate_lookup) {
@@ -271,6 +275,8 @@ void *test_ja_rw_thr_writer(void *_count)
 	printf_verbose("thread_begin %s, thread id : %lx, tid %lu\n",
 			"writer", pthread_self(), (unsigned long) gettid());
 
+	URCU_TLS(rand_lookup) = (unsigned int) gettid() ^ time(NULL);
+
 	set_affinity();
 
 	rcu_register_thread();
@@ -286,9 +292,14 @@ void *test_ja_rw_thr_writer(void *_count)
 			struct cds_ja_range *range;
 			uint64_t start, end, tmp;
 
-			/* note: only inserting ulong keys */
-			start = ((unsigned long) rand_r(&URCU_TLS(rand_lookup)) % write_pool_size) + write_pool_offset;
-			end = ((unsigned long) rand_r(&URCU_TLS(rand_lookup)) % write_pool_size) + write_pool_offset;
+			start = (uint64_t) rand_r(&URCU_TLS(rand_lookup));
+			start += (uint64_t) rand_r(&URCU_TLS(rand_lookup)) << 32ULL;
+			start = (start % write_pool_size) + write_pool_offset;
+
+			end = (uint64_t) rand_r(&URCU_TLS(rand_lookup));
+			end += (uint64_t) rand_r(&URCU_TLS(rand_lookup)) << 32ULL;
+			end = (end % write_pool_size) + write_pool_offset;
+
 			start *= key_mul;
 			end *= key_mul;
 			if (start > end) {
@@ -316,8 +327,9 @@ void *test_ja_rw_thr_writer(void *_count)
 			uint64_t key;
 
 			/* May delete */
-			/* note: only deleting ulong keys */
-			key = ((unsigned long) rand_r(&URCU_TLS(rand_lookup)) % write_pool_size) + write_pool_offset;
+			key = (uint64_t) rand_r(&URCU_TLS(rand_lookup));
+			key += (uint64_t) rand_r(&URCU_TLS(rand_lookup)) << 32ULL;
+			key = (key % write_pool_size) + write_pool_offset;
 			key *= key_mul;
 
 			rcu_read_lock();

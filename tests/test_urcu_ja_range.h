@@ -38,10 +38,7 @@
 #include <signal.h>
 
 #include <urcu/tls-compat.h>
-
-#ifdef __linux__
-#include <syscall.h>
-#endif
+#include "thread-id.h"
 
 #define DEFAULT_RAND_POOL	1000000
 
@@ -59,23 +56,6 @@
 	} while (0)
 #else
 #define poison_free(ptr)	free(ptr)
-#endif
-
-
-
-#if defined(_syscall0)
-_syscall0(pid_t, gettid)
-#elif defined(__NR_gettid)
-static inline pid_t gettid(void)
-{
-	return syscall(__NR_gettid);
-}
-#else
-#warning "use pid as tid"
-static inline pid_t gettid(void)
-{
-	return getpid();
-}
 #endif
 
 #ifndef DYNAMIC_LINK_TEST

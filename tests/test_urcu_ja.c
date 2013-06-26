@@ -853,6 +853,8 @@ void *test_ja_rw_thr_reader(void *_count)
 	printf_verbose("thread_begin %s, thread id : %lx, tid %lu\n",
 			"reader", pthread_self(), (unsigned long) gettid());
 
+	URCU_TLS(rand_lookup) = urcu_get_thread_id() ^ time(NULL);
+
 	set_affinity();
 
 	rcu_register_thread();
@@ -915,6 +917,8 @@ void *test_ja_rw_thr_writer(void *_count)
 
 	printf_verbose("thread_begin %s, thread id : %lx, tid %lu\n",
 			"writer", pthread_self(), (unsigned long) gettid());
+
+	URCU_TLS(rand_lookup) = urcu_get_thread_id() ^ time(NULL);
 
 	set_affinity();
 

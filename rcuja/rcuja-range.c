@@ -276,7 +276,7 @@ int cds_ja_range_add(struct cds_ja *ja,
 	unsigned int nr_ranges, i;
 	int ret;
 
-	if (start > end || end == UINT64_MAX)
+	if (start > end || end == UINT64_MAX || end > ja->key_max)
 		return -EINVAL;
 
 retry:

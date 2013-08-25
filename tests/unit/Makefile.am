@@ -3,7 +3,8 @@ AM_CFLAGS=-I$(top_srcdir) -I$(top_builddir) -I$(top_srcdir)/tests/common -g
 
 noinst_PROGRAMS = test_uatomic \
 	test_urcu_multiflavor \
-	test_urcu_multiflavor_dynlink
+	test_urcu_multiflavor_dynlink \
+	test_urcu_dq
 
 noinst_HEADERS = test_urcu_multiflavor.h
 
@@ -55,7 +56,11 @@ test_urcu_multiflavor_dynlink_CFLAGS = -DDYNAMIC_LINK_TEST $(AM_CFLAGS)
 test_urcu_multiflavor_dynlink_LDADD = $(URCU_LIB) $(URCU_MB_LIB) \
 	$(URCU_SIGNAL_LIB) $(URCU_QSBR_LIB) $(URCU_BP_LIB)
 
+test_urcu_dq_SOURCES = test_urcu_dq.c $(COMPAT)
+test_urcu_dq_LDADD = $(URCU_LIB)
+
 check-am:
 	./test_uatomic
 	./test_urcu_multiflavor
 	./test_urcu_multiflavor_dynlink
+	./test_urcu_dq

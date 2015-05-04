@@ -70,10 +70,24 @@ struct cds_lfs_head {
 	struct cds_lfs_node node;
 };
 
+struct __cds_lfs_stack {
+	struct cds_lfs_head *head;
+};
+
 struct cds_lfs_stack {
 	struct cds_lfs_head *head;
 	pthread_mutex_t lock;
 };
+
+/*
+ * The transparent union allows calling functions that work on both
+ * struct cds_lfs_stack and struct __cds_lfs_stack on any of those two
+ * types.
+ */
+typedef union {
+	struct __cds_lfs_stack *_s;
+	struct cds_lfs_stack *s;
+} __attribute__((__transparent_union__)) cds_lfs_stack_ptr_t;
 
 #ifdef _LGPL_SOURCE
 
@@ -81,6 +95,7 @@ struct cds_lfs_stack {
 
 #define cds_lfs_node_init		_cds_lfs_node_init
 #define cds_lfs_init			_cds_lfs_init
+#define __cds_lfs_init			___cds_lfs_init
 #define cds_lfs_empty			_cds_lfs_empty
 #define cds_lfs_push			_cds_lfs_push
 
@@ -109,11 +124,16 @@ extern void cds_lfs_node_init(struct cds_lfs_node *node);
 extern void cds_lfs_init(struct cds_lfs_stack *s);
 
 /*
+ * __cds_lfs_init: initialize lock-free stack.
+ */
+extern void __cds_lfs_init(struct __cds_lfs_stack *s);
+
+/*
  * cds_lfs_empty: return whether lock-free stack is empty.
  *
  * No memory barrier is issued. No mutual exclusion is required.
  */
-extern bool cds_lfs_empty(struct cds_lfs_stack *s);
+extern bool cds_lfs_empty(cds_lfs_stack_ptr_t s);
 
 /*
  * cds_lfs_push: push a node into the stack.
@@ -123,7 +143,7 @@ extern bool cds_lfs_empty(struct cds_lfs_stack *s);
  * Returns 0 if the stack was empty prior to adding the node.
  * Returns non-zero otherwise.
  */
-extern bool cds_lfs_push(struct cds_lfs_stack *s,
+extern bool cds_lfs_push(cds_lfs_stack_ptr_t s,
 			struct cds_lfs_node *node);
 
 /*
@@ -166,7 +186,7 @@ extern void cds_lfs_pop_unlock(struct cds_lfs_stack *s);
  * 3) Ensuring that only ONE thread can call __cds_lfs_pop() and
  *    __cds_lfs_pop_all(). (multi-provider/single-consumer scheme).
  */
-extern struct cds_lfs_node *__cds_lfs_pop(struct cds_lfs_stack *s);
+extern struct cds_lfs_node *__cds_lfs_pop(cds_lfs_stack_ptr_t s);
 
 /*
  * __cds_lfs_pop_all: pop all nodes from a stack.
@@ -185,7 +205,7 @@ extern struct cds_lfs_node *__cds_lfs_pop(struct cds_lfs_stack *s);
  * 3) Ensuring that only ONE thread can call __cds_lfs_pop() and
  *    __cds_lfs_pop_all(). (multi-provider/single-consumer scheme).
  */
-extern struct cds_lfs_head *__cds_lfs_pop_all(struct cds_lfs_stack *s);
+extern struct cds_lfs_head *__cds_lfs_pop_all(cds_lfs_stack_ptr_t s);
 
 #endif /* !_LGPL_SOURCE */
 

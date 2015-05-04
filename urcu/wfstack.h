@@ -83,10 +83,24 @@ struct cds_wfs_head {
 	struct cds_wfs_node node;
 };
 
+struct __cds_wfs_stack {
+	struct cds_wfs_head *head;
+};
+
 struct cds_wfs_stack {
 	struct cds_wfs_head *head;
 	pthread_mutex_t lock;
 };
+
+/*
+ * The transparent union allows calling functions that work on both
+ * struct cds_wfs_stack and struct __cds_wfs_stack on any of those two
+ * types.
+ */
+typedef union {
+	struct __cds_wfs_stack *_s;
+	struct cds_wfs_stack *s;
+} __attribute__((__transparent_union__)) cds_wfs_stack_ptr_t;
 
 #ifdef _LGPL_SOURCE
 
@@ -94,6 +108,7 @@ struct cds_wfs_stack {
 
 #define cds_wfs_node_init		_cds_wfs_node_init
 #define cds_wfs_init			_cds_wfs_init
+#define __cds_wfs_init			___cds_wfs_init
 #define cds_wfs_empty			_cds_wfs_empty
 #define cds_wfs_push			_cds_wfs_push
 
@@ -136,11 +151,16 @@ extern void cds_wfs_node_init(struct cds_wfs_node *node);
 extern void cds_wfs_init(struct cds_wfs_stack *s);
 
 /*
+ * __cds_wfs_init: initialize wait-free stack.
+ */
+extern void __cds_wfs_init(struct __cds_wfs_stack *s);
+
+/*
  * cds_wfs_empty: return whether wait-free stack is empty.
  *
  * No memory barrier is issued. No mutual exclusion is required.
  */
-extern bool cds_wfs_empty(struct cds_wfs_stack *s);
+extern bool cds_wfs_empty(cds_wfs_stack_ptr_t u_stack);
 
 /*
  * cds_wfs_push: push a node into the stack.
@@ -151,7 +171,7 @@ extern bool cds_wfs_empty(struct cds_wfs_stack *s);
  * Returns 0 if the stack was empty prior to adding the node.
  * Returns non-zero otherwise.
  */
-extern int cds_wfs_push(struct cds_wfs_stack *s, struct cds_wfs_node *node);
+extern int cds_wfs_push(cds_wfs_stack_ptr_t u_stack, struct cds_wfs_node *node);
 
 /*
  * cds_wfs_pop_blocking: pop a node from the stack.
@@ -239,7 +259,7 @@ extern void cds_wfs_pop_unlock(struct cds_wfs_stack *s);
  * 3) Ensuring that only ONE thread can call __cds_wfs_pop_blocking()
  *    and __cds_wfs_pop_all(). (multi-provider/single-consumer scheme).
  */
-extern struct cds_wfs_node *__cds_wfs_pop_blocking(struct cds_wfs_stack *s);
+extern struct cds_wfs_node *__cds_wfs_pop_blocking(cds_wfs_stack_ptr_t u_stack);
 
 /*
  * __cds_wfs_pop_with_state_blocking: pop a node from the stack, with state.
@@ -248,7 +268,8 @@ extern struct cds_wfs_node *__cds_wfs_pop_blocking(struct cds_wfs_stack *s);
  * empty into state (CDS_WFS_STATE_LAST).
  */
 extern struct cds_wfs_node *
-	__cds_wfs_pop_with_state_blocking(struct cds_wfs_stack *s, int *state);
+	__cds_wfs_pop_with_state_blocking(cds_wfs_stack_ptr_t u_stack,
+		int *state);
 
 /*
  * __cds_wfs_pop_nonblocking: pop a node from the stack.
@@ -256,7 +277,7 @@ extern struct cds_wfs_node *
  * Same as __cds_wfs_pop_blocking, but returns CDS_WFS_WOULDBLOCK if
  * it needs to block.
  */
-extern struct cds_wfs_node *__cds_wfs_pop_nonblocking(struct cds_wfs_stack *s);
+extern struct cds_wfs_node *__cds_wfs_pop_nonblocking(cds_wfs_stack_ptr_t u_stack);
 
 /*
  * __cds_wfs_pop_with_state_nonblocking: pop a node from the stack, with state.
@@ -265,7 +286,7 @@ extern struct cds_wfs_node *__cds_wfs_pop_nonblocking(struct cds_wfs_stack *s);
  * empty into state (CDS_WFS_STATE_LAST).
  */
 extern struct cds_wfs_node *
-	__cds_wfs_pop_with_state_nonblocking(struct cds_wfs_stack *s,
+	__cds_wfs_pop_with_state_nonblocking(cds_wfs_stack_ptr_t u_stack,
 		int *state);
 
 /*
@@ -285,7 +306,7 @@ extern struct cds_wfs_node *
  * 3) Ensuring that only ONE thread can call __cds_wfs_pop_blocking()
  *    and __cds_wfs_pop_all(). (multi-provider/single-consumer scheme).
  */
-extern struct cds_wfs_head *__cds_wfs_pop_all(struct cds_wfs_stack *s);
+extern struct cds_wfs_head *__cds_wfs_pop_all(cds_wfs_stack_ptr_t u_stack);
 
 #endif /* !_LGPL_SOURCE */
 

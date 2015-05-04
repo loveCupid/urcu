@@ -426,7 +426,7 @@ unsigned int fls_u32(uint32_t x)
 {
 	int r;
 
-	asm("bsrl %1,%0\n\t"
+	__asm__ ("bsrl %1,%0\n\t"
 	    "jnz 1f\n\t"
 	    "movl $-1,%0\n\t"
 	    "1:\n\t"
@@ -442,7 +442,7 @@ unsigned int fls_u64(uint64_t x)
 {
 	long r;
 
-	asm("bsrq %1,%0\n\t"
+	__asm__ ("bsrq %1,%0\n\t"
 	    "jnz 1f\n\t"
 	    "movq $-1,%0\n\t"
 	    "1:\n\t"
@@ -563,6 +563,7 @@ void cds_lfht_resize_lazy_count(struct cds_lfht *ht, unsigned long size,
 
 static long nr_cpus_mask = -1;
 static long split_count_mask = -1;
+static int split_count_order = -1;
 
 #if defined(HAVE_SYSCONF)
 static void ht_init_nr_cpus_mask(void)
@@ -597,6 +598,8 @@ void alloc_split_items_count(struct cds_lfht *ht)
 			split_count_mask = DEFAULT_SPLIT_COUNT_MASK;
 		else
 			split_count_mask = nr_cpus_mask;
+		split_count_order =
+			cds_lfht_get_count_order_ulong(split_count_mask + 1);
 	}
 
 	assert(split_count_mask >= 0);
@@ -713,14 +716,39 @@ void check_resize(struct cds_lfht *ht, unsigned long size, uint32_t chain_len)
 	 * Use bucket-local length for small table expand and for
 	 * environments lacking per-cpu data support.
 	 */
-	if (count >= (1UL << COUNT_COMMIT_ORDER))
+	if (count >= (1UL << (COUNT_COMMIT_ORDER + split_count_order)))
 		return;
 	if (chain_len > 100)
 		dbg_printf("WARNING: large chain length: %u.\n",
 			   chain_len);
-	if (chain_len >= CHAIN_LEN_RESIZE_THRESHOLD)
-		cds_lfht_resize_lazy_grow(ht, size,
-			cds_lfht_get_count_order_u32(chain_len - (CHAIN_LEN_TARGET - 1)));
+	if (chain_len >= CHAIN_LEN_RESIZE_THRESHOLD) {
+		int growth;
+
+		/*
+		 * Ideal growth calculated based on chain length.
+		 */
+		growth = cds_lfht_get_count_order_u32(chain_len
+				- (CHAIN_LEN_TARGET - 1));
+		if ((ht->flags & CDS_LFHT_ACCOUNTING)
+				&& (size << growth)
+					>= (1UL << (COUNT_COMMIT_ORDER
+						+ split_count_order))) {
+			/*
+			 * If ideal growth expands the hash table size
+			 * beyond the "small hash table" sizes, use the
+			 * maximum small hash table size to attempt
+			 * expanding the hash table. This only applies
+			 * when node accounting is available, otherwise
+			 * the chain length is used to expand the hash
+			 * table in every case.
+			 */
+			growth = COUNT_COMMIT_ORDER + split_count_order
+				- cds_lfht_get_count_order_ulong(size);
+			if (growth <= 0)
+				return;
+		}
+		cds_lfht_resize_lazy_grow(ht, size, growth);
+	}
 }
 
 static
@@ -1143,10 +1171,14 @@ void partition_resize_helper(struct cds_lfht *ht, unsigned long i,
 		void (*fct)(struct cds_lfht *ht, unsigned long i,
 			unsigned long start, unsigned long len))
 {
-	unsigned long partition_len;
+	unsigned long partition_len, start = 0;
 	struct partition_resize_work *work;
 	int thread, ret;
 	unsigned long nr_threads;
+
+	assert(nr_cpus_mask != -1);
+	if (nr_cpus_mask < 0 || len < 2 * MIN_PARTITION_PER_THREAD)
+		goto fallback;
 
 	/*
 	 * Note: nr_cpus_mask + 1 is always power of 2.
@@ -1161,7 +1193,10 @@ void partition_resize_helper(struct cds_lfht *ht, unsigned long i,
 	}
 	partition_len = len >> cds_lfht_get_count_order_ulong(nr_threads);
 	work = calloc(nr_threads, sizeof(*work));
-	assert(work);
+	if (!work) {
+		dbg_printf("error allocating for resize, single-threading\n");
+		goto fallback;
+	}
 	for (thread = 0; thread < nr_threads; thread++) {
 		work[thread].ht = ht;
 		work[thread].i = i;
@@ -1170,6 +1205,17 @@ void partition_resize_helper(struct cds_lfht *ht, unsigned long i,
 		work[thread].fct = fct;
 		ret = pthread_create(&(work[thread].thread_id), ht->resize_attr,
 			partition_resize_thread, &work[thread]);
+		if (ret == EAGAIN) {
+			/*
+			 * Out of resources: wait and join the threads
+			 * we've created, then handle leftovers.
+			 */
+			dbg_printf("error spawning for resize, single-threading\n");
+			start = work[thread].start;
+			len -= start;
+			nr_threads = thread;
+			break;
+		}
 		assert(!ret);
 	}
 	for (thread = 0; thread < nr_threads; thread++) {
@@ -1177,6 +1223,18 @@ void partition_resize_helper(struct cds_lfht *ht, unsigned long i,
 		assert(!ret);
 	}
 	free(work);
+
+	/*
+	 * A pthread_create failure above will either lead in us having
+	 * no threads to join or starting at a non-zero offset,
+	 * fallback to single thread processing of leftovers.
+	 */
+	if (start == 0 && nr_threads > 0)
+		return;
+fallback:
+	ht->flavor->thread_online();
+	fct(ht, i, start, len);
+	ht->flavor->thread_offline();
 }
 
 /*
@@ -1214,13 +1272,6 @@ static
 void init_table_populate(struct cds_lfht *ht, unsigned long i,
 			 unsigned long len)
 {
-	assert(nr_cpus_mask != -1);
-	if (nr_cpus_mask < 0 || len < 2 * MIN_PARTITION_PER_THREAD) {
-		ht->flavor->thread_online();
-		init_table_populate_partition(ht, i, 0, len);
-		ht->flavor->thread_offline();
-		return;
-	}
 	partition_resize_helper(ht, i, len, init_table_populate_partition);
 }
 
@@ -1313,14 +1364,6 @@ void remove_table_partition(struct cds_lfht *ht, unsigned long i,
 static
 void remove_table(struct cds_lfht *ht, unsigned long i, unsigned long len)
 {
-
-	assert(nr_cpus_mask != -1);
-	if (nr_cpus_mask < 0 || len < 2 * MIN_PARTITION_PER_THREAD) {
-		ht->flavor->thread_online();
-		remove_table_partition(ht, i, 0, len);
-		ht->flavor->thread_offline();
-		return;
-	}
 	partition_resize_helper(ht, i, len, remove_table_partition);
 }
 

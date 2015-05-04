@@ -2,17 +2,18 @@
 # Process this file with autoconf to produce a configure script.
 
 
-AC_INIT([userspace-rcu],[0.7.4],[mathieu dot desnoyers at efficios dot com])
+AC_INIT([userspace-rcu],[0.8.0],[mathieu dot desnoyers at efficios dot com])
 
 # Following the numbering scheme proposed by libtool for the library version
 # http://www.gnu.org/software/libtool/manual/html_node/Updating-version-info.html
-AC_SUBST([URCU_LIBRARY_VERSION], [2:0:0])
+AC_SUBST([URCU_LIBRARY_VERSION], [3:0:0])
 
 AC_CONFIG_AUX_DIR([config])
 AC_CONFIG_MACRO_DIR([config])
 AC_CANONICAL_TARGET
 AC_CANONICAL_HOST
 AM_INIT_AUTOMAKE([foreign dist-bzip2 no-dist-gzip])
+AM_MAINTAINER_MODE([enable])
 m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
 
 m4_include([config/ax_tls.m4])
@@ -52,11 +53,20 @@ LT_INIT
 AC_C_INLINE
 AC_TYPE_PID_T
 AC_TYPE_SIZE_T
+AC_TYPE_INT32_T
+AC_TYPE_UINT32_T
+AC_TYPE_UINT64_T
+AC_TYPE_UINT8_T
 
 # Checks for library functions.
 AC_FUNC_MALLOC
 AC_FUNC_MMAP
-AC_CHECK_FUNCS([bzero gettimeofday munmap sched_getcpu strtoul sysconf])
+AC_CHECK_FUNCS(
+	[bzero gettimeofday munmap sched_getcpu strtoul sysconf gettid memeset strerror]
+)
+
+# Check for headers
+AC_CHECK_HEADERS([limits.h stddef.h sys/time.h])
 
 # Find arch type
 AS_CASE([$host_cpu],
@@ -69,6 +79,7 @@ AS_CASE([$host_cpu],
 	[powerpc], [ARCHTYPE="ppc"],
 	[ppc64], [ARCHTYPE="ppc"],
 	[powerpc64], [ARCHTYPE="ppc"],
+	[powerpc64le], [ARCHTYPE="gcc"],
 	[ppc], [ARCHTYPE="ppc"],
 	[s390], [ARCHTYPE="s390"],
 	[s390x], [ARCHTYPE="s390"],
@@ -77,9 +88,16 @@ AS_CASE([$host_cpu],
 	[alpha*], [ARCHTYPE="alpha"],
 	[ia64], [ARCHTYPE="gcc"],
 	[arm*], [ARCHTYPE="arm"],
+	[aarch64], [ARCHTYPE="gcc"],
 	[mips*], [ARCHTYPE="mips"],
 	[tile*], [ARCHTYPE="gcc"],
+	[hppa*], [ARCHTYPE="hppa"],
 	[ARCHTYPE="unknown"]
+)
+
+AS_CASE([$host],[*-*-linux-androideabi],
+	[AM_CONDITIONAL(TARGET_IS_ANDROID, true)],
+	[AM_CONDITIONAL(TARGET_IS_ANDROID, false)]
 )
 
 AC_SUBST(ARCHTYPE)
@@ -135,7 +153,10 @@ AS_IF([test "x$ARCHTYPE" = "xx86"],[
 	#For now, using lock; addl compatibility mode even for i686, because the
 	#Pentium III is seen as a i686, but lacks mfence instruction.
 	#Only using fence for x86_64.
-	AS_IF([test "x$host_cpu" != "xi386" -a "x$host_cpu" != "xi486" -a "x$host_cpu" != "xi586" -a "x$host_cpu" != "xi686"],[
+	#
+	#k1om is the name for the Intel MIC family (Xeon Phi). It is an x86_64
+	#variant but lacks fence instructions.
+	AS_IF([test "x$host_cpu" != "xi386" -a "x$host_cpu" != "xi486" -a "x$host_cpu" != "xi586" -a "x$host_cpu" != "xi686" -a "x$host_vendor" != "xk1om"],[
 		AC_MSG_RESULT([yes])
 		AC_DEFINE([CONFIG_RCU_HAVE_FENCE], [1])
 	],[
@@ -159,6 +180,15 @@ AC_COMPILE_IFELSE([AC_LANG_SOURCE([[
 	AC_MSG_RESULT([no])
 	compat_futex_test=1
 ])
+
+# Check for pthread
+AC_CHECK_LIB([pthread], [pthread_create],
+	[AM_CONDITIONAL(LIBC_INCLUDES_PTHREAD, false)],
+	[AC_CHECK_LIB([c], [pthread_create],
+		[AM_CONDITIONAL(LIBC_INCLUDES_PTHREAD, true)],
+		[AC_MSG_ERROR([Cannot find libpthread. Use [LDFLAGS]=-Ldir to specify its location.])]
+	)]
+)
 
 AM_CONDITIONAL([COMPAT_FUTEX], [test "x$compat_futex_test" = "x1"])
 AM_CONDITIONAL([COMPAT_ARCH], [test "x$SUBARCHTYPE" = "xx86compat"])
@@ -294,6 +324,10 @@ AC_CONFIG_FILES([
 	doc/examples/Makefile
 	tests/Makefile
 	rcuja/Makefile
+	tests/common/Makefile
+	tests/unit/Makefile
+	tests/benchmark/Makefile
+	tests/regression/Makefile
 	liburcu.pc
 	liburcu-bp.pc
 	liburcu-cds.pc

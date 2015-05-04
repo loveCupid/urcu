@@ -22,6 +22,7 @@
 
 #define _GNU_SOURCE
 #include "test_urcu_ja.h"
+#include "../common/debug-yield.h"
 #include <inttypes.h>
 #include <stdint.h>
 

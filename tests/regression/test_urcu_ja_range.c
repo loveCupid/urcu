@@ -22,6 +22,7 @@
 
 #define _GNU_SOURCE
 #include "test_urcu_ja_range.h"
+#include "../common/debug-yield.h"
 #include <inttypes.h>
 #include <stdint.h>
 
@@ -635,7 +636,7 @@ int main(int argc, char **argv)
 		lookup_pool_offset, lookup_pool_size);
 	printf_verbose("Update pool size offset %lu size %lu.\n",
 		write_pool_offset, write_pool_size);
-	printf_verbose("Range max len: %lu.\n",
+	printf_verbose("Range max len: %u.\n",
 		range_max_len);
 	if (validate_lookup)
 		printf_verbose("Validating lookups.\n");
